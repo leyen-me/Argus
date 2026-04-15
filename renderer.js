@@ -62,6 +62,9 @@ const FALLBACK_APP_CONFIG = {
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
 let chartInterval = "5";
 
+/** 用户是否选择隐藏「原始 JSON」面板；有新收盘数据时仍尊重该偏好 */
+let llmJsonUserPrefersHidden = false;
+
 async function loadAppConfig() {
   if (window.argus && typeof window.argus.getConfig === "function") {
     try {
@@ -385,30 +388,13 @@ function setLlmStatus(text) {
   if (el) el.textContent = text;
 }
 
-function initChartCapture() {
-  const btn = document.getElementById("btn-capture-chart");
-  if (!btn) return;
-
-  btn.addEventListener("click", async () => {
-    const imgEl = document.getElementById("chart-screenshot-img");
-    const wrap = document.getElementById("chart-capture-wrap");
-
-    btn.disabled = true;
-    setLlmStatus("截图中…");
-
-    try {
-      const shot = await captureTradingViewPng();
-      setLastChartScreenshot(shot.dataUrl);
-      if (imgEl) imgEl.src = shot.dataUrl;
-      if (wrap) wrap.hidden = false;
-      setLlmStatus("已截图");
-    } catch (err) {
-      console.error(err);
-      setLlmStatus(err.message || "截图失败");
-    } finally {
-      btn.disabled = false;
-    }
-  });
+function updateLlmJsonToggleUi() {
+  const btn = document.getElementById("btn-toggle-llm-json");
+  const output = document.getElementById("llm-output");
+  if (!btn || !output) return;
+  const hasContent = !!output.textContent.trim();
+  btn.disabled = !hasContent;
+  btn.textContent = output.hidden ? "显示 JSON" : "隐藏 JSON";
 }
 
 function initChartCaptureBridge() {
@@ -442,8 +428,6 @@ function bindMarketBarClose() {
   window.argus.onMarketBarClose((payload) => {
     const output = document.getElementById("llm-output");
     const status = document.getElementById("llm-status");
-    const imgEl = document.getElementById("chart-screenshot-img");
-    const wrap = document.getElementById("chart-capture-wrap");
     const chatStrip = document.getElementById("llm-chat-strip");
     const bubbleUser = document.getElementById("llm-bubble-user");
     const bubbleAsst = document.getElementById("llm-bubble-assistant");
@@ -451,8 +435,6 @@ function bindMarketBarClose() {
     window.argusLastBarClose = payload;
     if (payload?.chartImage?.dataUrl) {
       setLastChartScreenshot(payload.chartImage.dataUrl);
-      if (imgEl) imgEl.src = payload.chartImage.dataUrl;
-      if (wrap) wrap.hidden = false;
     }
 
     const llm = payload?.llm;
@@ -473,8 +455,9 @@ function bindMarketBarClose() {
     }
 
     if (output) {
-      output.hidden = false;
       output.textContent = formatBarClosePreview(payload);
+      output.hidden = llmJsonUserPrefersHidden;
+      updateLlmJsonToggleUi();
     }
     if (status) {
       if (payload?.chartCaptureError) {
@@ -499,6 +482,18 @@ function bindMarketStatus() {
   });
 }
 
+function initLlmJsonToggle() {
+  const btn = document.getElementById("btn-toggle-llm-json");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const output = document.getElementById("llm-output");
+    if (!output || !output.textContent.trim()) return;
+    output.hidden = !output.hidden;
+    llmJsonUserPrefersHidden = output.hidden;
+    updateLlmJsonToggleUi();
+  });
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   const cfg = await loadAppConfig();
   chartInterval = cfg.interval || "5";
@@ -509,9 +504,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     window.argus.setMarketContext(sym);
   }
   initSymbolSelect();
-  initChartCapture();
   initChartCaptureBridge();
   initConfigCenter();
+  initLlmJsonToggle();
   bindMarketBarClose();
   bindMarketStatus();
 });

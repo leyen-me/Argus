@@ -146,27 +146,27 @@ body {
   gap: 8px;
 }
 
-.btn-capture {
+.btn-llm-json {
   box-sizing: border-box;
   height: 28px;
-  padding: 0 12px;
+  padding: 0 10px;
   border-radius: 6px;
-  border: 1px solid #388bfd;
-  background: #1f6feb;
-  color: #fff;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #c9d1d9;
   font-size: 12px;
-  font-weight: 600;
   line-height: 1;
   cursor: pointer;
   -webkit-app-region: no-drag;
 }
 
-.btn-capture:hover {
-  background: #388bfd;
+.btn-llm-json:hover:not(:disabled) {
+  border-color: #8b949e;
+  color: #e6edf3;
 }
 
-.btn-capture:disabled {
-  opacity: 0.55;
+.btn-llm-json:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -184,28 +184,6 @@ body {
   font-size: 12px;
   line-height: 1;
   color: #3fb950;
-}
-
-.chart-capture {
-  margin-bottom: 12px;
-}
-
-.chart-capture-title {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #8b949e;
-  margin-bottom: 8px;
-}
-
-.chart-capture-img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 8px;
-  border: 1px solid #30363d;
-  background: #161b22;
 }
 
 .llm-body {

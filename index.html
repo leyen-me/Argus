@@ -33,17 +33,13 @@
           <div class="panel-header">
             <span class="panel-label">LLM 分析</span>
             <div class="panel-header-actions">
-              <button type="button" class="btn-capture" id="btn-capture-chart" title="截取左侧 TradingView 图表">
-                截取行情
+              <button type="button" class="btn-llm-json" id="btn-toggle-llm-json" title="显示或隐藏下方原始收盘 JSON" disabled>
+                显示 JSON
               </button>
               <span class="panel-badge" id="llm-status">就绪</span>
             </div>
           </div>
           <div class="llm-body">
-            <div class="chart-capture" id="chart-capture-wrap" hidden>
-              <div class="chart-capture-title">图表截图</div>
-              <img id="chart-screenshot-img" class="chart-capture-img" alt="TradingView 图表截图" />
-            </div>
             <div class="llm-chat-strip" id="llm-chat-strip" hidden aria-label="本轮收盘 LLM 对话摘要">
               <div class="llm-chat-row llm-chat-row--user">
                 <div class="llm-bubble llm-bubble--user" id="llm-bubble-user"></div>

@@ -121,6 +121,36 @@ body {
   inset: 0;
 }
 
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-capture {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid #388bfd;
+  background: #1f6feb;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.btn-capture:hover {
+  background: #388bfd;
+}
+
+.btn-capture:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .panel-badge {
   box-sizing: border-box;
   display: inline-flex;
@@ -135,6 +165,28 @@ body {
   font-size: 12px;
   line-height: 1;
   color: #3fb950;
+}
+
+.chart-capture {
+  margin-bottom: 12px;
+}
+
+.chart-capture-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8b949e;
+  margin-bottom: 8px;
+}
+
+.chart-capture-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  background: #161b22;
 }
 
 .llm-body {

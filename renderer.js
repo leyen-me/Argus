@@ -57,7 +57,8 @@ function createTradingViewWidget(symbol) {
     hide_legend: false,
     hide_volume: false,
     hideideasbutton: true,
-    save_image: false,
+    /** 为 false 时 iframe 可能拒绝 imageCanvas 截图，需保留导出能力 */
+    save_image: true,
     container_id: chartContainerId,
     allow_symbol_change: true,
     studies: [
@@ -95,6 +96,50 @@ function showDemoAnalysis() {
   status.textContent = "演示";
 }
 
+function setLlmStatus(text) {
+  const el = document.getElementById("llm-status");
+  if (el) el.textContent = text;
+}
+
+function initChartCapture() {
+  const btn = document.getElementById("btn-capture-chart");
+  if (!btn) return;
+
+  btn.addEventListener("click", async () => {
+    const widget = tvWidget;
+    const imgEl = document.getElementById("chart-screenshot-img");
+    const wrap = document.getElementById("chart-capture-wrap");
+    if (!widget || typeof widget.ready !== "function") {
+      setLlmStatus("无图表");
+      return;
+    }
+    if (typeof widget.imageCanvas !== "function") {
+      setLlmStatus("不支持截图");
+      return;
+    }
+
+    btn.disabled = true;
+    setLlmStatus("截图中…");
+
+    try {
+      const canvas = await new Promise((resolve, reject) => {
+        widget.ready(() => {
+          widget.imageCanvas().then(resolve).catch(reject);
+        });
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      if (imgEl) imgEl.src = dataUrl;
+      if (wrap) wrap.hidden = false;
+      setLlmStatus("已截图");
+    } catch (err) {
+      console.error(err);
+      setLlmStatus("截图失败");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 function bindArgusBridge() {
   if (typeof window.argus === "undefined" || !window.argus.onAnalysisUpdate) {
     return;
@@ -118,6 +163,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const initial = sel ? sel.value : "BINANCE:BTCUSDT";
   createTradingViewWidget(initial);
   initSymbolSelect();
+  initChartCapture();
   bindArgusBridge();
   showDemoAnalysis();
 });

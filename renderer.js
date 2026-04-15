@@ -465,6 +465,28 @@ function setLlmStatus(text) {
   if (el) el.textContent = text;
 }
 
+/**
+ * @param {{ estimatedPromptTokens?: number, contextWindowTokens?: number, percent?: number } | null | undefined} usage
+ */
+function updateContextUsage(usage) {
+  const el = document.getElementById("llm-context-usage");
+  if (!el) return;
+  el.classList.remove("panel-badge--usage-warn", "panel-badge--usage-danger");
+  if (!usage || typeof usage.percent !== "number" || typeof usage.estimatedPromptTokens !== "number") {
+    el.textContent = "上下文 —";
+    el.title =
+      "启用 LLM 后，每次收盘请求会显示估算输入占比。默认按 200K 上下文窗口；可用环境变量 ARGUS_CONTEXT_WINDOW_TOKENS 覆盖。含图时为粗估。";
+    return;
+  }
+  const pct = usage.percent;
+  const est = usage.estimatedPromptTokens;
+  const cap = usage.contextWindowTokens ?? 200_000;
+  el.textContent = `上下文 ${pct}%`;
+  el.title = `估算输入约 ${est.toLocaleString("zh-CN")} tokens，窗口 ${cap.toLocaleString("zh-CN")}（约 ${pct}%）。含图为粗估，与服务商实际计费可能略有差异。`;
+  if (pct >= 80) el.classList.add("panel-badge--usage-danger");
+  else if (pct >= 50) el.classList.add("panel-badge--usage-warn");
+}
+
 function initChartCaptureBridge() {
   if (!window.argus?.onChartCaptureRequest || !window.argus?.submitChartCaptureResult) {
     return;
@@ -514,6 +536,9 @@ function bindMarketBarClose() {
       console.log("[Argus] market-bar-close", JSON.parse(formatBarClosePreview(payload)));
     } catch {
       console.log("[Argus] market-bar-close", payload);
+    }
+    if (payload?.usage) {
+      updateContextUsage(payload.usage);
     }
     if (status) {
       if (payload?.chartCaptureError) {

@@ -12,6 +12,8 @@ const {
   buildMultimodalUserContent,
   buildUserTextForHistory,
   SYSTEM_PROMPT,
+  DEFAULT_CONTEXT_WINDOW_TOKENS,
+  estimatePromptTokensFromMessages,
 } = require("./llm");
 
 /**
@@ -107,16 +109,6 @@ async function emitBarClose(winGetter, ctx) {
     return;
   }
 
-  llm.streaming = true;
-  llm.analysisText = "";
-  win.webContents.send("market-bar-close", payloadBase);
-
-  const streamOpts = {
-    appConfig: cfg,
-    baseUrl: cfg.openaiBaseUrl,
-    model: cfg.openaiModel,
-  };
-
   const history = getHistoryMessages(convKey);
   const currentUserContent = buildMultimodalUserContent(
     textForLlm,
@@ -128,6 +120,27 @@ async function emitBarClose(winGetter, ctx) {
     ...history,
     { role: "user", content: currentUserContent },
   ];
+
+  const envCtx = process.env.ARGUS_CONTEXT_WINDOW_TOKENS;
+  const contextWindowTokens =
+    envCtx && Number(envCtx) > 0 ? Math.floor(Number(envCtx)) : DEFAULT_CONTEXT_WINDOW_TOKENS;
+  const estimatedPromptTokens = estimatePromptTokensFromMessages(messages);
+  const percent = Math.round((estimatedPromptTokens / contextWindowTokens) * 1000) / 10;
+  payloadBase.usage = {
+    estimatedPromptTokens,
+    contextWindowTokens,
+    percent,
+  };
+
+  llm.streaming = true;
+  llm.analysisText = "";
+  win.webContents.send("market-bar-close", payloadBase);
+
+  const streamOpts = {
+    appConfig: cfg,
+    baseUrl: cfg.openaiBaseUrl,
+    model: cfg.openaiModel,
+  };
 
   const result = await streamOpenAIChat(messages, streamOpts, (ev) => {
     if (ev.type === "delta") {

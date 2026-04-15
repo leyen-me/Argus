@@ -6,6 +6,7 @@ const cryptoSched = require("./crypto-scheduler");
 const { inferFeed, resolveLongPortSymbol } = require("./market");
 const { loadAppConfig, normalizeConfig, configPath } = require("./app-config");
 const { wipeConversationStore } = require("./llm-context");
+const { wipeTradingStateStore } = require("./trading-state");
 
 /**
  * 左侧当前品种：加密走 Binance WS K 线；美股/港股走长桥订阅（切换时先停另一侧）。
@@ -118,4 +119,5 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   wipeConversationStore();
+  wipeTradingStateStore();
 });

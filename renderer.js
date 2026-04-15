@@ -225,9 +225,6 @@ function appendLlmRound(payload) {
     thumbRow.appendChild(btn);
   }
 
-  const systemText = typeof payload?.systemPrompt === "string" ? payload.systemPrompt.trim() : "";
-  const rowSystem = buildSystemPromptRow(systemText);
-
   const rowUser = document.createElement("div");
   rowUser.className = "llm-chat-row llm-chat-row--user";
   const bubbleUser = document.createElement("div");
@@ -252,7 +249,6 @@ function appendLlmRound(payload) {
   rowAsst.appendChild(bubbleAsst);
   const parts = [meta];
   if (thumbRow) parts.push(thumbRow);
-  if (rowSystem) parts.push(rowSystem);
   parts.push(rowUser, rowAsst);
   round.append(...parts);
   history.appendChild(round);

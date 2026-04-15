@@ -77,9 +77,6 @@ async function emitBarClose(winGetter, ctx) {
   const cfg = loadAppConfig();
   const textForLlm = buildUserPrompt(ctx.tvSymbol, ctx.periodLabel, ctx.candle);
   const barCloseId = crypto.randomUUID();
-  const symEntry = cfg.symbols.find((s) => s.value === ctx.tvSymbol);
-  const feed = inferFeed(ctx.tvSymbol, symEntry?.feed);
-  const systemPrompt = resolveSystemPrompt(cfg, feed);
 
   /** @type {{ enabled: boolean, streaming?: boolean, analysisText: string | null, skippedReason: string | null, error: string | null }} */
   const llm = {
@@ -104,7 +101,6 @@ async function emitBarClose(winGetter, ctx) {
     chartImage,
     chartCaptureError,
     textForLlm,
-    systemPrompt,
     llm,
   };
 
@@ -115,6 +111,9 @@ async function emitBarClose(winGetter, ctx) {
     return;
   }
 
+  const symEntry = cfg.symbols.find((s) => s.value === ctx.tvSymbol);
+  const feed = inferFeed(ctx.tvSymbol, symEntry?.feed);
+  const systemPrompt = resolveSystemPrompt(cfg, feed);
   const history = getHistoryMessages(convKey);
   const currentUserContent = buildMultimodalUserContent(
     textForLlm,

@@ -4,7 +4,7 @@
 const crypto = require("crypto");
 const { ipcMain } = require("electron");
 const { loadAppConfig } = require("./app-config");
-const { isLlmEnabled, buildUserPrompt, callOpenAIChat } = require("./llm");
+const { isLlmEnabled, buildUserPrompt, streamOpenAIChat } = require("./llm");
 
 /**
  * @param {import("electron").WebContents} webContents
@@ -64,38 +64,19 @@ async function emitBarClose(winGetter, ctx) {
 
   const cfg = loadAppConfig();
   const textForLlm = buildUserPrompt(ctx.tvSymbol, ctx.periodLabel, ctx.candle);
+  const barCloseId = crypto.randomUUID();
 
-  /** @type {{ enabled: boolean, analysisText: string | null, skippedReason: string | null, error: string | null }} */
+  /** @type {{ enabled: boolean, streaming?: boolean, analysisText: string | null, skippedReason: string | null, error: string | null }} */
   const llm = {
     enabled: isLlmEnabled(cfg),
     analysisText: null,
     skippedReason: null,
     error: null,
   };
-  if (!llm.enabled) {
-    llm.skippedReason =
-      "未调用 LLM：需设置 ARGUS_ENABLE_LLM=1，并在配置中心填写 API Key（或环境变量 OPENAI_API_KEY）。";
-  } else {
-    try {
-      const result = await callOpenAIChat(textForLlm, {
-        appConfig: cfg,
-        imageBase64: chartImage?.base64 ?? null,
-        mimeType: chartImage?.mimeType || "image/png",
-        baseUrl: cfg.openaiBaseUrl,
-        model: cfg.openaiModel,
-      });
-      if (result.ok) {
-        llm.analysisText = result.text;
-      } else {
-        llm.error = result.text;
-      }
-    } catch (e) {
-      llm.error = e.message || String(e);
-    }
-  }
 
-  const payload = {
+  const payloadBase = {
     kind: "bar_close",
+    barCloseId,
     source: ctx.source,
     tvSymbol: ctx.tvSymbol,
     interval: ctx.interval,
@@ -108,7 +89,40 @@ async function emitBarClose(winGetter, ctx) {
     llm,
   };
 
-  win.webContents.send("market-bar-close", payload);
+  if (!llm.enabled) {
+    llm.skippedReason =
+      "未调用 LLM：需设置 ARGUS_ENABLE_LLM=1，并在配置中心填写 API Key（或环境变量 OPENAI_API_KEY）。";
+    win.webContents.send("market-bar-close", payloadBase);
+    return;
+  }
+
+  llm.streaming = true;
+  llm.analysisText = "";
+  win.webContents.send("market-bar-close", payloadBase);
+
+  const streamOpts = {
+    appConfig: cfg,
+    imageBase64: chartImage?.base64 ?? null,
+    mimeType: chartImage?.mimeType || "image/png",
+    baseUrl: cfg.openaiBaseUrl,
+    model: cfg.openaiModel,
+  };
+
+  const result = await streamOpenAIChat(textForLlm, streamOpts, (ev) => {
+    if (ev.type === "delta") {
+      win.webContents.send("llm-stream-delta", { barCloseId, full: ev.full });
+    }
+  });
+
+  if (result.ok) {
+    llm.analysisText = result.text;
+    llm.streaming = false;
+    win.webContents.send("llm-stream-end", { barCloseId, analysisText: result.text });
+  } else {
+    llm.error = result.text;
+    llm.streaming = false;
+    win.webContents.send("llm-stream-error", { barCloseId, message: result.text });
+  }
 }
 
 module.exports = { emitBarClose, requestChartCapture };

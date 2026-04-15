@@ -14,26 +14,21 @@ function isLlmEnabled(cfg) {
 }
 
 /**
- * @param {string} userText K 线文字说明（textForLlm）
+ * @param {string} userText
  * @param {{
  *   appConfig: object,
  *   imageBase64?: string | null,
  *   mimeType?: string,
  *   baseUrl?: string,
  *   model?: string,
- * }} options appConfig 为 loadAppConfig()，用于解析 API Key 与开关
+ * }} options
+ * @param {boolean} stream
  */
-async function callOpenAIChat(userText, options = {}) {
+function buildChatCompletionRequest(userText, options, stream) {
   const cfg = options.appConfig;
-  if (!isLlmEnabled(cfg)) {
-    return { ok: false, text: "LLM 未启用。" };
-  }
   const apiKey = resolveOpenAiApiKey(cfg);
   if (!apiKey) {
-    return {
-      ok: false,
-      text: "未配置 API Key：请在配置中心填写，或设置环境变量 OPENAI_API_KEY。",
-    };
+    return { error: "未配置 API Key：请在配置中心填写，或设置环境变量 OPENAI_API_KEY。" };
   }
   const model =
     (options.model && String(options.model).trim()) ||
@@ -67,6 +62,7 @@ async function callOpenAIChat(userText, options = {}) {
   const body = {
     model,
     temperature: 0.3,
+    stream: !!stream,
     messages: [
       {
         role: "system",
@@ -77,13 +73,114 @@ async function callOpenAIChat(userText, options = {}) {
       { role: "user", content: userContent },
     ],
   };
-  const res = await fetch(url, {
-    method: "POST",
+
+  return {
+    url,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(body),
+    body,
+  };
+}
+
+/**
+ * 流式：解析 OpenAI 兼容 SSE（data: {json}\\n）
+ * @param {(ev: { type: 'delta', piece: string, full: string } | { type: 'done', full: string }) => void} onEvent
+ */
+async function streamOpenAIChat(userText, options, onEvent) {
+  const cfg = options.appConfig;
+  if (!isLlmEnabled(cfg)) {
+    return { ok: false, text: "LLM 未启用。" };
+  }
+  const req = buildChatCompletionRequest(userText, options, true);
+  if (req.error) {
+    return { ok: false, text: req.error };
+  }
+
+  const res = await fetch(req.url, {
+    method: "POST",
+    headers: req.headers,
+    body: JSON.stringify(req.body),
+  });
+
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    const errMsg = json?.error?.message || res.statusText || "请求失败";
+    return { ok: false, text: `LLM 请求错误：${errMsg}` };
+  }
+
+  if (!res.body) {
+    return { ok: false, text: "LLM 响应无正文（流式）。" };
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let carry = "";
+  let fullText = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      carry += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = carry.indexOf("\n")) >= 0) {
+        const line = carry.slice(0, nl).replace(/\r$/, "");
+        carry = carry.slice(nl + 1);
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const dataStr = trimmed.slice(5).trim();
+        if (dataStr === "[DONE]") continue;
+        let json;
+        try {
+          json = JSON.parse(dataStr);
+        } catch {
+          continue;
+        }
+        const piece = json.choices?.[0]?.delta?.content ?? "";
+        if (piece) {
+          fullText += piece;
+          onEvent({ type: "delta", piece, full: fullText });
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+
+  const trimmed = fullText.trim();
+  onEvent({ type: "done", full: trimmed });
+  if (!trimmed) {
+    return { ok: false, text: "LLM 返回为空。" };
+  }
+  return { ok: true, text: trimmed };
+}
+
+/**
+ * 非流式（备用）
+ * @param {{
+ *   appConfig: object,
+ *   imageBase64?: string | null,
+ *   mimeType?: string,
+ *   baseUrl?: string,
+ *   model?: string,
+ * }} options
+ */
+async function callOpenAIChat(userText, options = {}) {
+  const cfg = options.appConfig;
+  if (!isLlmEnabled(cfg)) {
+    return { ok: false, text: "LLM 未启用。" };
+  }
+  const req = buildChatCompletionRequest(userText, options, false);
+  if (req.error) {
+    return { ok: false, text: req.error };
+  }
+
+  const res = await fetch(req.url, {
+    method: "POST",
+    headers: req.headers,
+    body: JSON.stringify(req.body),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -110,4 +207,10 @@ function buildUserPrompt(symbol, periodKey, candle) {
     .join("\n");
 }
 
-module.exports = { callOpenAIChat, buildUserPrompt, isLlmEnabled, resolveOpenAiApiKey };
+module.exports = {
+  callOpenAIChat,
+  streamOpenAIChat,
+  buildUserPrompt,
+  isLlmEnabled,
+  resolveOpenAiApiKey,
+};

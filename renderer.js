@@ -63,6 +63,9 @@ const FALLBACK_APP_CONFIG = {
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
 let chartInterval = "5";
 
+/** 当前最近一次收盘推送 id，用于忽略过期的流式片段 */
+let latestBarCloseId = null;
+
 async function loadAppConfig() {
   if (window.argus && typeof window.argus.getConfig === "function") {
     try {
@@ -425,6 +428,7 @@ function bindMarketBarClose() {
     const bubbleUser = document.getElementById("llm-bubble-user");
     const bubbleAsst = document.getElementById("llm-bubble-assistant");
 
+    latestBarCloseId = payload?.barCloseId ?? null;
     window.argusLastBarClose = payload;
     if (payload?.chartImage?.dataUrl) {
       setLastChartScreenshot(payload.chartImage.dataUrl);
@@ -432,12 +436,18 @@ function bindMarketBarClose() {
 
     const llm = payload?.llm;
     const showChat =
-      llm?.enabled && (llm.analysisText || llm.error) && bubbleUser && bubbleAsst && chatStrip;
+      llm?.enabled &&
+      (llm.streaming || llm.analysisText || llm.error) &&
+      bubbleUser &&
+      bubbleAsst &&
+      chatStrip;
     if (showChat) {
       chatStrip.hidden = false;
       bubbleUser.textContent = truncateText(payload?.textForLlm || "", 320);
       bubbleAsst.classList.remove("llm-bubble--error");
-      if (llm.analysisText) {
+      if (llm.streaming) {
+        bubbleAsst.textContent = "…";
+      } else if (llm.analysisText) {
         bubbleAsst.textContent = llm.analysisText;
       } else {
         bubbleAsst.textContent = llm.error || "";
@@ -455,6 +465,8 @@ function bindMarketBarClose() {
     if (status) {
       if (payload?.chartCaptureError) {
         status.textContent = "收盘（截图异常）";
+      } else if (llm?.enabled && llm.streaming) {
+        status.textContent = "LLM 输出中…";
       } else if (llm?.enabled && llm.analysisText) {
         status.textContent = "收盘 · LLM 已分析";
       } else if (llm?.enabled && llm.error) {
@@ -464,6 +476,52 @@ function bindMarketBarClose() {
       }
     }
   });
+}
+
+function bindLlmStream() {
+  if (typeof window.argus === "undefined") return;
+  const { onLlmStreamDelta, onLlmStreamEnd, onLlmStreamError } = window.argus;
+  if (typeof onLlmStreamDelta === "function") {
+    onLlmStreamDelta(({ barCloseId, full }) => {
+      if (barCloseId !== latestBarCloseId) return;
+      const bubbleAsst = document.getElementById("llm-bubble-assistant");
+      const status = document.getElementById("llm-status");
+      if (bubbleAsst) {
+        bubbleAsst.textContent = full;
+        bubbleAsst.classList.remove("llm-bubble--error");
+      }
+      if (status) status.textContent = "LLM 输出中…";
+    });
+  }
+  if (typeof onLlmStreamEnd === "function") {
+    onLlmStreamEnd(({ barCloseId, analysisText }) => {
+      if (barCloseId !== latestBarCloseId) return;
+      if (window.argusLastBarClose?.llm) {
+        window.argusLastBarClose.llm.analysisText = analysisText;
+        window.argusLastBarClose.llm.streaming = false;
+        window.argusLastBarClose.llm.error = null;
+      }
+      const status = document.getElementById("llm-status");
+      if (status) status.textContent = "收盘 · LLM 已分析";
+    });
+  }
+  if (typeof onLlmStreamError === "function") {
+    onLlmStreamError(({ barCloseId, message }) => {
+      if (barCloseId !== latestBarCloseId) return;
+      const bubbleAsst = document.getElementById("llm-bubble-assistant");
+      if (bubbleAsst) {
+        bubbleAsst.textContent = message || "错误";
+        bubbleAsst.classList.add("llm-bubble--error");
+      }
+      if (window.argusLastBarClose?.llm) {
+        window.argusLastBarClose.llm.error = message;
+        window.argusLastBarClose.llm.streaming = false;
+        window.argusLastBarClose.llm.analysisText = null;
+      }
+      const status = document.getElementById("llm-status");
+      if (status) status.textContent = "收盘 · LLM 失败";
+    });
+  }
 }
 
 function bindMarketStatus() {
@@ -488,5 +546,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   initChartCaptureBridge();
   initConfigCenter();
   bindMarketBarClose();
+  bindLlmStream();
   bindMarketStatus();
 });

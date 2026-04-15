@@ -17,6 +17,21 @@ contextBridge.exposeInMainWorld("argus", {
       callback(payload);
     });
   },
+  onLlmStreamDelta: (callback) => {
+    ipcRenderer.on("llm-stream-delta", (_event, payload) => {
+      callback(payload);
+    });
+  },
+  onLlmStreamEnd: (callback) => {
+    ipcRenderer.on("llm-stream-end", (_event, payload) => {
+      callback(payload);
+    });
+  },
+  onLlmStreamError: (callback) => {
+    ipcRenderer.on("llm-stream-error", (_event, payload) => {
+      callback(payload);
+    });
+  },
   setMarketContext: (tvSymbol) => ipcRenderer.invoke("market:set-context", tvSymbol),
   requestAnalysis: (payload) => ipcRenderer.invoke("llm-request-analysis", payload),
   getConfig: () => ipcRenderer.invoke("config:get"),

@@ -52,11 +52,6 @@
                 <div class="llm-bubble llm-bubble--assistant" id="llm-bubble-assistant"></div>
               </div>
             </div>
-            <div class="llm-placeholder" id="llm-placeholder">
-              K 线收盘后会自动截取左侧图表并推送结构化数据（见下方 JSON）。完整上下文见
-              <code>window.argusLastBarClose</code>。启用 OpenAI 分析请设置环境变量
-              <code>ARGUS_ENABLE_LLM=1</code> 与 <code>OPENAI_API_KEY</code> 后重启应用；启用后下方会出现左右气泡式「数据 → 模型回复」摘要。
-            </div>
             <pre class="llm-output" id="llm-output" hidden></pre>
           </div>
         </section>
@@ -100,6 +95,32 @@
             <option value="240">4 小时</option>
             <option value="D">日线</option>
           </select>
+        </div>
+        <div class="config-section-title">LLM（OpenAI 兼容接口）</div>
+        <p class="modal-hint modal-hint-llm">
+          API Key 请使用环境变量 <code>OPENAI_API_KEY</code>，不写入配置文件。启用分析需 <code>ARGUS_ENABLE_LLM=1</code>。
+        </p>
+        <div class="config-interval-row">
+          <label for="config-openai-base-url">API 根 URL</label>
+          <input
+            type="text"
+            id="config-openai-base-url"
+            class="config-in config-openai-input"
+            placeholder="https://api.openai.com/v1"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-openai-model">模型 model</label>
+          <input
+            type="text"
+            id="config-openai-model"
+            class="config-in config-openai-input"
+            placeholder="gpt-4o-mini"
+            spellcheck="false"
+            autocomplete="off"
+          />
         </div>
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="btn-config-cancel">取消</button>

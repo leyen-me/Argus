@@ -8,7 +8,12 @@ function isLlmEnabled() {
 
 /**
  * @param {string} userText K 线文字说明（textForLlm）
- * @param {{ imageBase64?: string | null, mimeType?: string }} [options] 若有截图则走多模态（需视觉模型，如 gpt-4o-mini）
+ * @param {{
+ *   imageBase64?: string | null,
+ *   mimeType?: string,
+ *   baseUrl?: string,
+ *   model?: string,
+ * }} [options] 截图多模态；baseUrl/model 优先来自应用配置，未配置时可用环境变量 OPENAI_BASE_URL / OPENAI_MODEL
  */
 async function callOpenAIChat(userText, options = {}) {
   if (!isLlmEnabled()) {
@@ -21,8 +26,15 @@ async function callOpenAIChat(userText, options = {}) {
       text: "未设置 OPENAI_API_KEY。请在启动环境中配置后重启应用。",
     };
   }
-  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
-  const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+  const model =
+    (options.model && String(options.model).trim()) ||
+    process.env.OPENAI_MODEL ||
+    "gpt-4o-mini";
+  const baseRaw =
+    (options.baseUrl && String(options.baseUrl).trim()) ||
+    process.env.OPENAI_BASE_URL ||
+    "https://api.openai.com/v1";
+  const base = baseRaw.replace(/\/+$/, "");
   const url = `${base}/chat/completions`;
 
   const imageBase64 = options.imageBase64 && String(options.imageBase64).trim();

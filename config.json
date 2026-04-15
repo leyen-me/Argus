@@ -6,5 +6,7 @@
     { "label": "QQQ", "value": "NASDAQ:QQQ" }
   ],
   "defaultSymbol": "BINANCE:BTCUSDT",
-  "interval": "5"
+  "interval": "5",
+  "openaiBaseUrl": "https://api.openai.com/v1",
+  "openaiModel": "gpt-4o-mini"
 }

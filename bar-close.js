@@ -3,6 +3,7 @@
  */
 const crypto = require("crypto");
 const { ipcMain } = require("electron");
+const { loadAppConfig } = require("./app-config");
 const { isLlmEnabled, buildUserPrompt, callOpenAIChat } = require("./llm");
 
 /**
@@ -75,9 +76,12 @@ async function emitBarClose(winGetter, ctx) {
       "未调用 LLM：需同时设置 ARGUS_ENABLE_LLM=1 与 OPENAI_API_KEY（当前仅收集数据与截图）。";
   } else {
     try {
+      const cfg = loadAppConfig();
       const result = await callOpenAIChat(textForLlm, {
         imageBase64: chartImage?.base64 ?? null,
         mimeType: chartImage?.mimeType || "image/png",
+        baseUrl: cfg.openaiBaseUrl,
+        model: cfg.openaiModel,
       });
       if (result.ok) {
         llm.analysisText = result.text;

@@ -215,20 +215,6 @@ body {
   padding: 12px 14px;
 }
 
-.llm-placeholder {
-  font-size: 13px;
-  line-height: 1.6;
-  color: #8b949e;
-}
-
-.llm-placeholder code {
-  font-size: 12px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #21262d;
-  color: #79c0ff;
-}
-
 .llm-chat-strip {
   margin-bottom: 14px;
   display: flex;
@@ -489,6 +475,36 @@ body {
 .config-interval-select {
   flex: 1;
   min-width: 0;
+}
+
+.config-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8b949e;
+  margin: 4px 0 0;
+}
+
+.modal-hint-llm {
+  margin: 8px 0 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #8b949e;
+}
+
+.modal-hint-llm code {
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #21262d;
+  color: #79c0ff;
+}
+
+.config-openai-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
 }
 
 .modal-actions {

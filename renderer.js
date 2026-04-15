@@ -55,6 +55,8 @@ const FALLBACK_APP_CONFIG = {
   ],
   defaultSymbol: "BINANCE:BTCUSDT",
   interval: "5",
+  openaiBaseUrl: "https://api.openai.com/v1",
+  openaiModel: "gpt-4o-mini",
 };
 
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
@@ -189,6 +191,10 @@ function initConfigCenter() {
     fillDefaultSymbolSelect(cfg.symbols, cfg.defaultSymbol);
     const intSel = document.getElementById("config-interval");
     if (intSel) intSel.value = cfg.interval || "5";
+    const openaiUrlEl = document.getElementById("config-openai-base-url");
+    const openaiModelEl = document.getElementById("config-openai-model");
+    if (openaiUrlEl) openaiUrlEl.value = cfg.openaiBaseUrl || FALLBACK_APP_CONFIG.openaiBaseUrl;
+    if (openaiModelEl) openaiModelEl.value = cfg.openaiModel || FALLBACK_APP_CONFIG.openaiModel;
     modal.hidden = false;
   };
 
@@ -239,6 +245,10 @@ function initConfigCenter() {
     }
     const intEl = document.getElementById("config-interval");
     const interval = intEl?.value?.trim() || "5";
+    const openaiUrlEl = document.getElementById("config-openai-base-url");
+    const openaiModelEl = document.getElementById("config-openai-model");
+    const openaiBaseUrl = openaiUrlEl?.value?.trim() ?? "";
+    const openaiModel = openaiModelEl?.value?.trim() ?? "";
 
     if (!window.argus || typeof window.argus.saveConfig !== "function") {
       applySymbolSelect({ symbols, defaultSymbol });
@@ -248,7 +258,13 @@ function initConfigCenter() {
       return;
     }
     try {
-      const saved = await window.argus.saveConfig({ symbols, defaultSymbol, interval });
+      const saved = await window.argus.saveConfig({
+        symbols,
+        defaultSymbol,
+        interval,
+        openaiBaseUrl,
+        openaiModel,
+      });
       applySymbolSelect(saved);
       chartInterval = saved.interval || interval;
       createTradingViewWidget(saved.defaultSymbol);
@@ -424,7 +440,6 @@ function bindMarketBarClose() {
     return;
   }
   window.argus.onMarketBarClose((payload) => {
-    const placeholder = document.getElementById("llm-placeholder");
     const output = document.getElementById("llm-output");
     const status = document.getElementById("llm-status");
     const imgEl = document.getElementById("chart-screenshot-img");
@@ -457,7 +472,6 @@ function bindMarketBarClose() {
       chatStrip.hidden = true;
     }
 
-    if (placeholder) placeholder.hidden = true;
     if (output) {
       output.hidden = false;
       output.textContent = formatBarClosePreview(payload);

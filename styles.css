@@ -80,7 +80,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 12px;
   border-bottom: 1px solid #21262d;
   background: #161b22;
   -webkit-app-region: no-drag;
@@ -95,12 +97,15 @@ body {
 }
 
 .symbol-select {
-  padding: 4px 10px;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 10px;
   border-radius: 6px;
   border: 1px solid #30363d;
   background: #0d1117;
   color: #e6edf3;
   font-size: 13px;
+  line-height: 26px;
   cursor: pointer;
   -webkit-app-region: no-drag;
 }
@@ -117,10 +122,18 @@ body {
 }
 
 .panel-badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
   background: #21262d;
+  font-size: 12px;
+  line-height: 1;
   color: #3fb950;
 }
 

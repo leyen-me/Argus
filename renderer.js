@@ -412,6 +412,35 @@ function initDevToolsButton() {
   });
 }
 
+function initFishMode() {
+  const btn = document.getElementById("btn-fish-mode");
+  const overlay = document.getElementById("fish-mode-overlay");
+  if (!btn || !overlay) return;
+
+  const setActive = (on) => {
+    overlay.hidden = !on;
+    overlay.setAttribute("aria-hidden", on ? "false" : "true");
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.classList.toggle("titlebar-config--fish-active", on);
+    btn.textContent = on ? "摸鱼中…" : "摸鱼模式";
+  };
+
+  btn.addEventListener("click", () => {
+    setActive(overlay.hidden);
+  });
+
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key !== "Escape" || overlay.hidden) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setActive(false);
+    },
+    true,
+  );
+}
+
 function initConfigCenter() {
   const modal = document.getElementById("config-modal");
   const btnOpen = document.getElementById("btn-open-config");
@@ -890,6 +919,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initChartCaptureBridge();
   initConfigCenter();
   initDevToolsButton();
+  initFishMode();
   initLlmChartPreview();
   bindMarketBarClose();
   bindLlmStream();

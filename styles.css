@@ -764,3 +764,56 @@ body {
 .btn-primary:hover {
   background: #2ea043;
 }
+
+/* 摸鱼模式：全屏遮挡，避免他人看到主界面内容 */
+.fish-mode-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: #1e2228;
+  -webkit-app-region: no-drag;
+}
+
+.fish-mode-overlay[hidden] {
+  display: none;
+}
+
+.fish-mode-panel {
+  text-align: center;
+  max-width: 360px;
+}
+
+.fish-mode-title {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #8b949e;
+}
+
+.fish-mode-hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #6e7681;
+}
+
+.fish-mode-kbd {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #30363d;
+  background: #21262d;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  color: #c9d1d9;
+}
+
+.titlebar-config--fish-active {
+  border-color: #388bfd;
+  background: #1f2a3d;
+  color: #58a6ff;
+}

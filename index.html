@@ -17,6 +17,15 @@
         <span class="titlebar-title">Argus</span>
         <span class="titlebar-hint">左侧 TradingView · 右侧 LLM 分析</span>
         <div class="titlebar-actions">
+          <button
+            type="button"
+            class="titlebar-config"
+            id="btn-fish-mode"
+            title="全屏遮挡主界面；按 Esc 关闭"
+            aria-pressed="false"
+          >
+            摸鱼模式
+          </button>
           <button type="button" class="titlebar-config" id="btn-open-devtools" title="开发者工具">
             控制台
           </button>
@@ -175,6 +184,21 @@
           <button type="button" class="btn-secondary" id="btn-config-cancel">取消</button>
           <button type="button" class="btn-primary" id="btn-config-save">保存</button>
         </div>
+      </div>
+    </div>
+
+    <div
+      class="fish-mode-overlay"
+      id="fish-mode-overlay"
+      hidden
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="fish-mode-title"
+    >
+      <div class="fish-mode-panel">
+        <p class="fish-mode-title" id="fish-mode-title">屏幕已遮挡</p>
+        <p class="fish-mode-hint">按 <kbd class="fish-mode-kbd">Esc</kbd> 退出摸鱼模式</p>
       </div>
     </div>
 

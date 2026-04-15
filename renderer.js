@@ -82,6 +82,96 @@ let latestBarCloseId = null;
 const LLM_HISTORY_MAX_ROUNDS = 40;
 
 /**
+ * 与 `market.inferFeed` 一致：界面侧按当前品种解析将使用哪条系统提示词。
+ * @param {string} tvSymbol
+ * @param {{ feed?: string } | undefined} symEntry 配置中该品种行
+ */
+function inferFeedForSymbol(tvSymbol, symEntry) {
+  const explicit = symEntry?.feed;
+  if (explicit === "crypto" || explicit === "longbridge") return explicit;
+  const v = String(tvSymbol || "").trim();
+  if (v.startsWith("BINANCE:")) return "crypto";
+  return "longbridge";
+}
+
+/**
+ * @param {object} cfg `loadAppConfig()` 结果
+ * @param {string} tvSymbol
+ */
+function resolveSystemPromptForUi(cfg, tvSymbol) {
+  const c = cfg || FALLBACK_APP_CONFIG;
+  const symEntry = c.symbols?.find((s) => s.value === tvSymbol);
+  const feed = inferFeedForSymbol(tvSymbol, symEntry);
+  if (feed === "crypto") {
+    return c.systemPromptCrypto ?? FALLBACK_APP_CONFIG.systemPromptCrypto;
+  }
+  return c.systemPromptStocks ?? FALLBACK_APP_CONFIG.systemPromptStocks;
+}
+
+/**
+ * @param {string} systemText
+ * @returns {HTMLElement | null}
+ */
+function buildSystemPromptRow(systemText) {
+  const t = String(systemText || "").trim();
+  if (!t) return null;
+  const rowSystem = document.createElement("div");
+  rowSystem.className = "llm-chat-row llm-chat-row--system";
+  const wrap = document.createElement("div");
+  wrap.className = "llm-system-wrap";
+  const lab = document.createElement("div");
+  lab.className = "llm-system-label";
+  lab.textContent = "系统提示词";
+  const bubbleSys = document.createElement("div");
+  bubbleSys.className = "llm-bubble llm-bubble--system";
+  bubbleSys.textContent = t;
+  wrap.append(lab, bubbleSys);
+  rowSystem.appendChild(wrap);
+  return rowSystem;
+}
+
+/**
+ * 启动后 / 切换品种时：右侧顶部展示当前将使用的系统提示词（无需等 K 线收盘）。
+ * @param {object} cfg
+ * @param {string} tvSymbol
+ */
+function updateCurrentSystemPromptPreview(cfg, tvSymbol) {
+  const root = document.getElementById("llm-current-system");
+  if (!root) return;
+  root.replaceChildren();
+  const sym = String(tvSymbol || "").trim() || "—";
+  const c = cfg || FALLBACK_APP_CONFIG;
+  const symEntry = c.symbols?.find((s) => s.value === tvSymbol);
+  const feed = inferFeedForSymbol(tvSymbol, symEntry);
+  const routeLabel = feed === "crypto" ? "币圈（7×24）" : "股票 / 长桥";
+  const meta = document.createElement("div");
+  meta.className = "llm-current-system-meta";
+  meta.textContent = `当前图表：${sym} · 路由：${routeLabel}`;
+  const text = String(resolveSystemPromptForUi(c, tvSymbol) || "").trim();
+  const row = buildSystemPromptRow(text);
+  root.appendChild(meta);
+  if (row) {
+    root.appendChild(row);
+  } else {
+    const hint = document.createElement("div");
+    hint.className = "llm-current-system-empty";
+    hint.textContent = "（未配置系统提示词）";
+    root.appendChild(hint);
+  }
+}
+
+async function refreshCurrentSystemPromptPreview() {
+  const cfg = await loadAppConfig();
+  const sel = document.getElementById("symbol-select");
+  const sym =
+    sel?.value?.trim() ||
+    cfg.defaultSymbol ||
+    cfg.symbols[0]?.value ||
+    "BINANCE:BTCUSDT";
+  updateCurrentSystemPromptPreview(cfg, sym);
+}
+
+/**
  * @param {string} barCloseId
  * @returns {HTMLElement | null}
  */
@@ -135,6 +225,9 @@ function appendLlmRound(payload) {
     thumbRow.appendChild(btn);
   }
 
+  const systemText = typeof payload?.systemPrompt === "string" ? payload.systemPrompt.trim() : "";
+  const rowSystem = buildSystemPromptRow(systemText);
+
   const rowUser = document.createElement("div");
   rowUser.className = "llm-chat-row llm-chat-row--user";
   const bubbleUser = document.createElement("div");
@@ -157,11 +250,11 @@ function appendLlmRound(payload) {
 
   rowUser.appendChild(bubbleUser);
   rowAsst.appendChild(bubbleAsst);
-  if (thumbRow) {
-    round.append(meta, thumbRow, rowUser, rowAsst);
-  } else {
-    round.append(meta, rowUser, rowAsst);
-  }
+  const parts = [meta];
+  if (thumbRow) parts.push(thumbRow);
+  if (rowSystem) parts.push(rowSystem);
+  parts.push(rowUser, rowAsst);
+  round.append(...parts);
   history.appendChild(round);
   history.hidden = false;
 
@@ -378,6 +471,18 @@ function initConfigCenter() {
       applySymbolSelect({ symbols, defaultSymbol });
       chartInterval = interval;
       createTradingViewWidget(defaultSymbol);
+      const selAfter = document.getElementById("symbol-select");
+      updateCurrentSystemPromptPreview(
+        {
+          ...FALLBACK_APP_CONFIG,
+          symbols,
+          defaultSymbol,
+          interval,
+          systemPromptCrypto,
+          systemPromptStocks,
+        },
+        selAfter?.value?.trim() || defaultSymbol,
+      );
       closeModal();
       return;
     }
@@ -395,6 +500,7 @@ function initConfigCenter() {
       applySymbolSelect(saved);
       chartInterval = saved.interval || interval;
       createTradingViewWidget(saved.defaultSymbol);
+      void refreshCurrentSystemPromptPreview();
       closeModal();
     } catch (err) {
       console.error(err);
@@ -485,6 +591,7 @@ function initSymbolSelect() {
     if (window.argus && typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(sel.value);
     }
+    void refreshCurrentSystemPromptPreview();
   });
 }
 
@@ -712,6 +819,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   applySymbolSelect(cfg);
   const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "BINANCE:BTCUSDT";
   createTradingViewWidget(sym, chartInterval);
+  const sel = document.getElementById("symbol-select");
+  updateCurrentSystemPromptPreview(cfg, sel?.value?.trim() || sym);
   if (window.argus && typeof window.argus.setMarketContext === "function") {
     window.argus.setMarketContext(sym);
   }

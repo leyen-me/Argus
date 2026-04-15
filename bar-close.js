@@ -4,7 +4,15 @@
 const crypto = require("crypto");
 const { ipcMain } = require("electron");
 const { loadAppConfig } = require("./app-config");
-const { isLlmEnabled, buildUserPrompt, streamOpenAIChat } = require("./llm");
+const { conversationKey, getHistoryMessages, appendSuccessfulTurn } = require("./llm-context");
+const {
+  isLlmEnabled,
+  buildUserPrompt,
+  streamOpenAIChat,
+  buildMultimodalUserContent,
+  buildUserTextForHistory,
+  SYSTEM_PROMPT,
+} = require("./llm");
 
 /**
  * @param {import("electron").WebContents} webContents
@@ -74,9 +82,12 @@ async function emitBarClose(winGetter, ctx) {
     error: null,
   };
 
+  const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
+
   const payloadBase = {
     kind: "bar_close",
     barCloseId,
+    conversationKey: convKey,
     source: ctx.source,
     tvSymbol: ctx.tvSymbol,
     interval: ctx.interval,
@@ -102,13 +113,23 @@ async function emitBarClose(winGetter, ctx) {
 
   const streamOpts = {
     appConfig: cfg,
-    imageBase64: chartImage?.base64 ?? null,
-    mimeType: chartImage?.mimeType || "image/png",
     baseUrl: cfg.openaiBaseUrl,
     model: cfg.openaiModel,
   };
 
-  const result = await streamOpenAIChat(textForLlm, streamOpts, (ev) => {
+  const history = getHistoryMessages(convKey);
+  const currentUserContent = buildMultimodalUserContent(
+    textForLlm,
+    chartImage?.base64 ?? null,
+    chartImage?.mimeType || "image/png",
+  );
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...history,
+    { role: "user", content: currentUserContent },
+  ];
+
+  const result = await streamOpenAIChat(messages, streamOpts, (ev) => {
     if (ev.type === "delta") {
       win.webContents.send("llm-stream-delta", { barCloseId, full: ev.full });
     }
@@ -117,6 +138,11 @@ async function emitBarClose(winGetter, ctx) {
   if (result.ok) {
     llm.analysisText = result.text;
     llm.streaming = false;
+    appendSuccessfulTurn(
+      convKey,
+      buildUserTextForHistory(textForLlm, !!chartImage?.base64),
+      result.text,
+    );
     win.webContents.send("llm-stream-end", { barCloseId, analysisText: result.text });
   } else {
     llm.error = result.text;

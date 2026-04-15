@@ -163,22 +163,47 @@ body {
 }
 
 .llm-body {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: 12px 14px;
 }
 
-.llm-chat-strip {
-  margin-bottom: 14px;
+.llm-chat-history {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
-/* `hidden` 默认会被后面的 display:flex 盖掉，空气泡仍会露出浅灰/浅绿框 */
-.llm-chat-strip[hidden] {
+.llm-chat-history[hidden] {
   display: none !important;
+}
+
+.llm-round {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #21262d;
+}
+
+.llm-round:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.llm-round-meta {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #6e7681;
 }
 
 .llm-chat-row {

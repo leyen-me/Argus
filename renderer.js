@@ -66,6 +66,77 @@ let chartInterval = "5";
 /** 当前最近一次收盘推送 id，用于忽略过期的流式片段 */
 let latestBarCloseId = null;
 
+/** 右侧保留的「收盘 + LLM」轮数上限，避免 DOM 无限增长 */
+const LLM_HISTORY_MAX_ROUNDS = 40;
+
+/**
+ * @param {string} barCloseId
+ * @returns {HTMLElement | null}
+ */
+function findAssistantBubbleForBar(barCloseId) {
+  if (!barCloseId) return null;
+  const id = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(barCloseId) : barCloseId;
+  return document.querySelector(
+    `#llm-chat-history .llm-round[data-bar-close-id="${id}"] .llm-bubble--assistant`,
+  );
+}
+
+/**
+ * 每根 K 线收盘且启用 LLM 时追加一轮（左用户摘要 / 右模型回复），流式时先占位「…」。
+ * @returns {HTMLElement | null} 本轮助手气泡，便于调试
+ */
+function appendLlmRound(payload) {
+  const history = document.getElementById("llm-chat-history");
+  const llm = payload?.llm;
+  const barCloseId = payload?.barCloseId;
+  if (!history || !barCloseId || !llm?.enabled) return null;
+
+  const round = document.createElement("div");
+  round.className = "llm-round";
+  round.dataset.barCloseId = barCloseId;
+
+  const meta = document.createElement("div");
+  meta.className = "llm-round-meta";
+  const cap = payload.capturedAt
+    ? new Date(payload.capturedAt).toLocaleString("zh-CN", { hour12: false })
+    : "";
+  meta.textContent = [payload.tvSymbol, cap, payload.conversationKey ? "多轮上下文" : ""]
+    .filter(Boolean)
+    .join(" · ");
+
+  const rowUser = document.createElement("div");
+  rowUser.className = "llm-chat-row llm-chat-row--user";
+  const bubbleUser = document.createElement("div");
+  bubbleUser.className = "llm-bubble llm-bubble--user";
+  bubbleUser.textContent = truncateText(payload?.textForLlm || "", 400);
+
+  const rowAsst = document.createElement("div");
+  rowAsst.className = "llm-chat-row llm-chat-row--assistant";
+  const bubbleAsst = document.createElement("div");
+  bubbleAsst.className = "llm-bubble llm-bubble--assistant";
+  bubbleAsst.classList.remove("llm-bubble--error");
+  if (llm.streaming) {
+    bubbleAsst.textContent = "…";
+  } else if (llm.analysisText) {
+    bubbleAsst.textContent = llm.analysisText;
+  } else {
+    bubbleAsst.textContent = llm.error || "";
+    bubbleAsst.classList.add("llm-bubble--error");
+  }
+
+  rowUser.appendChild(bubbleUser);
+  rowAsst.appendChild(bubbleAsst);
+  round.append(meta, rowUser, rowAsst);
+  history.appendChild(round);
+  history.hidden = false;
+
+  while (history.children.length > LLM_HISTORY_MAX_ROUNDS) {
+    history.removeChild(history.firstChild);
+  }
+  history.scrollTop = history.scrollHeight;
+  return bubbleAsst;
+}
+
 async function loadAppConfig() {
   if (window.argus && typeof window.argus.getConfig === "function") {
     try {
@@ -424,9 +495,6 @@ function bindMarketBarClose() {
   }
   window.argus.onMarketBarClose((payload) => {
     const status = document.getElementById("llm-status");
-    const chatStrip = document.getElementById("llm-chat-strip");
-    const bubbleUser = document.getElementById("llm-bubble-user");
-    const bubbleAsst = document.getElementById("llm-bubble-assistant");
 
     latestBarCloseId = payload?.barCloseId ?? null;
     window.argusLastBarClose = payload;
@@ -435,26 +503,11 @@ function bindMarketBarClose() {
     }
 
     const llm = payload?.llm;
-    const showChat =
+    const showRound =
       llm?.enabled &&
-      (llm.streaming || llm.analysisText || llm.error) &&
-      bubbleUser &&
-      bubbleAsst &&
-      chatStrip;
-    if (showChat) {
-      chatStrip.hidden = false;
-      bubbleUser.textContent = truncateText(payload?.textForLlm || "", 320);
-      bubbleAsst.classList.remove("llm-bubble--error");
-      if (llm.streaming) {
-        bubbleAsst.textContent = "…";
-      } else if (llm.analysisText) {
-        bubbleAsst.textContent = llm.analysisText;
-      } else {
-        bubbleAsst.textContent = llm.error || "";
-        bubbleAsst.classList.add("llm-bubble--error");
-      }
-    } else if (chatStrip) {
-      chatStrip.hidden = true;
+      (llm.streaming === true || Boolean(llm.analysisText) || Boolean(llm.error));
+    if (showRound) {
+      appendLlmRound(payload);
     }
 
     try {
@@ -484,13 +537,15 @@ function bindLlmStream() {
   if (typeof onLlmStreamDelta === "function") {
     onLlmStreamDelta(({ barCloseId, full }) => {
       if (barCloseId !== latestBarCloseId) return;
-      const bubbleAsst = document.getElementById("llm-bubble-assistant");
+      const bubbleAsst = findAssistantBubbleForBar(barCloseId);
       const status = document.getElementById("llm-status");
       if (bubbleAsst) {
         bubbleAsst.textContent = full;
         bubbleAsst.classList.remove("llm-bubble--error");
       }
       if (status) status.textContent = "LLM 输出中…";
+      const history = document.getElementById("llm-chat-history");
+      if (history) history.scrollTop = history.scrollHeight;
     });
   }
   if (typeof onLlmStreamEnd === "function") {
@@ -508,7 +563,7 @@ function bindLlmStream() {
   if (typeof onLlmStreamError === "function") {
     onLlmStreamError(({ barCloseId, message }) => {
       if (barCloseId !== latestBarCloseId) return;
-      const bubbleAsst = document.getElementById("llm-bubble-assistant");
+      const bubbleAsst = findAssistantBubbleForBar(barCloseId);
       if (bubbleAsst) {
         bubbleAsst.textContent = message || "错误";
         bubbleAsst.classList.add("llm-bubble--error");

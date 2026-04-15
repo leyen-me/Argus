@@ -13,18 +13,51 @@ function isLlmEnabled(cfg) {
   return process.env.ARGUS_ENABLE_LLM === "1" && !!resolveOpenAiApiKey(cfg);
 }
 
+const SYSTEM_PROMPT =
+  "你是资深市场分析助手。用户会进行**多轮对话**：每轮提供一根**已收盘确认**的 K 线数据，必要时附带当前图表截图。" +
+  "请结合**此前对话中你已给出的判断**，与本轮新数据衔接分析，用简体中文作答：短期趋势、关键价位与观察点、风险提醒。" +
+  "单轮回复仍宜简洁（约 200 字内），勿输出 Markdown 代码块。";
+
 /**
- * @param {string} userText
- * @param {{
- *   appConfig: object,
- *   imageBase64?: string | null,
- *   mimeType?: string,
- *   baseUrl?: string,
- *   model?: string,
- * }} options
+ * 本轮发给 API 的 user 内容（含多模态）；历史轮仅存纯文本，见 llm-context。
+ */
+function buildMultimodalUserContent(userText, imageBase64, mimeType) {
+  const image = imageBase64 && String(imageBase64).trim();
+  const mt = mimeType || "image/png";
+  if (image) {
+    return [
+      {
+        type: "text",
+        text:
+          userText +
+          "\n\n（附图：当前 TradingView 图表截图，请结合上文 OHLC 与成交量一并分析。）",
+      },
+      {
+        type: "image_url",
+        image_url: { url: `data:${mt};base64,${image}` },
+      },
+    ];
+  }
+  return userText;
+}
+
+/**
+ * 写入持久化历史的用户文本（与本轮 user 中文字部分一致，便于模型下次读到同一语义）。
+ */
+function buildUserTextForHistory(userText, hasImage) {
+  if (!hasImage) return userText;
+  return (
+    userText +
+    "\n\n（附图：当前 TradingView 图表截图，已与本条一并提交模型；更早轮次在历史中仅保存文字。）"
+  );
+}
+
+/**
+ * @param {Array<{ role: string, content: unknown }>} messages 须已含 system + 可选历史 + 本轮 user
+ * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
  * @param {boolean} stream
  */
-function buildChatCompletionRequest(userText, options, stream) {
+function buildChatCompletionRequestFromMessages(messages, options, stream) {
   const cfg = options.appConfig;
   const apiKey = resolveOpenAiApiKey(cfg);
   if (!apiKey) {
@@ -41,37 +74,11 @@ function buildChatCompletionRequest(userText, options, stream) {
   const base = baseRaw.replace(/\/+$/, "");
   const url = `${base}/chat/completions`;
 
-  const imageBase64 = options.imageBase64 && String(options.imageBase64).trim();
-  const mimeType = options.mimeType || "image/png";
-  const userContent =
-    imageBase64
-      ? [
-          {
-            type: "text",
-            text:
-              userText +
-              "\n\n（附图：当前 TradingView 图表截图，请结合上文 OHLC 与成交量一并分析。）",
-          },
-          {
-            type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-          },
-        ]
-      : userText;
-
   const body = {
     model,
     temperature: 0.3,
     stream: !!stream,
-    messages: [
-      {
-        role: "system",
-        content:
-          "你是资深市场分析助手。根据用户给出的单根 K 线（已收盘确认）数据，用简体中文给出简洁分析：" +
-          "短期趋势判断、关键观察点、风险提醒。若有图表截图，请结合价位与形态简述。控制在 200 字以内，勿输出 Markdown 代码块。",
-      },
-      { role: "user", content: userContent },
-    ],
+    messages,
   };
 
   return {
@@ -85,15 +92,31 @@ function buildChatCompletionRequest(userText, options, stream) {
 }
 
 /**
- * 流式：解析 OpenAI 兼容 SSE（data: {json}\\n）
+ * @deprecated 单轮；内部仍拼成 messages
+ */
+function buildChatCompletionRequest(userText, options, stream) {
+  const userContent = buildMultimodalUserContent(
+    userText,
+    options.imageBase64,
+    options.mimeType,
+  );
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: userContent },
+  ];
+  return buildChatCompletionRequestFromMessages(messages, options, stream);
+}
+
+/**
+ * 流式：完整 messages（含多轮历史）
  * @param {(ev: { type: 'delta', piece: string, full: string } | { type: 'done', full: string }) => void} onEvent
  */
-async function streamOpenAIChat(userText, options, onEvent) {
+async function streamOpenAIChat(messages, options, onEvent) {
   const cfg = options.appConfig;
   if (!isLlmEnabled(cfg)) {
     return { ok: false, text: "LLM 未启用。" };
   }
-  const req = buildChatCompletionRequest(userText, options, true);
+  const req = buildChatCompletionRequestFromMessages(messages, options, true);
   if (req.error) {
     return { ok: false, text: req.error };
   }
@@ -159,13 +182,6 @@ async function streamOpenAIChat(userText, options, onEvent) {
 
 /**
  * 非流式（备用）
- * @param {{
- *   appConfig: object,
- *   imageBase64?: string | null,
- *   mimeType?: string,
- *   baseUrl?: string,
- *   model?: string,
- * }} options
  */
 async function callOpenAIChat(userText, options = {}) {
   const cfg = options.appConfig;
@@ -211,6 +227,10 @@ module.exports = {
   callOpenAIChat,
   streamOpenAIChat,
   buildUserPrompt,
+  buildMultimodalUserContent,
+  buildUserTextForHistory,
+  buildChatCompletionRequestFromMessages,
+  SYSTEM_PROMPT,
   isLlmEnabled,
   resolveOpenAiApiKey,
 };

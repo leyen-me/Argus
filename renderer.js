@@ -118,7 +118,7 @@ function appendLlmRound(payload) {
   if (llm.streaming) {
     bubbleAsst.textContent = "…";
   } else if (llm.analysisText) {
-    bubbleAsst.textContent = llm.analysisText;
+    bubbleAsst.textContent = normalizeAssistantDisplayText(llm.analysisText);
   } else {
     bubbleAsst.textContent = llm.error || "";
     bubbleAsst.classList.add("llm-bubble--error");
@@ -447,6 +447,17 @@ function truncateText(str, max) {
   return `${str.slice(0, max)}…`;
 }
 
+/**
+ * 助手气泡展示用：模型与流式接口常在行首或段间输出 \\n\\n；配合 CSS pre-wrap 会原样显示，看起来像「多出一行」或双倍段距。
+ */
+function normalizeAssistantDisplayText(s) {
+  if (s == null || s === "") return "";
+  return String(s)
+    .replace(/\r\n/g, "\n")
+    .replace(/^\n+/, "")
+    .replace(/\n{2,}/g, "\n");
+}
+
 function formatBarClosePreview(payload) {
   if (!payload || payload.kind !== "bar_close") return JSON.stringify(payload, null, 2);
   const safe = JSON.parse(JSON.stringify(payload));
@@ -565,7 +576,7 @@ function bindLlmStream() {
       const bubbleAsst = findAssistantBubbleForBar(barCloseId);
       const status = document.getElementById("llm-status");
       if (bubbleAsst) {
-        bubbleAsst.textContent = full;
+        bubbleAsst.textContent = normalizeAssistantDisplayText(full);
         bubbleAsst.classList.remove("llm-bubble--error");
       }
       if (status) status.textContent = "LLM 输出中…";

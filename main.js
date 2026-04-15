@@ -72,6 +72,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
+    show: false,
     minWidth: 960,
     minHeight: 600,
     webPreferences: {
@@ -82,6 +83,11 @@ function createWindow() {
     },
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     backgroundColor: "#0d1117",
+  });
+
+  win.once("ready-to-show", () => {
+    win.maximize();
+    win.show();
   });
 
   win.loadFile(path.join(__dirname, "index.html"));

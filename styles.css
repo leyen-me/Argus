@@ -85,12 +85,12 @@ body {
 }
 
 .panel-chart {
-  flex: 1.2;
+  flex: 1.75;
   border-right: 1px solid #21262d;
 }
 
 .panel-llm {
-  flex: 0.9;
+  flex: 0.75;
   background: #0d1117;
 }
 
@@ -255,6 +255,8 @@ body {
   border: 1px solid #238636;
   background: #132d1b;
   color: #c9d1d9;
+  /* 与 normalizeAssistantDisplayText 配合：折叠行内多余空格，换行由脚本与单换行控制 */
+  white-space: pre-line;
 }
 
 .llm-bubble--assistant.llm-bubble--error {

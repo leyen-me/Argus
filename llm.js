@@ -1,29 +1,38 @@
 /**
  * OpenAI 兼容 Chat Completions，供长桥推送与加密（Binance WS）共用。
- * 默认不调用：需 ARGUS_ENABLE_LLM=1 且配置 OPENAI_API_KEY。
+ * 启用条件：ARGUS_ENABLE_LLM=1，且 API Key 来自配置 openaiApiKey 或环境变量 OPENAI_API_KEY（配置优先）。
  */
-function isLlmEnabled() {
-  return process.env.ARGUS_ENABLE_LLM === "1" && !!process.env.OPENAI_API_KEY;
+function resolveOpenAiApiKey(cfg) {
+  const fromCfg = cfg && typeof cfg.openaiApiKey === "string" ? cfg.openaiApiKey.trim() : "";
+  if (fromCfg) return fromCfg;
+  return (process.env.OPENAI_API_KEY || "").trim();
+}
+
+/** @param {object} [cfg] loadAppConfig() 结果 */
+function isLlmEnabled(cfg) {
+  return process.env.ARGUS_ENABLE_LLM === "1" && !!resolveOpenAiApiKey(cfg);
 }
 
 /**
  * @param {string} userText K 线文字说明（textForLlm）
  * @param {{
+ *   appConfig: object,
  *   imageBase64?: string | null,
  *   mimeType?: string,
  *   baseUrl?: string,
  *   model?: string,
- * }} [options] 截图多模态；baseUrl/model 优先来自应用配置，未配置时可用环境变量 OPENAI_BASE_URL / OPENAI_MODEL
+ * }} options appConfig 为 loadAppConfig()，用于解析 API Key 与开关
  */
 async function callOpenAIChat(userText, options = {}) {
-  if (!isLlmEnabled()) {
+  const cfg = options.appConfig;
+  if (!isLlmEnabled(cfg)) {
     return { ok: false, text: "LLM 未启用。" };
   }
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = resolveOpenAiApiKey(cfg);
   if (!apiKey) {
     return {
       ok: false,
-      text: "未设置 OPENAI_API_KEY。请在启动环境中配置后重启应用。",
+      text: "未配置 API Key：请在配置中心填写，或设置环境变量 OPENAI_API_KEY。",
     };
   }
   const model =
@@ -101,4 +110,4 @@ function buildUserPrompt(symbol, periodKey, candle) {
     .join("\n");
 }
 
-module.exports = { callOpenAIChat, buildUserPrompt, isLlmEnabled };
+module.exports = { callOpenAIChat, buildUserPrompt, isLlmEnabled, resolveOpenAiApiKey };

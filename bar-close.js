@@ -62,22 +62,23 @@ async function emitBarClose(winGetter, ctx) {
     chartCaptureError = e.message || String(e);
   }
 
+  const cfg = loadAppConfig();
   const textForLlm = buildUserPrompt(ctx.tvSymbol, ctx.periodLabel, ctx.candle);
 
   /** @type {{ enabled: boolean, analysisText: string | null, skippedReason: string | null, error: string | null }} */
   const llm = {
-    enabled: isLlmEnabled(),
+    enabled: isLlmEnabled(cfg),
     analysisText: null,
     skippedReason: null,
     error: null,
   };
   if (!llm.enabled) {
     llm.skippedReason =
-      "未调用 LLM：需同时设置 ARGUS_ENABLE_LLM=1 与 OPENAI_API_KEY（当前仅收集数据与截图）。";
+      "未调用 LLM：需设置 ARGUS_ENABLE_LLM=1，并在配置中心填写 API Key（或环境变量 OPENAI_API_KEY）。";
   } else {
     try {
-      const cfg = loadAppConfig();
       const result = await callOpenAIChat(textForLlm, {
+        appConfig: cfg,
         imageBase64: chartImage?.base64 ?? null,
         mimeType: chartImage?.mimeType || "image/png",
         baseUrl: cfg.openaiBaseUrl,

@@ -33,9 +33,6 @@
           <div class="panel-header">
             <span class="panel-label">LLM 分析</span>
             <div class="panel-header-actions">
-              <button type="button" class="btn-llm-json" id="btn-toggle-llm-json" title="显示或隐藏下方原始收盘 JSON" disabled>
-                显示 JSON
-              </button>
               <span class="panel-badge" id="llm-status">就绪</span>
             </div>
           </div>
@@ -48,7 +45,6 @@
                 <div class="llm-bubble llm-bubble--assistant" id="llm-bubble-assistant"></div>
               </div>
             </div>
-            <pre class="llm-output" id="llm-output" hidden></pre>
           </div>
         </section>
       </main>
@@ -94,8 +90,20 @@
         </div>
         <div class="config-section-title">LLM（OpenAI 兼容接口）</div>
         <p class="modal-hint modal-hint-llm">
-          API Key 请使用环境变量 <code>OPENAI_API_KEY</code>，不写入配置文件。启用分析需 <code>ARGUS_ENABLE_LLM=1</code>。
+          API Key 保存在本机用户目录配置文件；未填写时使用环境变量 <code>OPENAI_API_KEY</code>（配置优先）。启用分析需
+          <code>ARGUS_ENABLE_LLM=1</code>。
         </p>
+        <div class="config-interval-row">
+          <label for="config-openai-api-key">API Key</label>
+          <input
+            type="password"
+            id="config-openai-api-key"
+            class="config-in config-openai-input"
+            placeholder="sk-… 或兼容服务的密钥"
+            spellcheck="false"
+            autocomplete="new-password"
+          />
+        </div>
         <div class="config-interval-row">
           <label for="config-openai-base-url">API 根 URL</label>
           <input

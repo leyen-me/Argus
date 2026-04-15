@@ -57,13 +57,11 @@ const FALLBACK_APP_CONFIG = {
   interval: "5",
   openaiBaseUrl: "https://api.openai.com/v1",
   openaiModel: "gpt-4o-mini",
+  openaiApiKey: "",
 };
 
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
 let chartInterval = "5";
-
-/** 用户是否选择隐藏「原始 JSON」面板；有新收盘数据时仍尊重该偏好 */
-let llmJsonUserPrefersHidden = false;
 
 async function loadAppConfig() {
   if (window.argus && typeof window.argus.getConfig === "function") {
@@ -198,6 +196,8 @@ function initConfigCenter() {
     const openaiModelEl = document.getElementById("config-openai-model");
     if (openaiUrlEl) openaiUrlEl.value = cfg.openaiBaseUrl || FALLBACK_APP_CONFIG.openaiBaseUrl;
     if (openaiModelEl) openaiModelEl.value = cfg.openaiModel || FALLBACK_APP_CONFIG.openaiModel;
+    const openaiKeyEl = document.getElementById("config-openai-api-key");
+    if (openaiKeyEl) openaiKeyEl.value = cfg.openaiApiKey ?? FALLBACK_APP_CONFIG.openaiApiKey;
     modal.hidden = false;
   };
 
@@ -250,8 +250,10 @@ function initConfigCenter() {
     const interval = intEl?.value?.trim() || "5";
     const openaiUrlEl = document.getElementById("config-openai-base-url");
     const openaiModelEl = document.getElementById("config-openai-model");
+    const openaiKeyEl = document.getElementById("config-openai-api-key");
     const openaiBaseUrl = openaiUrlEl?.value?.trim() ?? "";
     const openaiModel = openaiModelEl?.value?.trim() ?? "";
+    const openaiApiKey = openaiKeyEl?.value?.trim() ?? "";
 
     if (!window.argus || typeof window.argus.saveConfig !== "function") {
       applySymbolSelect({ symbols, defaultSymbol });
@@ -267,6 +269,7 @@ function initConfigCenter() {
         interval,
         openaiBaseUrl,
         openaiModel,
+        openaiApiKey,
       });
       applySymbolSelect(saved);
       chartInterval = saved.interval || interval;
@@ -388,15 +391,6 @@ function setLlmStatus(text) {
   if (el) el.textContent = text;
 }
 
-function updateLlmJsonToggleUi() {
-  const btn = document.getElementById("btn-toggle-llm-json");
-  const output = document.getElementById("llm-output");
-  if (!btn || !output) return;
-  const hasContent = !!output.textContent.trim();
-  btn.disabled = !hasContent;
-  btn.textContent = output.hidden ? "显示 JSON" : "隐藏 JSON";
-}
-
 function initChartCaptureBridge() {
   if (!window.argus?.onChartCaptureRequest || !window.argus?.submitChartCaptureResult) {
     return;
@@ -426,7 +420,6 @@ function bindMarketBarClose() {
     return;
   }
   window.argus.onMarketBarClose((payload) => {
-    const output = document.getElementById("llm-output");
     const status = document.getElementById("llm-status");
     const chatStrip = document.getElementById("llm-chat-strip");
     const bubbleUser = document.getElementById("llm-bubble-user");
@@ -454,10 +447,10 @@ function bindMarketBarClose() {
       chatStrip.hidden = true;
     }
 
-    if (output) {
-      output.textContent = formatBarClosePreview(payload);
-      output.hidden = llmJsonUserPrefersHidden;
-      updateLlmJsonToggleUi();
+    try {
+      console.log("[Argus] market-bar-close", JSON.parse(formatBarClosePreview(payload)));
+    } catch {
+      console.log("[Argus] market-bar-close", payload);
     }
     if (status) {
       if (payload?.chartCaptureError) {
@@ -482,18 +475,6 @@ function bindMarketStatus() {
   });
 }
 
-function initLlmJsonToggle() {
-  const btn = document.getElementById("btn-toggle-llm-json");
-  if (!btn) return;
-  btn.addEventListener("click", () => {
-    const output = document.getElementById("llm-output");
-    if (!output || !output.textContent.trim()) return;
-    output.hidden = !output.hidden;
-    llmJsonUserPrefersHidden = output.hidden;
-    updateLlmJsonToggleUi();
-  });
-}
-
 window.addEventListener("DOMContentLoaded", async () => {
   const cfg = await loadAppConfig();
   chartInterval = cfg.interval || "5";
@@ -506,7 +487,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   initSymbolSelect();
   initChartCaptureBridge();
   initConfigCenter();
-  initLlmJsonToggle();
   bindMarketBarClose();
   bindMarketStatus();
 });

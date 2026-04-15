@@ -146,30 +146,6 @@ body {
   gap: 8px;
 }
 
-.btn-llm-json {
-  box-sizing: border-box;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
-  border: 1px solid #30363d;
-  background: #21262d;
-  color: #c9d1d9;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-
-.btn-llm-json:hover:not(:disabled) {
-  border-color: #8b949e;
-  color: #e6edf3;
-}
-
-.btn-llm-json:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .panel-badge {
   box-sizing: border-box;
   display: inline-flex;
@@ -245,21 +221,6 @@ body {
   border-color: #f85149;
   background: #2d1517;
   color: #ffa198;
-}
-
-.llm-output {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 13px;
-  line-height: 1.65;
-  font-family:
-    ui-monospace,
-    "SF Mono",
-    Menlo,
-    Consolas,
-    monospace;
-  color: #c9d1d9;
 }
 
 .modal-backdrop {

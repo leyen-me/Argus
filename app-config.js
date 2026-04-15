@@ -21,6 +21,7 @@ function defaultConfigFallback() {
     interval: "5",
     openaiBaseUrl: DEFAULT_OPENAI_BASE_URL,
     openaiModel: DEFAULT_OPENAI_MODEL,
+    openaiApiKey: "",
   };
 }
 
@@ -90,8 +91,10 @@ function normalizeConfig(raw) {
   const openaiModel = normalizeOpenAiModel(
     typeof raw.openaiModel === "string" ? raw.openaiModel : base.openaiModel,
   );
+  const openaiApiKey =
+    typeof raw.openaiApiKey === "string" ? raw.openaiApiKey.trim() : base.openaiApiKey;
 
-  return { symbols, defaultSymbol, interval, openaiBaseUrl, openaiModel };
+  return { symbols, defaultSymbol, interval, openaiBaseUrl, openaiModel, openaiApiKey };
 }
 
 function loadAppConfig() {

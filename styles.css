@@ -195,7 +195,8 @@ body {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 12px 14px;
 }
 
@@ -355,8 +356,6 @@ body {
   border: 1px solid #444c56;
   background: #1c2128;
   color: #8b949e;
-  max-height: 220px;
-  overflow-y: auto;
 }
 
 .llm-bubble {

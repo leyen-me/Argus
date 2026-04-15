@@ -82,7 +82,7 @@ function findAssistantBubbleForBar(barCloseId) {
 }
 
 /**
- * 每根 K 线收盘且启用 LLM 时追加一轮（左用户摘要 / 右模型回复），流式时先占位「…」。
+ * 每根 K 线收盘且启用 LLM 时追加一轮（左模型回复 / 右用户与推送摘要），流式时先占位「…」。
  * @returns {HTMLElement | null} 本轮助手气泡，便于调试
  */
 function appendLlmRound(payload) {

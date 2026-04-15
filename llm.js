@@ -238,23 +238,40 @@ function buildChatCompletionRequest(userText, options, stream) {
 }
 
 /**
- * 从流式 chunk 的 delta 中拼接可展示的推理文本（OpenRouter：`reasoning` / `reasoning_details`）。
+ * 从流式 chunk 的 delta 中取出**本 chunk** 的推理片段（不跨 chunk 累加）。
+ * 同一 chunk 内 OpenRouter 常同时带 `reasoning` 与 `reasoning_details` 的等价文本，只取一种以免「好的好的」式重复。
  * @param {Record<string, unknown>} delta
  */
 function appendReasoningFromDelta(delta) {
   if (!delta || typeof delta !== "object") return "";
-  let s = "";
-  const r = delta.reasoning ?? delta.reasoning_content;
-  if (typeof r === "string" && r) s += r;
   const details = delta.reasoning_details;
-  if (!Array.isArray(details)) return s;
-  for (const d of details) {
-    if (!d || typeof d !== "object") continue;
-    const t = d.type;
-    if (t === "reasoning.text" && typeof d.text === "string") s += d.text;
-    else if (t === "reasoning.summary" && typeof d.summary === "string") s += d.summary;
+  if (Array.isArray(details) && details.length > 0) {
+    let s = "";
+    for (const d of details) {
+      if (!d || typeof d !== "object") continue;
+      const t = d.type;
+      if (t === "reasoning.text" && typeof d.text === "string") s += d.text;
+      else if (t === "reasoning.summary" && typeof d.summary === "string") s += d.summary;
+    }
+    if (s) return s;
   }
-  return s;
+  const r = delta.reasoning ?? delta.reasoning_content;
+  if (typeof r === "string" && r) return r;
+  return "";
+}
+
+/**
+ * 合并推理流：有的网关按**增量**发片段，有的按**当前全文**（新文以旧文为前缀）发；二者混用会叠字。
+ * @param {string} prev
+ * @param {string} piece
+ */
+function mergeReasoningChunk(prev, piece) {
+  const p = String(piece || "");
+  if (!p) return prev;
+  const base = String(prev || "");
+  if (!base) return p;
+  if (p.startsWith(base) && p.length >= base.length) return p;
+  return base + p;
 }
 
 /**
@@ -331,7 +348,7 @@ async function streamOpenAIChat(messages, options, onEvent) {
           const piece = typeof delta?.content === "string" ? delta.content : "";
           const reasoningPiece = wantReasoning && delta ? appendReasoningFromDelta(delta) : "";
           if (piece) fullText += piece;
-          if (reasoningPiece) fullReasoning += reasoningPiece;
+          if (reasoningPiece) fullReasoning = mergeReasoningChunk(fullReasoning, reasoningPiece);
           if (piece || reasoningPiece) {
             onEvent({ type: "delta", piece, full: fullText, reasoningFull: fullReasoning });
           }

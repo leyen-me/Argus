@@ -5,6 +5,21 @@ const chartContainerId = "tradingview_chart";
 const DEFAULT_EMA_LENGTH = 20;
 let tvWidget = null;
 
+/**
+ * 最近一次行情截图（供多模态 LLM 使用）。
+ * `base64` 为不含 `data:*;base64,` 前缀的裸字符串，可直接作为 image_url / inline_data 等字段内容。
+ * `dataUrl` 为完整 Data URL，与 `<img src>` 一致。
+ */
+function setLastChartScreenshot(dataUrl) {
+  const comma = dataUrl.indexOf(",");
+  const base64 = comma === -1 ? "" : dataUrl.slice(comma + 1);
+  window.argusLastChartImage = {
+    mimeType: "image/png",
+    dataUrl,
+    base64,
+  };
+}
+
 function destroyWidget() {
   if (tvWidget && typeof tvWidget.remove === "function") {
     try {
@@ -128,6 +143,7 @@ function initChartCapture() {
         });
       });
       const dataUrl = canvas.toDataURL("image/png");
+      setLastChartScreenshot(dataUrl);
       if (imgEl) imgEl.src = dataUrl;
       if (wrap) wrap.hidden = false;
       setLlmStatus("已截图");

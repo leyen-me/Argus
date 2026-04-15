@@ -1,6 +1,8 @@
 /* global TradingView */
 
 const chartContainerId = "tradingview_chart";
+/** TradingView 内置：MAExp = EMA，周期由 length 指定 */
+const DEFAULT_EMA_LENGTH = 20;
 let tvWidget = null;
 
 function destroyWidget() {
@@ -31,7 +33,7 @@ function createTradingViewWidget(symbol) {
   tvWidget = new TradingView.widget({
     autosize: true,
     symbol: symbol || "BINANCE:BTCUSDT",
-    interval: "60",
+    interval: "5",
     timezone: "Asia/Shanghai",
     theme: "dark",
     style: "1",
@@ -45,6 +47,12 @@ function createTradingViewWidget(symbol) {
     hide_side_toolbar: false,
     allow_symbol_change: true,
     hideideas: true,
+    studies: [
+      {
+        id: "MAExp@tv-basicstudies",
+        inputs: { length: DEFAULT_EMA_LENGTH },
+      },
+    ],
   });
 }
 

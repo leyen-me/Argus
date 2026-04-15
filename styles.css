@@ -197,6 +197,34 @@ body {
   border-color: rgba(248, 81, 73, 0.45);
 }
 
+.llm-trade-state-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #21262d;
+  background: #12161c;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #c9d1d9;
+}
+
+.llm-trade-state-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b949e;
+}
+
+.llm-trade-state-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
 .llm-body {
   display: flex;
   flex-direction: column;

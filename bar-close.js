@@ -327,6 +327,9 @@ async function emitBarClose(winGetter, ctx) {
     );
     win.webContents.send("llm-stream-end", {
       barCloseId,
+      conversationKey: convKey,
+      tradeState: payloadBase.tradeState,
+      tradeStateEvent: null,
       analysisText: result.text,
       reasoningText: result.reasoningText ?? "",
     });

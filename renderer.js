@@ -76,6 +76,112 @@ const FALLBACK_APP_CONFIG = {
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
 let chartInterval = "5";
 
+/** 按 `品种|周期` 缓存最近一次交易状态机快照，切换品种时可从缓存恢复展示 */
+window.argusTradeStateCache = window.argusTradeStateCache || Object.create(null);
+
+const TRADE_STATE_LABELS = {
+  IDLE: "空仓观望",
+  LOOKING_LONG: "观察做多",
+  LOOKING_SHORT: "观察做空",
+  HOLDING_LONG: "模拟持多",
+  HOLDING_SHORT: "模拟持空",
+  COOLDOWN: "冷静期",
+};
+
+/**
+ * 与主进程 llm-context.conversationKey 一致
+ * @param {string} tvSymbol
+ * @param {string} interval
+ */
+function conversationKeyForUi(tvSymbol, interval) {
+  const sym = String(tvSymbol || "").trim();
+  const iv = String(interval ?? chartInterval ?? "5").trim();
+  return sym ? `${sym}|${iv}` : "";
+}
+
+/**
+ * @param {string} key
+ * @param {object | null | undefined} tradeState
+ */
+function rememberTradeState(key, tradeState) {
+  if (!key || !tradeState || typeof tradeState !== "object") return;
+  window.argusTradeStateCache[key] = tradeState;
+}
+
+/**
+ * @param {object | null | undefined} ev
+ */
+function formatTradeStateEventLine(ev) {
+  if (!ev || typeof ev !== "object") return "";
+  const side = ev.side === "SHORT" ? "空" : ev.side === "LONG" ? "多" : "";
+  const t = ev.type === "TAKE_PROFIT" ? "止盈" : ev.type === "STOP_LOSS" ? "止损" : "";
+  const p = ev.exitPrice != null ? String(ev.exitPrice) : "";
+  if (t && side && p) return `（本根触发${side}单${t} @ ${p}）`;
+  if (t && p) return `（本根触发${t} @ ${p}）`;
+  return "";
+}
+
+/**
+ * @param {object | null | undefined} ts
+ */
+function formatTradeStateLine(ts) {
+  if (!ts || typeof ts !== "object") {
+    return {
+      text: "暂无记录 · 待下一根 K 线收盘后更新",
+      title: "由应用内状态机维护，仅为分析纪律用，不代表真实持仓或成交。",
+    };
+  }
+  const state = String(ts.state || "IDLE");
+  const label = TRADE_STATE_LABELS[state] || state;
+  const parts = [label];
+
+  if (state === "LOOKING_LONG" || state === "LOOKING_SHORT") {
+    if (ts.keyLevel != null) parts.push(`关键位 ${ts.keyLevel}`);
+  }
+  if (state === "HOLDING_LONG" || state === "HOLDING_SHORT") {
+    if (ts.entryPrice != null) parts.push(`入 ${ts.entryPrice}`);
+    if (ts.stopLoss != null) parts.push(`损 ${ts.stopLoss}`);
+    if (ts.takeProfit != null) parts.push(`盈 ${ts.takeProfit}`);
+  }
+  if (state === "COOLDOWN" && ts.cooldownUntil) {
+    const t = new Date(ts.cooldownUntil).toLocaleTimeString("zh-CN", { hour12: false });
+    parts.push(`至 ${t}`);
+  }
+
+  const detail = [
+    ts.lastTransitionReason ? `原因: ${ts.lastTransitionReason}` : "",
+    ts.lastDecisionIntent ? `意图: ${ts.lastDecisionIntent}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return {
+    text: parts.join(" · "),
+    title: detail || JSON.stringify(ts, null, 2),
+  };
+}
+
+/**
+ * @param {object | null | undefined} tradeState
+ * @param {object | null | undefined} tradeStateEvent
+ */
+function updateTradeStateDisplay(tradeState, tradeStateEvent) {
+  const el = document.getElementById("llm-trade-state-text");
+  if (!el) return;
+  const { text, title } = formatTradeStateLine(tradeState);
+  const evLine = formatTradeStateEventLine(tradeStateEvent);
+  el.textContent = evLine ? `${text} ${evLine}` : text;
+  el.title = title;
+}
+
+function refreshTradeStateBarFromCache() {
+  const sel = document.getElementById("symbol-select");
+  const sym = sel?.value?.trim() || "";
+  const key = conversationKeyForUi(sym, chartInterval);
+  const cached = key ? window.argusTradeStateCache[key] : null;
+  updateTradeStateDisplay(cached, null);
+}
+
 /** 当前最近一次收盘推送 id，用于忽略过期的流式片段 */
 let latestBarCloseId = null;
 
@@ -565,6 +671,7 @@ function initConfigCenter() {
         selAfter?.value?.trim() || defaultSymbol,
       );
       closeModal();
+      refreshTradeStateBarFromCache();
       return;
     }
     try {
@@ -584,6 +691,7 @@ function initConfigCenter() {
       createTradingViewWidget(saved.defaultSymbol);
       void refreshCurrentSystemPromptPreview();
       closeModal();
+      refreshTradeStateBarFromCache();
     } catch (err) {
       console.error(err);
       setLlmStatus("保存配置失败");
@@ -674,6 +782,7 @@ function initSymbolSelect() {
       window.argus.setMarketContext(sel.value);
     }
     void refreshCurrentSystemPromptPreview();
+    refreshTradeStateBarFromCache();
   });
 }
 
@@ -806,6 +915,13 @@ function bindMarketBarClose() {
       setLastChartScreenshot(payload.chartImage.dataUrl);
     }
 
+    if (payload?.conversationKey && payload?.tradeState) {
+      rememberTradeState(payload.conversationKey, payload.tradeState);
+      if (payload.conversationKey === conversationKeyForUi()) {
+        updateTradeStateDisplay(payload.tradeState, payload.tradeStateEvent ?? null);
+      }
+    }
+
     const llm = payload?.llm;
     const showRound =
       llm?.enabled &&
@@ -860,7 +976,8 @@ function bindLlmStream() {
     });
   }
   if (typeof onLlmStreamEnd === "function") {
-    onLlmStreamEnd(({ barCloseId, analysisText, reasoningText }) => {
+    onLlmStreamEnd(
+      ({ barCloseId, analysisText, reasoningText, conversationKey, tradeState, tradeStateEvent }) => {
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.analysisText = analysisText;
@@ -868,13 +985,26 @@ function bindLlmStream() {
         window.argusLastBarClose.llm.streaming = false;
         window.argusLastBarClose.llm.error = null;
       }
+      if (conversationKey && tradeState) {
+        rememberTradeState(conversationKey, tradeState);
+        if (conversationKey === conversationKeyForUi()) {
+          updateTradeStateDisplay(tradeState, tradeStateEvent ?? null);
+        }
+      }
+      if (window.argusLastBarClose && tradeState) {
+        window.argusLastBarClose.tradeState = tradeState;
+      }
+      if (window.argusLastBarClose && tradeStateEvent !== undefined) {
+        window.argusLastBarClose.tradeStateEvent = tradeStateEvent;
+      }
       const bubbleReas = findReasoningBubbleForBar(barCloseId);
       if (bubbleReas && reasoningText != null) {
         bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningText));
       }
       const status = document.getElementById("llm-status");
       if (status) status.textContent = "收盘 · LLM 已分析";
-    });
+    },
+    );
   }
   if (typeof onLlmStreamError === "function") {
     onLlmStreamError(({ barCloseId, message }) => {
@@ -924,4 +1054,5 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindMarketBarClose();
   bindLlmStream();
   bindMarketStatus();
+  refreshTradeStateBarFromCache();
 });

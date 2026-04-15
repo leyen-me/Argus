@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, desktopCapturer } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const longbridge = require("./longbridge-llm");
@@ -12,6 +12,18 @@ const {
 } = require("./app-config");
 const { wipeConversationStore } = require("./llm-context");
 const { wipeTradingStateStore } = require("./trading-state");
+
+/**
+ * @param {import("electron").DesktopCapturerSource[]} sources
+ * @returns {import("electron").DesktopCapturerSource | null}
+ */
+function pickGoogleChromeSource(sources) {
+  const bySuffix = sources.find(
+    (s) => s.name.endsWith("Google Chrome") || / - Google Chrome$/i.test(s.name.trim()),
+  );
+  if (bySuffix) return bySuffix;
+  return sources.find((s) => /\bGoogle Chrome\b/i.test(s.name)) || null;
+}
 
 /**
  * 左侧当前品种：加密走 Binance WS K 线；美股/港股走长桥订阅（切换时先停另一侧）。
@@ -79,6 +91,29 @@ ipcMain.handle("llm-request-analysis", async (_event, payload) => {
     ok: true,
     message: "K 线收盘后会推送 market-bar-close（含 textForLlm 与截图）；启用 LLM 需 ARGUS_ENABLE_LLM=1。",
     received: payload ?? null,
+  };
+});
+
+/** K 线收盘截图：截取已打开的 Google Chrome 窗口（桌面采集，非左侧 TradingView）。 */
+ipcMain.handle("capture:google-chrome-window", async () => {
+  const sources = await desktopCapturer.getSources({
+    types: ["window"],
+    thumbnailSize: { width: 1920, height: 1080 },
+  });
+  const src = pickGoogleChromeSource(sources);
+  if (!src) {
+    throw new Error("未找到 Google Chrome 窗口，请先打开并保留至少一个 Chrome 窗口");
+  }
+  const thumb = src.thumbnail;
+  if (!thumb || thumb.isEmpty()) {
+    throw new Error("Chrome 窗口截图失败（空画面）");
+  }
+  const png = thumb.toPNG();
+  const base64 = png.toString("base64");
+  return {
+    mimeType: "image/png",
+    dataUrl: `data:image/png;base64,${base64}`,
+    base64,
   };
 });
 

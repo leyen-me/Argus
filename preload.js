@@ -38,4 +38,5 @@ contextBridge.exposeInMainWorld("argus", {
   saveConfig: (config) => ipcRenderer.invoke("config:save", config),
   getConfigPath: () => ipcRenderer.invoke("config:path"),
   openDevTools: () => ipcRenderer.invoke("devtools:open"),
+  captureGoogleChromeWindow: () => ipcRenderer.invoke("capture:google-chrome-window"),
 });

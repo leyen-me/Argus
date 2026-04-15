@@ -11,6 +11,7 @@
     "electron": "^34.0.0"
   },
   "dependencies": {
-    "longport": "^3.0.23"
+    "longport": "^3.0.23",
+    "ws": "^8.20.0"
   }
 }

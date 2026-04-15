@@ -1,5 +1,5 @@
 /**
- * 左侧 TradingView 品种 → 加密(定时+Binance) / 长桥(订阅推送) 分流。
+ * 左侧 TradingView 品种 → 加密(Binance WS) / 长桥(订阅推送) 分流。
  */
 
 function inferFeed(value, explicit) {

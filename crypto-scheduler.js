@@ -1,6 +1,8 @@
 /**
- * 加密（如 BINANCE:*）：按全局 interval 定时拉取 Binance 公共 K 线，取最近一根已收盘 K 线后调用 LLM。
+ * 加密（BINANCE:*）：Binance Spot WebSocket K 线流，k.x === true 时视为该根 K 线收盘，再调用 LLM。
+ * @see https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-streams
  */
+const WebSocket = require("ws");
 const { callOpenAIChat, buildUserPrompt } = require("./llm");
 
 const BINANCE_INTERVAL = {
@@ -16,8 +18,14 @@ const BINANCE_INTERVAL = {
   "1D": "1d",
 };
 
-let timerId = null;
-let timeoutId = null;
+const WS_BASE = "wss://stream.binance.com:9443/ws";
+
+let ws = null;
+let reconnectTimer = null;
+let intentionalClose = false;
+/** @type {{ winGetter: () => import("electron").BrowserWindow | null, tvSymbol: string, intervalTv: string } | null} */
+let session = null;
+let reconnectAttempt = 0;
 
 const seenBarIds = new Set();
 const SEEN_CAP = 2000;
@@ -36,87 +44,34 @@ function binancePairFromTv(tv) {
   return v.slice("BINANCE:".length).toUpperCase();
 }
 
-function intervalMs(intervalTv) {
-  const k = String(intervalTv || "5").toUpperCase();
-  const table = {
-    "1": 60e3,
-    "3": 180e3,
-    "5": 300e3,
-    "15": 900e3,
-    "30": 1800e3,
-    "60": 3600e3,
-    "120": 7200e3,
-    "240": 14400e3,
-    D: 86400e3,
-    "1D": 86400e3,
-  };
-  return table[k] ?? 300e3;
+function streamName(pair, intervalTv) {
+  const iv = String(intervalTv || "5").toUpperCase();
+  const bi = BINANCE_INTERVAL[iv] || "5m";
+  return `${pair.toLowerCase()}@kline_${bi}`;
 }
 
-/** 对齐到 UTC 周期边界，略延后避免交易所尚未收盘 */
-function msUntilNextBoundary(intervalTv) {
-  const ms = intervalMs(intervalTv);
-  const now = Date.now();
-  const next = Math.ceil(now / ms) * ms;
-  return Math.max(2000, next - now + 2000);
-}
-
-async function fetchLastClosedKline(tvSymbol, intervalTv) {
-  const pair = binancePairFromTv(tvSymbol);
-  const bi = BINANCE_INTERVAL[String(intervalTv).toUpperCase()] || "5m";
-  if (!pair) {
-    throw new Error("非 BINANCE: 代码，无法使用 Binance 公共行情");
-  }
-  const url = `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(pair)}&interval=${bi}&limit=3`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Binance HTTP ${res.status}`);
-  }
-  /** @type {any[][]} */
-  const klines = await res.json();
-  if (!Array.isArray(klines) || klines.length < 2) {
-    throw new Error("K 线数据不足");
-  }
-  const closed = klines[klines.length - 2];
-  const open = closed[1];
-  const high = closed[2];
-  const low = closed[3];
-  const close = closed[4];
-  const volume = closed[5];
-  const openTime = closed[0];
-  const ts = new Date(Number(openTime)).toISOString();
+function candleFromK(k, pair) {
+  const openTime = k.t;
   return {
-    open,
-    high,
-    low,
-    close,
-    volume: Number(volume),
-    turnover: null,
-    timestamp: ts,
+    open: String(k.o),
+    high: String(k.h),
+    low: String(k.l),
+    close: String(k.c),
+    volume: Number(k.v),
+    turnover: k.q != null ? String(k.q) : null,
+    timestamp: new Date(Number(openTime)).toISOString(),
     barKey: `${pair}:${openTime}`,
   };
 }
 
-async function runAnalysis(winGetter, tvSymbol, intervalTv) {
-  let candle;
-  try {
-    candle = await fetchLastClosedKline(tvSymbol, intervalTv);
-  } catch (e) {
-    send(winGetter, "llm-analysis-update", {
-      kind: "error",
-      symbol: tvSymbol,
-      message: e.message || String(e),
-    });
-    return;
-  }
-
+async function runAnalysis(winGetter, tvSymbol, intervalTv, candle) {
   if (seenBarIds.has(candle.barKey)) return;
   seenBarIds.add(candle.barKey);
   if (seenBarIds.size > SEEN_CAP) seenBarIds.clear();
 
   const periodLabel = `tv:${intervalTv}`;
   send(winGetter, "market-status", {
-    text: `加密定时 · ${tvSymbol} · ${candle.timestamp}`,
+    text: `加密 WS · K 收盘 ${tvSymbol} · ${candle.timestamp}`,
   });
 
   const prompt = buildUserPrompt(tvSymbol, periodLabel, candle);
@@ -148,24 +103,83 @@ async function runAnalysis(winGetter, tvSymbol, intervalTv) {
   }
 }
 
-function scheduleLoop(winGetter, tvSymbol, intervalTv) {
-  clearTimers();
-  const tick = async () => {
-    await runAnalysis(winGetter, tvSymbol, intervalTv);
-    timeoutId = setTimeout(tick, msUntilNextBoundary(intervalTv));
-  };
-  timeoutId = setTimeout(tick, msUntilNextBoundary(intervalTv));
+function clearReconnectTimer() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
 }
 
-function clearTimers() {
-  if (timerId) {
-    clearInterval(timerId);
-    timerId = null;
+function scheduleReconnect() {
+  if (intentionalClose || !session) return;
+  clearReconnectTimer();
+  const delay = Math.min(30_000, 1000 * 2 ** reconnectAttempt);
+  const sec = Math.max(1, Math.round(delay / 1000));
+  reconnectAttempt += 1;
+  send(session.winGetter, "market-status", {
+    text: `加密 WS 断开，${sec}s 后重连…`,
+  });
+  reconnectTimer = setTimeout(() => {
+    connect();
+  }, delay);
+}
+
+function connect() {
+  if (!session) return;
+  const { winGetter, tvSymbol, intervalTv } = session;
+  const pair = binancePairFromTv(tvSymbol);
+  if (!pair) {
+    send(winGetter, "market-status", { text: "加密：无效 BINANCE 代码" });
+    return;
   }
-  if (timeoutId) {
-    clearTimeout(timeoutId);
-    timeoutId = null;
+
+  const path = streamName(pair, intervalTv);
+  const url = `${WS_BASE}/${path}`;
+  clearReconnectTimer();
+
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    console.error("Binance WS create", e);
+    scheduleReconnect();
+    return;
   }
+
+  ws.on("open", () => {
+    reconnectAttempt = 0;
+    const iv = String(intervalTv || "5").toUpperCase();
+    const ivLabel = iv === "D" || iv === "1D" ? "日线" : `${iv}m`;
+    send(winGetter, "market-status", {
+      text: `加密 WS 已连接 · ${ivLabel} · ${tvSymbol}`,
+    });
+  });
+
+  ws.on("message", (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch {
+      return;
+    }
+    if (msg.e !== "kline" || !msg.k) return;
+    const k = msg.k;
+    if (!k.x) return;
+
+    const candle = candleFromK(k, pair);
+    runAnalysis(winGetter, tvSymbol, intervalTv, candle).catch((e) => {
+      console.error("runAnalysis", e);
+    });
+  });
+
+  ws.on("error", (err) => {
+    console.error("Binance WS error", err);
+  });
+
+  ws.on("close", () => {
+    ws = null;
+    if (intentionalClose || !session) return;
+    scheduleReconnect();
+  });
 }
 
 /**
@@ -173,16 +187,24 @@ function clearTimers() {
  */
 function start(winGetter, tvSymbol, intervalTv) {
   stop();
-  const iv = String(intervalTv || "5").toUpperCase();
-  const ivLabel = iv === "D" || iv === "1D" ? "日线" : `${iv}m`;
-  send(winGetter, "market-status", {
-    text: `加密：定时 ${ivLabel} · ${tvSymbol}`,
-  });
-  scheduleLoop(winGetter, tvSymbol, intervalTv);
+  intentionalClose = false;
+  session = { winGetter, tvSymbol, intervalTv };
+  connect();
 }
 
 function stop() {
-  clearTimers();
+  intentionalClose = true;
+  clearReconnectTimer();
+  session = null;
+  reconnectAttempt = 0;
+  if (ws) {
+    try {
+      ws.close();
+    } catch {
+      /* ignore */
+    }
+    ws = null;
+  }
 }
 
 module.exports = { start, stop, binancePairFromTv };

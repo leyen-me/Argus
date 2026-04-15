@@ -1,5 +1,5 @@
 /**
- * OpenAI 兼容 Chat Completions，供长桥推送与加密定时任务共用。
+ * OpenAI 兼容 Chat Completions，供长桥推送与加密（Binance WS）共用。
  */
 async function callOpenAIChat(userContent) {
   const apiKey = process.env.OPENAI_API_KEY;

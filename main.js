@@ -87,7 +87,7 @@ function loadAppConfig() {
 }
 
 /**
- * 左侧当前品种：加密走定时拉 Binance；美股/港股走长桥订阅（切换时先停另一侧）。
+ * 左侧当前品种：加密走 Binance WS K 线；美股/港股走长桥订阅（切换时先停另一侧）。
  */
 async function routeMarket(cfg, tvSymbol) {
   const interval = cfg.interval || "5";
@@ -140,7 +140,7 @@ ipcMain.handle("market:set-context", async (_event, tvSymbol) => {
 ipcMain.handle("llm-request-analysis", async (_event, payload) => {
   return {
     ok: true,
-    message: "分析由行情侧自动触发（长桥推送或加密定时）。",
+    message: "分析由行情侧自动触发（长桥推送或 Binance K 线 WS）。",
     received: payload ?? null,
   };
 });

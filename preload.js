@@ -1,14 +1,17 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-/**
- * 预留：后续 LLM 分析结果通过 IPC 从主进程推送到渲染进程
- */
 contextBridge.exposeInMainWorld("argus", {
-  onAnalysisUpdate: (callback) => {
-    ipcRenderer.on("llm-analysis-update", (_event, payload) => {
+  onMarketBarClose: (callback) => {
+    ipcRenderer.on("market-bar-close", (_event, payload) => {
       callback(payload);
     });
   },
+  onChartCaptureRequest: (callback) => {
+    ipcRenderer.on("request-chart-capture", (_event, payload) => {
+      callback(payload);
+    });
+  },
+  submitChartCaptureResult: (result) => ipcRenderer.send("chart-capture-result", result),
   onMarketStatus: (callback) => {
     ipcRenderer.on("market-status", (_event, payload) => {
       callback(payload);

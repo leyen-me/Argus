@@ -1,9 +1,9 @@
 /**
- * 加密（BINANCE:*）：Binance Spot WebSocket K 线流，k.x === true 时视为该根 K 线收盘，再调用 LLM。
+ * 加密（BINANCE:*）：Binance Spot WebSocket K 线流，k.x === true 时视为该根 K 线收盘，再组装 bar_close（含左侧截图）。
  * @see https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-streams
  */
 const WebSocket = require("ws");
-const { callOpenAIChat, buildUserPrompt } = require("./llm");
+const { emitBarClose } = require("./bar-close");
 
 const BINANCE_INTERVAL = {
   "1": "1m",
@@ -64,42 +64,33 @@ function candleFromK(k, pair) {
   };
 }
 
-async function runAnalysis(winGetter, tvSymbol, intervalTv, candle) {
+function periodDisplayForTv(intervalTv) {
+  const iv = String(intervalTv || "5").toUpperCase();
+  if (iv === "D" || iv === "1D") return "日线";
+  return `${iv}m`;
+}
+
+async function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle) {
   if (seenBarIds.has(candle.barKey)) return;
   seenBarIds.add(candle.barKey);
   if (seenBarIds.size > SEEN_CAP) seenBarIds.clear();
 
-  const periodLabel = `tv:${intervalTv}`;
+  const periodLabel = `tv:${intervalTv}（${periodDisplayForTv(intervalTv)}）`;
   send(winGetter, "market-status", {
     text: `加密 WS · K 收盘 ${tvSymbol} · ${candle.timestamp}`,
   });
 
-  const prompt = buildUserPrompt(tvSymbol, periodLabel, candle);
   try {
-    const r = await callOpenAIChat(prompt);
-    if (!r.ok) {
-      send(winGetter, "llm-analysis-update", {
-        kind: "error",
-        symbol: tvSymbol,
-        candle,
-        message: r.text,
-      });
-      return;
-    }
-    send(winGetter, "llm-analysis-update", {
-      kind: "analysis",
-      symbol: tvSymbol,
-      period: periodLabel,
+    await emitBarClose(winGetter, {
+      source: "binance_ws",
+      tvSymbol,
+      interval: intervalTv,
+      periodLabel,
       candle,
-      text: r.text,
-      at: new Date().toISOString(),
+      longPortSymbol: null,
     });
   } catch (e) {
-    send(winGetter, "llm-analysis-update", {
-      kind: "error",
-      symbol: tvSymbol,
-      message: e.message || String(e),
-    });
+    send(winGetter, "market-status", { text: `收盘处理失败：${e.message || e}` });
   }
 }
 
@@ -166,8 +157,8 @@ function connect() {
     if (!k.x) return;
 
     const candle = candleFromK(k, pair);
-    runAnalysis(winGetter, tvSymbol, intervalTv, candle).catch((e) => {
-      console.error("runAnalysis", e);
+    onConfirmedBar(winGetter, tvSymbol, intervalTv, candle).catch((e) => {
+      console.error("onConfirmedBar", e);
     });
   });
 

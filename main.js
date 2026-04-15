@@ -140,7 +140,7 @@ ipcMain.handle("market:set-context", async (_event, tvSymbol) => {
 ipcMain.handle("llm-request-analysis", async (_event, payload) => {
   return {
     ok: true,
-    message: "分析由行情侧自动触发（长桥推送或 Binance K 线 WS）。",
+    message: "K 线收盘后会推送 market-bar-close（含 textForLlm 与截图）；启用 LLM 需 ARGUS_ENABLE_LLM=1。",
     received: payload ?? null,
   };
 });

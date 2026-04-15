@@ -45,9 +45,9 @@
               <img id="chart-screenshot-img" class="chart-capture-img" alt="TradingView 图表截图" />
             </div>
             <div class="llm-placeholder" id="llm-placeholder">
-              左侧下拉为当前标的：<strong>BINANCE:*</strong> 走 Binance WebSocket K 线（收盘 <code>k.x</code> 触发）；其余默认走
-              <strong>长桥订阅</strong>（需 <code>LONGPORT_*</code>）。全局周期见配置中的
-              <code>interval</code>。需设置 <code>OPENAI_API_KEY</code>。
+              K 线收盘后会自动截取左侧图表并推送结构化数据（见下方 JSON）。多模态对话可使用
+              <code>window.argusLastBarClose</code>（含 <code>textForLlm</code> 与 <code>chartImage.base64</code>）。默认不调用
+              OpenAI；需要时再设 <code>ARGUS_ENABLE_LLM=1</code> 与 <code>OPENAI_API_KEY</code>。
             </div>
             <pre class="llm-output" id="llm-output" hidden></pre>
           </div>

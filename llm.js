@@ -1,7 +1,15 @@
 /**
  * OpenAI 兼容 Chat Completions，供长桥推送与加密（Binance WS）共用。
+ * 默认不调用：需 ARGUS_ENABLE_LLM=1 且配置 OPENAI_API_KEY。
  */
+function isLlmEnabled() {
+  return process.env.ARGUS_ENABLE_LLM === "1" && !!process.env.OPENAI_API_KEY;
+}
+
 async function callOpenAIChat(userContent) {
+  if (!isLlmEnabled()) {
+    return { ok: false, text: "LLM 未启用。" };
+  }
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return {
@@ -58,4 +66,4 @@ function buildUserPrompt(symbol, periodKey, candle) {
     .join("\n");
 }
 
-module.exports = { callOpenAIChat, buildUserPrompt };
+module.exports = { callOpenAIChat, buildUserPrompt, isLlmEnabled };

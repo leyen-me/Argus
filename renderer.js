@@ -20,6 +20,31 @@ function setLastChartScreenshot(dataUrl) {
   };
 }
 
+/**
+ * K 线收盘后主进程推送的完整上下文：`textForLlm` + `chartImage.base64`，供后续 Chat 一并提交。
+ * @type {object | null}
+ */
+window.argusLastBarClose = null;
+
+async function captureTradingViewPng() {
+  const widget = tvWidget;
+  if (!widget || typeof widget.ready !== "function") {
+    throw new Error("无图表");
+  }
+  if (typeof widget.imageCanvas !== "function") {
+    throw new Error("不支持截图");
+  }
+  const canvas = await new Promise((resolve, reject) => {
+    widget.ready(() => {
+      widget.imageCanvas().then(resolve).catch(reject);
+    });
+  });
+  const dataUrl = canvas.toDataURL("image/png");
+  const comma = dataUrl.indexOf(",");
+  const base64 = comma === -1 ? "" : dataUrl.slice(comma + 1);
+  return { mimeType: "image/png", dataUrl, base64 };
+}
+
 /** 与仓库 config.json 一致，供非 Electron 打开页面时兜底 */
 const FALLBACK_APP_CONFIG = {
   symbols: [
@@ -320,21 +345,17 @@ function initSymbolSelect() {
   });
 }
 
-function formatAnalysisPayload(payload) {
-  if (payload == null) return "";
-  if (typeof payload === "string") return payload;
-  if (payload.kind === "analysis") {
-    const ts = payload.candle?.timestamp || payload.at || "";
-    const head = `[${payload.symbol}] ${payload.period}${ts ? ` · ${ts}` : ""}\n\n`;
-    return head + (payload.text || "");
+function formatBarClosePreview(payload) {
+  if (!payload || payload.kind !== "bar_close") return JSON.stringify(payload, null, 2);
+  const safe = JSON.parse(JSON.stringify(payload));
+  if (safe.chartImage?.base64) {
+    const n = safe.chartImage.base64.length;
+    safe.chartImage = {
+      ...safe.chartImage,
+      base64: `[省略 ${n} 字符，完整数据在 window.argusLastBarClose.chartImage.base64]`,
+    };
   }
-  if (payload.kind === "error") {
-    let s = `【错误】${payload.message || "未知错误"}`;
-    if (payload.symbol) s += `\n标的：${payload.symbol}`;
-    if (payload.candle) s += `\nK 线：${JSON.stringify(payload.candle, null, 2)}`;
-    return s;
-  }
-  return JSON.stringify(payload, null, 2);
+  return JSON.stringify(safe, null, 2);
 }
 
 function setLlmStatus(text) {
@@ -347,55 +368,79 @@ function initChartCapture() {
   if (!btn) return;
 
   btn.addEventListener("click", async () => {
-    const widget = tvWidget;
     const imgEl = document.getElementById("chart-screenshot-img");
     const wrap = document.getElementById("chart-capture-wrap");
-    if (!widget || typeof widget.ready !== "function") {
-      setLlmStatus("无图表");
-      return;
-    }
-    if (typeof widget.imageCanvas !== "function") {
-      setLlmStatus("不支持截图");
-      return;
-    }
 
     btn.disabled = true;
     setLlmStatus("截图中…");
 
     try {
-      const canvas = await new Promise((resolve, reject) => {
-        widget.ready(() => {
-          widget.imageCanvas().then(resolve).catch(reject);
-        });
-      });
-      const dataUrl = canvas.toDataURL("image/png");
-      setLastChartScreenshot(dataUrl);
-      if (imgEl) imgEl.src = dataUrl;
+      const shot = await captureTradingViewPng();
+      setLastChartScreenshot(shot.dataUrl);
+      if (imgEl) imgEl.src = shot.dataUrl;
       if (wrap) wrap.hidden = false;
       setLlmStatus("已截图");
     } catch (err) {
       console.error(err);
-      setLlmStatus("截图失败");
+      setLlmStatus(err.message || "截图失败");
     } finally {
       btn.disabled = false;
     }
   });
 }
 
-function bindArgusBridge() {
-  if (typeof window.argus === "undefined" || !window.argus.onAnalysisUpdate) {
+function initChartCaptureBridge() {
+  if (!window.argus?.onChartCaptureRequest || !window.argus?.submitChartCaptureResult) {
     return;
   }
-  window.argus.onAnalysisUpdate((payload) => {
+  window.argus.onChartCaptureRequest(async ({ requestId }) => {
+    try {
+      const shot = await captureTradingViewPng();
+      window.argus.submitChartCaptureResult({
+        requestId,
+        ok: true,
+        mimeType: shot.mimeType,
+        base64: shot.base64,
+        dataUrl: shot.dataUrl,
+      });
+    } catch (e) {
+      window.argus.submitChartCaptureResult({
+        requestId,
+        ok: false,
+        error: e.message || String(e),
+      });
+    }
+  });
+}
+
+function bindMarketBarClose() {
+  if (typeof window.argus === "undefined" || !window.argus.onMarketBarClose) {
+    return;
+  }
+  window.argus.onMarketBarClose((payload) => {
     const placeholder = document.getElementById("llm-placeholder");
     const output = document.getElementById("llm-output");
     const status = document.getElementById("llm-status");
+    const imgEl = document.getElementById("chart-screenshot-img");
+    const wrap = document.getElementById("chart-capture-wrap");
+
+    window.argusLastBarClose = payload;
+    if (payload?.chartImage?.dataUrl) {
+      setLastChartScreenshot(payload.chartImage.dataUrl);
+      if (imgEl) imgEl.src = payload.chartImage.dataUrl;
+      if (wrap) wrap.hidden = false;
+    }
+
     if (placeholder) placeholder.hidden = true;
     if (output) {
       output.hidden = false;
-      output.textContent = formatAnalysisPayload(payload);
+      output.textContent = formatBarClosePreview(payload);
     }
-    if (status) status.textContent = payload?.kind === "error" ? "分析失败" : "已更新";
+    if (status) {
+      status.textContent = payload?.chartCaptureError
+        ? "收盘（截图异常）"
+        : "K 线收盘已采集";
+    }
   });
 }
 
@@ -419,7 +464,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   initSymbolSelect();
   initChartCapture();
+  initChartCaptureBridge();
   initConfigCenter();
-  bindArgusBridge();
+  bindMarketBarClose();
   bindMarketStatus();
 });

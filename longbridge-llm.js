@@ -1,9 +1,9 @@
 /**
- * 长桥：仅用于美股/港股等 —— 订阅当前选中单一标的 K 线推送，isConfirmed 后调用 LLM。
+ * 长桥：仅用于美股/港股等 —— 订阅当前选中单一标的 K 线推送，isConfirmed 后组装 bar_close（含左侧截图）。
  * 凭证：LONGPORT_APP_KEY / LONGPORT_APP_SECRET / LONGPORT_ACCESS_TOKEN
  */
 const { Config, QuoteContext, Period, TradeSessions } = require("longport");
-const { callOpenAIChat, buildUserPrompt } = require("./llm");
+const { emitBarClose } = require("./bar-close");
 
 function tvIntervalToPeriod(iv) {
   const k = String(iv || "5").toUpperCase();
@@ -117,7 +117,7 @@ async function applyForSelectedSymbol(win, opts) {
     quoteCtx.setOnCandlestick(async (err, event) => {
       const w = winGetter && winGetter();
       if (err) {
-        send(w, "llm-analysis-update", { kind: "error", message: err.message || String(err) });
+        send(w, "market-status", { text: `长桥推送错误：${err.message || err}` });
         return;
       }
       const data = event.data;
@@ -138,32 +138,17 @@ async function applyForSelectedSymbol(win, opts) {
       send(w, "market-status", { text: `长桥 K 确认 ${sym} · ${candle.timestamp}` });
 
       const displaySym = currentTvLabel || sym;
-      const prompt = buildUserPrompt(displaySym, label, candle);
       try {
-        const r = await callOpenAIChat(prompt);
-        if (!r.ok) {
-          send(w, "llm-analysis-update", {
-            kind: "error",
-            symbol: displaySym,
-            candle,
-            message: r.text,
-          });
-          return;
-        }
-        send(w, "llm-analysis-update", {
-          kind: "analysis",
-          symbol: displaySym,
-          period: `lb:${label}`,
+        await emitBarClose(winGetter, {
+          source: "longbridge",
+          tvSymbol: displaySym,
+          interval: currentIntervalTv,
+          periodLabel: label,
           candle,
-          text: r.text,
-          at: new Date().toISOString(),
+          longPortSymbol: sym,
         });
       } catch (e) {
-        send(w, "llm-analysis-update", {
-          kind: "error",
-          symbol: displaySym,
-          message: e.message || String(e),
-        });
+        send(w, "market-status", { text: `收盘处理失败：${e.message || e}` });
       }
     });
   }

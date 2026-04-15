@@ -30,6 +30,18 @@ function createTradingViewWidget(symbol) {
     return;
   }
 
+  /**
+   * tv.js（免费 Advanced Chart）里与「隐藏界面」相关的选项主要来自官方 embed：
+   *
+   * - hide_top_toolbar：顶部栏（品种搜索、周期、布局等）
+   * - hide_side_toolbar：左侧竖条绘图/工具栏（画线、斐波那契等）
+   * - hide_legend：主图左上角 OHLC 等图例
+   * - hide_volume：底部成交量副图
+   * - hideideasbutton：图表上的 Ideas 相关按钮（注意：不是 hideideas；源码里 URL 还会带 hideideas 参数）
+   *
+   * 另：save_image 为 false 时可关闭保存图片；show_popup_button 控制弹出大图等。
+   * enabled_features / disabled_features 会传给 iframe，主要给 Charting Library 用，免费 embed 是否生效因版本而异。
+   */
   tvWidget = new TradingView.widget({
     autosize: true,
     symbol: symbol || "BINANCE:BTCUSDT",
@@ -41,12 +53,13 @@ function createTradingViewWidget(symbol) {
     toolbar_bg: "#161b22",
     enable_publishing: false,
     hide_top_toolbar: false,
+    hide_side_toolbar: true,
     hide_legend: false,
+    hide_volume: false,
+    hideideasbutton: true,
     save_image: false,
     container_id: chartContainerId,
-    hide_side_toolbar: false,
     allow_symbol_change: true,
-    hideideas: true,
     studies: [
       {
         id: "MAExp@tv-basicstudies",

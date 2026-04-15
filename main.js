@@ -44,6 +44,12 @@ ipcMain.handle("config:get", () => loadAppConfig());
 
 ipcMain.handle("config:path", () => configPath());
 
+ipcMain.handle("devtools:open", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.openDevTools();
+  }
+});
+
 ipcMain.handle("config:save", async (_event, payload) => {
   const current = loadAppConfig();
   const merged = { ...current, ...payload };

@@ -65,8 +65,15 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.titlebar-config {
+.titlebar-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-config {
   height: 28px;
   padding: 0 12px;
   border-radius: 6px;

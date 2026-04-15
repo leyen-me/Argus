@@ -361,6 +361,16 @@ function renderConfigRows(symbols) {
   });
 }
 
+function initDevToolsButton() {
+  const btn = document.getElementById("btn-open-devtools");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    if (window.argus && typeof window.argus.openDevTools === "function") {
+      void window.argus.openDevTools();
+    }
+  });
+}
+
 function initConfigCenter() {
   const modal = document.getElementById("config-modal");
   const btnOpen = document.getElementById("btn-open-config");
@@ -823,6 +833,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initSymbolSelect();
   initChartCaptureBridge();
   initConfigCenter();
+  initDevToolsButton();
   initLlmChartPreview();
   bindMarketBarClose();
   bindLlmStream();

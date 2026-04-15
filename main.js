@@ -103,7 +103,7 @@ function createWindow() {
   });
 
   win.once("ready-to-show", () => {
-    win.maximize();
+    win.center();
     win.show();
   });
 

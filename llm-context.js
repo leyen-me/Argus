@@ -1,6 +1,7 @@
 /**
  * 多轮对话上下文：按「TradingView 品种 + K 线周期」分桶，仅存文本（历史轮不重传截图，避免体积与重复）。
  * API 侧在 bar-close 中另经 keepOnlyLastUserImageInMessages 保证仅最后一轮 user 可带图。
+ * 应用正常退出前会 wipeConversationStore，下次启动不继承上次会话。
  */
 const { app } = require("electron");
 const fs = require("fs");
@@ -97,10 +98,23 @@ function clearConversation(key) {
   saveStore();
 }
 
+/** 清空全部桶并写回磁盘（应用退出前调用，使下次启动无历史）。 */
+function wipeConversationStore() {
+  cache = {};
+  const p = storePath();
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, "{}\n", "utf8");
+  } catch {
+    /* ignore */
+  }
+}
+
 module.exports = {
   conversationKey,
   getHistoryMessages,
   appendSuccessfulTurn,
   clearConversation,
+  wipeConversationStore,
   MAX_PAIRS,
 };

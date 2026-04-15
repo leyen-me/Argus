@@ -3,7 +3,7 @@
  */
 const crypto = require("crypto");
 const { ipcMain } = require("electron");
-const { isLlmEnabled, buildUserPrompt } = require("./llm");
+const { isLlmEnabled, buildUserPrompt, callOpenAIChat } = require("./llm");
 
 /**
  * @param {import("electron").WebContents} webContents
@@ -63,6 +63,32 @@ async function emitBarClose(winGetter, ctx) {
 
   const textForLlm = buildUserPrompt(ctx.tvSymbol, ctx.periodLabel, ctx.candle);
 
+  /** @type {{ enabled: boolean, analysisText: string | null, skippedReason: string | null, error: string | null }} */
+  const llm = {
+    enabled: isLlmEnabled(),
+    analysisText: null,
+    skippedReason: null,
+    error: null,
+  };
+  if (!llm.enabled) {
+    llm.skippedReason =
+      "未调用 LLM：需同时设置 ARGUS_ENABLE_LLM=1 与 OPENAI_API_KEY（当前仅收集数据与截图）。";
+  } else {
+    try {
+      const result = await callOpenAIChat(textForLlm, {
+        imageBase64: chartImage?.base64 ?? null,
+        mimeType: chartImage?.mimeType || "image/png",
+      });
+      if (result.ok) {
+        llm.analysisText = result.text;
+      } else {
+        llm.error = result.text;
+      }
+    } catch (e) {
+      llm.error = e.message || String(e);
+    }
+  }
+
   const payload = {
     kind: "bar_close",
     source: ctx.source,
@@ -74,18 +100,8 @@ async function emitBarClose(winGetter, ctx) {
     chartImage,
     chartCaptureError,
     textForLlm,
-    llm: {
-      enabled: isLlmEnabled(),
-      analysisText: null,
-      skippedReason: isLlmEnabled()
-        ? null
-        : "未调用 LLM：需同时设置 ARGUS_ENABLE_LLM=1 与 OPENAI_API_KEY（当前仅收集数据与截图）。",
-    },
+    llm,
   };
-
-  if (isLlmEnabled()) {
-    // 后续在此接入多模态：textForLlm + chartImage.base64
-  }
 
   win.webContents.send("market-bar-close", payload);
 }

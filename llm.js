@@ -6,7 +6,11 @@ function isLlmEnabled() {
   return process.env.ARGUS_ENABLE_LLM === "1" && !!process.env.OPENAI_API_KEY;
 }
 
-async function callOpenAIChat(userContent) {
+/**
+ * @param {string} userText K 线文字说明（textForLlm）
+ * @param {{ imageBase64?: string | null, mimeType?: string }} [options] 若有截图则走多模态（需视觉模型，如 gpt-4o-mini）
+ */
+async function callOpenAIChat(userText, options = {}) {
   if (!isLlmEnabled()) {
     return { ok: false, text: "LLM 未启用。" };
   }
@@ -20,6 +24,25 @@ async function callOpenAIChat(userContent) {
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
   const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const url = `${base}/chat/completions`;
+
+  const imageBase64 = options.imageBase64 && String(options.imageBase64).trim();
+  const mimeType = options.mimeType || "image/png";
+  const userContent =
+    imageBase64
+      ? [
+          {
+            type: "text",
+            text:
+              userText +
+              "\n\n（附图：当前 TradingView 图表截图，请结合上文 OHLC 与成交量一并分析。）",
+          },
+          {
+            type: "image_url",
+            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+          },
+        ]
+      : userText;
+
   const body = {
     model,
     temperature: 0.3,
@@ -28,7 +51,7 @@ async function callOpenAIChat(userContent) {
         role: "system",
         content:
           "你是资深市场分析助手。根据用户给出的单根 K 线（已收盘确认）数据，用简体中文给出简洁分析：" +
-          "短期趋势判断、关键观察点、风险提醒。控制在 200 字以内，勿输出 Markdown 代码块。",
+          "短期趋势判断、关键观察点、风险提醒。若有图表截图，请结合价位与形态简述。控制在 200 字以内，勿输出 Markdown 代码块。",
       },
       { role: "user", content: userContent },
     ],

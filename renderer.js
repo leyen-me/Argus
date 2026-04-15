@@ -345,6 +345,12 @@ function initSymbolSelect() {
   });
 }
 
+function truncateText(str, max) {
+  if (str == null || str === "") return "";
+  if (str.length <= max) return str;
+  return `${str.slice(0, max)}…`;
+}
+
 function formatBarClosePreview(payload) {
   if (!payload || payload.kind !== "bar_close") return JSON.stringify(payload, null, 2);
   const safe = JSON.parse(JSON.stringify(payload));
@@ -423,6 +429,9 @@ function bindMarketBarClose() {
     const status = document.getElementById("llm-status");
     const imgEl = document.getElementById("chart-screenshot-img");
     const wrap = document.getElementById("chart-capture-wrap");
+    const chatStrip = document.getElementById("llm-chat-strip");
+    const bubbleUser = document.getElementById("llm-bubble-user");
+    const bubbleAsst = document.getElementById("llm-bubble-assistant");
 
     window.argusLastBarClose = payload;
     if (payload?.chartImage?.dataUrl) {
@@ -431,15 +440,38 @@ function bindMarketBarClose() {
       if (wrap) wrap.hidden = false;
     }
 
+    const llm = payload?.llm;
+    const showChat =
+      llm?.enabled && (llm.analysisText || llm.error) && bubbleUser && bubbleAsst && chatStrip;
+    if (showChat) {
+      chatStrip.hidden = false;
+      bubbleUser.textContent = truncateText(payload?.textForLlm || "", 320);
+      bubbleAsst.classList.remove("llm-bubble--error");
+      if (llm.analysisText) {
+        bubbleAsst.textContent = llm.analysisText;
+      } else {
+        bubbleAsst.textContent = llm.error || "";
+        bubbleAsst.classList.add("llm-bubble--error");
+      }
+    } else if (chatStrip) {
+      chatStrip.hidden = true;
+    }
+
     if (placeholder) placeholder.hidden = true;
     if (output) {
       output.hidden = false;
       output.textContent = formatBarClosePreview(payload);
     }
     if (status) {
-      status.textContent = payload?.chartCaptureError
-        ? "收盘（截图异常）"
-        : "K 线收盘已采集";
+      if (payload?.chartCaptureError) {
+        status.textContent = "收盘（截图异常）";
+      } else if (llm?.enabled && llm.analysisText) {
+        status.textContent = "收盘 · LLM 已分析";
+      } else if (llm?.enabled && llm.error) {
+        status.textContent = "收盘 · LLM 失败";
+      } else {
+        status.textContent = "K 线收盘已采集";
+      }
     }
   });
 }

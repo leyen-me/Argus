@@ -29,7 +29,11 @@ const FALLBACK_APP_CONFIG = {
     { label: "QQQ", value: "NASDAQ:QQQ" },
   ],
   defaultSymbol: "BINANCE:BTCUSDT",
+  interval: "5",
 };
+
+/** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
+let chartInterval = "5";
 
 async function loadAppConfig() {
   if (window.argus && typeof window.argus.getConfig === "function") {
@@ -158,6 +162,8 @@ function initConfigCenter() {
     }
     renderConfigRows(cfg.symbols);
     fillDefaultSymbolSelect(cfg.symbols, cfg.defaultSymbol);
+    const intSel = document.getElementById("config-interval");
+    if (intSel) intSel.value = cfg.interval || "5";
     modal.hidden = false;
   };
 
@@ -206,15 +212,20 @@ function initConfigCenter() {
     if (!symbols.some((s) => s.value === defaultSymbol)) {
       defaultSymbol = symbols[0].value;
     }
+    const intEl = document.getElementById("config-interval");
+    const interval = intEl?.value?.trim() || "5";
+
     if (!window.argus || typeof window.argus.saveConfig !== "function") {
       applySymbolSelect({ symbols, defaultSymbol });
+      chartInterval = interval;
       createTradingViewWidget(defaultSymbol);
       closeModal();
       return;
     }
     try {
-      const saved = await window.argus.saveConfig({ symbols, defaultSymbol });
+      const saved = await window.argus.saveConfig({ symbols, defaultSymbol, interval });
       applySymbolSelect(saved);
+      chartInterval = saved.interval || interval;
       createTradingViewWidget(saved.defaultSymbol);
       closeModal();
     } catch (err) {
@@ -244,8 +255,10 @@ function destroyWidget() {
   if (el) el.innerHTML = "";
 }
 
-function createTradingViewWidget(symbol) {
+function createTradingViewWidget(symbol, interval) {
   destroyWidget();
+
+  const iv = interval ?? chartInterval ?? "5";
 
   if (typeof TradingView === "undefined" || !TradingView.widget) {
     const el = document.getElementById(chartContainerId);
@@ -271,7 +284,7 @@ function createTradingViewWidget(symbol) {
   tvWidget = new TradingView.widget({
     autosize: true,
     symbol: symbol || "BINANCE:BTCUSDT",
-    interval: "5",
+    interval: iv,
     timezone: "Asia/Shanghai",
     theme: "dark",
     style: "1",
@@ -301,25 +314,27 @@ function initSymbolSelect() {
   if (!sel) return;
   sel.addEventListener("change", () => {
     createTradingViewWidget(sel.value);
+    if (window.argus && typeof window.argus.setMarketContext === "function") {
+      window.argus.setMarketContext(sel.value);
+    }
   });
 }
 
-function showDemoAnalysis() {
-  const placeholder = document.getElementById("llm-placeholder");
-  const output = document.getElementById("llm-output");
-  const status = document.getElementById("llm-status");
-  if (!placeholder || !output || !status) return;
-
-  const demo =
-    "【示例】多模态融合分析占位\n\n" +
-    "· 趋势：待接入实时推理\n" +
-    "· 风险：待接入订单流 / 情绪等信号\n\n" +
-    "接入模型后，可将结构化 JSON 或 Markdown 渲染到右侧面板。";
-
-  placeholder.hidden = true;
-  output.hidden = false;
-  output.textContent = demo;
-  status.textContent = "演示";
+function formatAnalysisPayload(payload) {
+  if (payload == null) return "";
+  if (typeof payload === "string") return payload;
+  if (payload.kind === "analysis") {
+    const ts = payload.candle?.timestamp || payload.at || "";
+    const head = `[${payload.symbol}] ${payload.period}${ts ? ` · ${ts}` : ""}\n\n`;
+    return head + (payload.text || "");
+  }
+  if (payload.kind === "error") {
+    let s = `【错误】${payload.message || "未知错误"}`;
+    if (payload.symbol) s += `\n标的：${payload.symbol}`;
+    if (payload.candle) s += `\nK 线：${JSON.stringify(payload.candle, null, 2)}`;
+    return s;
+  }
+  return JSON.stringify(payload, null, 2);
 }
 
 function setLlmStatus(text) {
@@ -378,20 +393,33 @@ function bindArgusBridge() {
     if (placeholder) placeholder.hidden = true;
     if (output) {
       output.hidden = false;
-      output.textContent =
-        typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+      output.textContent = formatAnalysisPayload(payload);
     }
-    if (status) status.textContent = "已更新";
+    if (status) status.textContent = payload?.kind === "error" ? "分析失败" : "已更新";
+  });
+}
+
+function bindMarketStatus() {
+  if (typeof window.argus === "undefined" || !window.argus.onMarketStatus) {
+    return;
+  }
+  window.argus.onMarketStatus((payload) => {
+    if (payload?.text) setLlmStatus(payload.text);
   });
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
   const cfg = await loadAppConfig();
+  chartInterval = cfg.interval || "5";
   applySymbolSelect(cfg);
-  createTradingViewWidget(cfg.defaultSymbol || cfg.symbols[0]?.value || "BINANCE:BTCUSDT");
+  const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "BINANCE:BTCUSDT";
+  createTradingViewWidget(sym, chartInterval);
+  if (window.argus && typeof window.argus.setMarketContext === "function") {
+    window.argus.setMarketContext(sym);
+  }
   initSymbolSelect();
   initChartCapture();
   initConfigCenter();
   bindArgusBridge();
-  showDemoAnalysis();
+  bindMarketStatus();
 });

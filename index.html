@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' https://*.tradingview.com https://s3.tradingview.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://*.tradingview.com; img-src 'self' data: https: blob:; font-src 'self' data: https://*.tradingview.com; connect-src 'self' https://*.tradingview.com wss://*.tradingview.com; frame-src https://*.tradingview.com; worker-src blob:;"
+      content="default-src 'self'; script-src 'self' https://*.tradingview.com https://s3.tradingview.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://*.tradingview.com; img-src 'self' data: https: blob:; font-src 'self' data: https://*.tradingview.com; connect-src 'self' https://*.tradingview.com wss://*.tradingview.com https://api.openai.com; frame-src https://*.tradingview.com; worker-src blob:;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Argus — 多模态融合分析</title>
@@ -45,7 +45,9 @@
               <img id="chart-screenshot-img" class="chart-capture-img" alt="TradingView 图表截图" />
             </div>
             <div class="llm-placeholder" id="llm-placeholder">
-              分析结果将显示在此处。后续可接入模型 API，或通过 <code>window.argus</code> 接收推送。
+              左侧下拉为当前标的：<strong>BINANCE:*</strong> 走加密定时（Binance 公共 K 线）；其余默认走
+              <strong>长桥订阅</strong>（需 <code>LONGPORT_*</code>）。全局周期见配置中的
+              <code>interval</code>。需设置 <code>OPENAI_API_KEY</code>。
             </div>
             <pre class="llm-output" id="llm-output" hidden></pre>
           </div>
@@ -62,7 +64,8 @@
         <p class="modal-desc">
           配置行情下拉列表中的品种。展示名称可自定义；<strong>TradingView 代码</strong>需与
           <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView</a>
-          中一致（如 <code>BINANCE:BTCUSDT</code>）。保存后写入本机用户目录，可分发默认模板 <code>config.json</code> 供他人复制。
+          中一致（如 <code>BINANCE:BTCUSDT</code>）。<code>BINANCE:</code> 前缀为加密（定时拉 Binance）；其余默认走长桥，若无法自动映射美股/港股代码，可在 JSON 中为该条增加
+          <code>longPortSymbol</code>（如 <code>QQQ.US</code>）。<strong>interval</strong> 与图表周期、长桥订阅周期、加密定时周期一致。保存后写入本机用户目录。
         </p>
         <p class="modal-path" id="config-file-path"></p>
         <div class="config-table-head">
@@ -75,6 +78,20 @@
         <div class="config-default-row">
           <label for="config-default-symbol">默认打开</label>
           <select id="config-default-symbol" class="symbol-select config-default-select"></select>
+        </div>
+        <div class="config-interval-row">
+          <label for="config-interval">K 线周期 interval</label>
+          <select id="config-interval" class="symbol-select config-interval-select" title="与 TradingView 及长桥/加密定时共用">
+            <option value="1">1 分钟</option>
+            <option value="3">3 分钟</option>
+            <option value="5">5 分钟</option>
+            <option value="15">15 分钟</option>
+            <option value="30">30 分钟</option>
+            <option value="60">1 小时</option>
+            <option value="120">2 小时</option>
+            <option value="240">4 小时</option>
+            <option value="D">日线</option>
+          </select>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="btn-config-cancel">取消</button>

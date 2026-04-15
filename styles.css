@@ -424,6 +424,24 @@ body {
   min-width: 0;
 }
 
+.config-interval-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.config-interval-row label {
+  font-size: 13px;
+  color: #c9d1d9;
+  white-space: nowrap;
+}
+
+.config-interval-select {
+  flex: 1;
+  min-width: 0;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

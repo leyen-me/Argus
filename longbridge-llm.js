@@ -1,0 +1,187 @@
+/**
+ * 长桥：仅用于美股/港股等 —— 订阅当前选中单一标的 K 线推送，isConfirmed 后调用 LLM。
+ * 凭证：LONGPORT_APP_KEY / LONGPORT_APP_SECRET / LONGPORT_ACCESS_TOKEN
+ */
+const { Config, QuoteContext, Period, TradeSessions } = require("longport");
+const { callOpenAIChat, buildUserPrompt } = require("./llm");
+
+function tvIntervalToPeriod(iv) {
+  const k = String(iv || "5").toUpperCase();
+  const map = {
+    "1": Period.Min_1,
+    "3": Period.Min_3,
+    "5": Period.Min_5,
+    "15": Period.Min_15,
+    "30": Period.Min_30,
+    "60": Period.Min_60,
+    "120": Period.Min_120,
+    "240": Period.Min_240,
+    D: Period.Day,
+    "1D": Period.Day,
+  };
+  return map[k] ?? Period.Min_5;
+}
+
+function periodDisplayName(iv) {
+  const k = String(iv || "5").toUpperCase();
+  if (k === "D" || k === "1D") return "日线";
+  return `${k}m`;
+}
+
+function dec(x) {
+  if (x == null) return null;
+  return typeof x.toString === "function" ? x.toString() : String(x);
+}
+
+function serializeCandlestick(c) {
+  return {
+    open: dec(c.open),
+    high: dec(c.high),
+    low: dec(c.low),
+    close: dec(c.close),
+    volume: c.volume,
+    turnover: dec(c.turnover),
+    timestamp: c.timestamp instanceof Date ? c.timestamp.toISOString() : String(c.timestamp),
+  };
+}
+
+let quoteCtx = null;
+/** @type {{ symbol: string, period: number } | null} */
+let activeSub = null;
+/** 与当前订阅一致，供推送回调使用（避免闭包陈旧） */
+let currentIntervalTv = "5";
+let currentTvLabel = "";
+
+const seenConfirmedBars = new Set();
+const SEEN_CAP = 2000;
+
+/** @type {() => import("electron").BrowserWindow | null} */
+let winGetter = () => null;
+
+function send(win, channel, payload) {
+  const w =
+    win && !win.isDestroyed() ? win : typeof winGetter === "function" ? winGetter() : null;
+  if (w && !w.isDestroyed()) {
+    w.webContents.send(channel, payload);
+  }
+}
+
+function setMainWindowGetter(fn) {
+  winGetter = fn;
+}
+
+async function unsubscribeCurrent() {
+  if (!quoteCtx || !activeSub) return;
+  try {
+    await quoteCtx.unsubscribeCandlesticks(activeSub.symbol, activeSub.period);
+  } catch (e) {
+    console.error("unsubscribeCandlesticks", e);
+  }
+  activeSub = null;
+}
+
+async function teardownSubscriptions() {
+  await unsubscribeCurrent();
+}
+
+/**
+ * @param {import("electron").BrowserWindow | null} win
+ * @param {{ symbol: string, intervalTv: string, tvSymbol?: string }} opts  symbol=长桥代码
+ */
+async function applyForSelectedSymbol(win, opts) {
+  const { symbol, intervalTv, tvSymbol } = opts;
+  const periodEnum = tvIntervalToPeriod(intervalTv);
+
+  await unsubscribeCurrent();
+
+  if (!symbol) {
+    send(win, "market-status", { text: "长桥：未选择可订阅标的" });
+    return;
+  }
+
+  let envConfig;
+  try {
+    envConfig = Config.fromEnv();
+  } catch (e) {
+    send(win, "market-status", {
+      text: `长桥凭证无效：${e.message || e}`,
+    });
+    return;
+  }
+
+  currentIntervalTv = intervalTv;
+  currentTvLabel = tvSymbol || symbol;
+
+  if (!quoteCtx) {
+    quoteCtx = await QuoteContext.new(envConfig);
+    quoteCtx.setOnCandlestick(async (err, event) => {
+      const w = winGetter && winGetter();
+      if (err) {
+        send(w, "llm-analysis-update", { kind: "error", message: err.message || String(err) });
+        return;
+      }
+      const data = event.data;
+      if (!data || !data.isConfirmed) return;
+
+      const sym = event.symbol;
+      const candle = serializeCandlestick(data.candlestick);
+      const ts = data.candlestick.timestamp;
+      const tsMs = ts instanceof Date ? ts.getTime() : new Date(ts).getTime();
+      const barId = `${sym}:${tsMs}`;
+      if (seenConfirmedBars.has(barId)) return;
+      seenConfirmedBars.add(barId);
+      if (seenConfirmedBars.size > SEEN_CAP) {
+        seenConfirmedBars.clear();
+      }
+
+      const label = periodDisplayName(currentIntervalTv);
+      send(w, "market-status", { text: `长桥 K 确认 ${sym} · ${candle.timestamp}` });
+
+      const displaySym = currentTvLabel || sym;
+      const prompt = buildUserPrompt(displaySym, label, candle);
+      try {
+        const r = await callOpenAIChat(prompt);
+        if (!r.ok) {
+          send(w, "llm-analysis-update", {
+            kind: "error",
+            symbol: displaySym,
+            candle,
+            message: r.text,
+          });
+          return;
+        }
+        send(w, "llm-analysis-update", {
+          kind: "analysis",
+          symbol: displaySym,
+          period: `lb:${label}`,
+          candle,
+          text: r.text,
+          at: new Date().toISOString(),
+        });
+      } catch (e) {
+        send(w, "llm-analysis-update", {
+          kind: "error",
+          symbol: displaySym,
+          message: e.message || String(e),
+        });
+      }
+    });
+  }
+
+  try {
+    await quoteCtx.subscribeCandlesticks(symbol, periodEnum, TradeSessions.Intraday);
+    activeSub = { symbol, period: periodEnum };
+    send(win, "market-status", {
+      text: `长桥：已订阅 ${symbol} · ${periodDisplayName(intervalTv)}`,
+    });
+  } catch (e) {
+    send(win, "market-status", { text: `长桥订阅失败 ${symbol}：${e.message || e}` });
+  }
+}
+
+module.exports = {
+  applyForSelectedSymbol,
+  teardownSubscriptions,
+  setMainWindowGetter,
+  tvIntervalToPeriod,
+};

@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld("argus", {
       callback(payload);
     });
   },
+  onMarketStatus: (callback) => {
+    ipcRenderer.on("market-status", (_event, payload) => {
+      callback(payload);
+    });
+  },
+  setMarketContext: (tvSymbol) => ipcRenderer.invoke("market:set-context", tvSymbol),
   requestAnalysis: (payload) => ipcRenderer.invoke("llm-request-analysis", payload),
   getConfig: () => ipcRenderer.invoke("config:get"),
   saveConfig: (config) => ipcRenderer.invoke("config:save", config),

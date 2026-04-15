@@ -14,6 +14,7 @@ const {
   SYSTEM_PROMPT,
   DEFAULT_CONTEXT_WINDOW_TOKENS,
   estimatePromptTokensFromMessages,
+  keepOnlyLastUserImageInMessages,
 } = require("./llm");
 
 /**
@@ -115,11 +116,11 @@ async function emitBarClose(winGetter, ctx) {
     chartImage?.base64 ?? null,
     chartImage?.mimeType || "image/png",
   );
-  const messages = [
+  const messages = keepOnlyLastUserImageInMessages([
     { role: "system", content: SYSTEM_PROMPT },
     ...history,
     { role: "user", content: currentUserContent },
-  ];
+  ]);
 
   const envCtx = process.env.ARGUS_CONTEXT_WINDOW_TOKENS;
   const contextWindowTokens =

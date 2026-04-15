@@ -104,6 +104,25 @@ function appendLlmRound(payload) {
     .filter(Boolean)
     .join(" · ");
 
+  const chartDataUrl = payload?.chartImage?.dataUrl;
+  let thumbRow = null;
+  if (chartDataUrl) {
+    thumbRow = document.createElement("div");
+    thumbRow.className = "llm-round-thumb-row";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "llm-round-thumb";
+    btn.title = "点击放大查看本轮截图";
+    btn.setAttribute("aria-label", "放大预览本轮图表截图");
+    const img = document.createElement("img");
+    img.src = chartDataUrl;
+    img.alt = "";
+    img.decoding = "async";
+    btn.appendChild(img);
+    btn.addEventListener("click", () => openLlmChartPreview(chartDataUrl));
+    thumbRow.appendChild(btn);
+  }
+
   const rowUser = document.createElement("div");
   rowUser.className = "llm-chat-row llm-chat-row--user";
   const bubbleUser = document.createElement("div");
@@ -126,7 +145,11 @@ function appendLlmRound(payload) {
 
   rowUser.appendChild(bubbleUser);
   rowAsst.appendChild(bubbleAsst);
-  round.append(meta, rowUser, rowAsst);
+  if (thumbRow) {
+    round.append(meta, thumbRow, rowUser, rowAsst);
+  } else {
+    round.append(meta, rowUser, rowAsst);
+  }
   history.appendChild(round);
   history.hidden = false;
 
@@ -498,6 +521,41 @@ function updateContextUsage(usage) {
   else if (pct >= 50) el.classList.add("panel-badge--usage-warn");
 }
 
+function openLlmChartPreview(dataUrl) {
+  const modal = document.getElementById("llm-chart-preview-modal");
+  const img = document.getElementById("llm-chart-preview-img");
+  if (!modal || !img || !dataUrl) return;
+  img.src = dataUrl;
+  img.alt = "本轮 K 线收盘时的图表截图";
+  modal.hidden = false;
+}
+
+function closeLlmChartPreview() {
+  const modal = document.getElementById("llm-chart-preview-modal");
+  const img = document.getElementById("llm-chart-preview-img");
+  if (modal) modal.hidden = true;
+  if (img) {
+    img.removeAttribute("src");
+    img.alt = "";
+  }
+}
+
+function initLlmChartPreview() {
+  const modal = document.getElementById("llm-chart-preview-modal");
+  const btn = document.getElementById("btn-llm-chart-preview-close");
+  if (!modal) return;
+  const close = () => closeLlmChartPreview();
+  btn?.addEventListener("click", close);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (modal.hidden) return;
+    close();
+  });
+}
+
 function initChartCaptureBridge() {
   if (!window.argus?.onChartCaptureRequest || !window.argus?.submitChartCaptureResult) {
     return;
@@ -636,6 +694,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   initSymbolSelect();
   initChartCaptureBridge();
   initConfigCenter();
+  initLlmChartPreview();
   bindMarketBarClose();
   bindLlmStream();
   bindMarketStatus();

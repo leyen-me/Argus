@@ -80,6 +80,42 @@ function estimatePromptTokensFromMessages(messages) {
 }
 
 /**
+ * 将多模态 user 消息压成纯文本（去掉 image_url 等），供历史轮或非最后一轮使用。
+ * @param {{ role: string, content: unknown }} m
+ */
+function userMessageToTextOnly(m) {
+  const c = m.content;
+  if (typeof c === "string") return m;
+  if (!Array.isArray(c)) return m;
+  const texts = c
+    .filter((p) => p && p.type === "text" && typeof p.text === "string")
+    .map((p) => p.text);
+  const text = texts.join("\n").trim();
+  return { role: "user", content: text.length ? text : "（历史轮附图已从 API 请求中省略，仅保留文字。）" };
+}
+
+/**
+ * 确保仅**最后一则** user 消息可携带图片；更早的 user 若含多模态则剥掉图片，避免重复传图。
+ * @param {Array<{ role?: string, content?: unknown }>} messages
+ */
+function keepOnlyLastUserImageInMessages(messages) {
+  if (!Array.isArray(messages)) return messages;
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i] && messages[i].role === "user") {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  if (lastUserIdx < 0) return messages;
+  return messages.map((m, i) => {
+    if (!m || m.role !== "user") return m;
+    if (i === lastUserIdx) return m;
+    return userMessageToTextOnly(m);
+  });
+}
+
+/**
  * 本轮发给 API 的 user 内容（含多模态）；历史轮仅存纯文本，见 llm-context。
  */
 function buildMultimodalUserContent(userText, imageBase64, mimeType) {
@@ -296,4 +332,5 @@ module.exports = {
   resolveOpenAiApiKey,
   DEFAULT_CONTEXT_WINDOW_TOKENS,
   estimatePromptTokensFromMessages,
+  keepOnlyLastUserImageInMessages,
 };

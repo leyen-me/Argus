@@ -1,5 +1,6 @@
 /**
  * 多轮对话上下文：按「TradingView 品种 + K 线周期」分桶，仅存文本（历史轮不重传截图，避免体积与重复）。
+ * API 侧在 bar-close 中另经 keepOnlyLastUserImageInMessages 保证仅最后一轮 user 可带图。
  */
 const { app } = require("electron");
 const fs = require("fs");

@@ -221,6 +221,70 @@ body {
   color: #6e7681;
 }
 
+.llm-round-thumb-row {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.llm-round-thumb {
+  margin: 0;
+  padding: 0;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #161b22;
+  cursor: zoom-in;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.llm-round-thumb:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 2px;
+}
+
+.llm-round-thumb img {
+  display: block;
+  max-height: 72px;
+  max-width: 160px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.llm-chart-preview-backdrop {
+  z-index: 1001;
+  padding: 20px;
+}
+
+.llm-chart-preview-dialog {
+  position: relative;
+  box-sizing: border-box;
+  max-width: min(96vw, 1200px);
+  max-height: 92vh;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+}
+
+.llm-chart-preview-dialog .modal-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+}
+
+.llm-chart-preview-img {
+  display: block;
+  max-width: 100%;
+  max-height: min(85vh, 900px);
+  width: auto;
+  height: auto;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
 .llm-chat-row {
   display: flex;
   width: 100%;

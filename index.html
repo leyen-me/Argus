@@ -21,7 +21,7 @@
             type="button"
             class="titlebar-config"
             id="btn-fish-mode"
-            title="全屏遮挡主界面；按 Esc 关闭"
+            title="按 ESC 退出"
             aria-pressed="false"
           >
             摸鱼模式
@@ -194,12 +194,9 @@
       aria-hidden="true"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="fish-mode-title"
+      aria-label="按 ESC 退出"
     >
-      <div class="fish-mode-panel">
-        <p class="fish-mode-title" id="fish-mode-title">屏幕已遮挡</p>
-        <p class="fish-mode-hint">按 <kbd class="fish-mode-kbd">Esc</kbd> 退出摸鱼模式</p>
-      </div>
+      <p class="fish-mode-hint">按 ESC 退出</p>
     </div>
 
     <div

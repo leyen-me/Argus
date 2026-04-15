@@ -117,16 +117,16 @@ function buildSystemPromptRow(systemText) {
   if (!t) return null;
   const rowSystem = document.createElement("div");
   rowSystem.className = "llm-chat-row llm-chat-row--system";
-  const wrap = document.createElement("div");
-  wrap.className = "llm-system-wrap";
-  const lab = document.createElement("div");
-  lab.className = "llm-system-label";
-  lab.textContent = "系统提示词";
+  const details = document.createElement("details");
+  details.className = "llm-system-details";
+  const summary = document.createElement("summary");
+  summary.className = "llm-system-summary";
+  summary.textContent = "系统提示词 · 点击展开";
   const bubbleSys = document.createElement("div");
   bubbleSys.className = "llm-bubble llm-bubble--system";
   bubbleSys.textContent = t;
-  wrap.append(lab, bubbleSys);
-  rowSystem.appendChild(wrap);
+  details.append(summary, bubbleSys);
+  rowSystem.appendChild(details);
   return rowSystem;
 }
 

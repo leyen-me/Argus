@@ -337,19 +337,43 @@ body {
   justify-content: flex-start;
 }
 
-.llm-system-wrap {
+.llm-system-details {
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
 }
 
-.llm-system-label {
-  margin: 0 0 4px 2px;
+.llm-system-summary {
+  list-style: none;
+  margin: 0 0 0 2px;
+  padding: 4px 0;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  color: #8b949e;
+  cursor: pointer;
+  user-select: none;
+}
+
+.llm-system-summary::-webkit-details-marker {
+  display: none;
+}
+
+.llm-system-summary::before {
+  content: "▸ ";
+  display: inline-block;
   color: #6e7681;
-  text-transform: uppercase;
+  transition: transform 0.12s ease;
+}
+
+.llm-system-details[open] > .llm-system-summary::before {
+  transform: rotate(90deg);
+}
+
+.llm-system-details[open] > .llm-bubble--system {
+  margin-top: 8px;
+  max-height: min(38vh, 280px);
+  overflow-y: auto;
 }
 
 .llm-bubble--system {

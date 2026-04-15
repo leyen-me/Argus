@@ -1,5 +1,6 @@
 /**
  * 长桥：仅用于美股/港股等 —— 订阅当前选中单一标的 K 线推送，isConfirmed 后组装 bar_close（含左侧截图）。
+ * 开盘前/订阅后推送的「陈旧已确认 K」会跳过，不进入分析。
  * 凭证：LONGPORT_APP_KEY / LONGPORT_APP_SECRET / LONGPORT_ACCESS_TOKEN
  */
 const { Config, QuoteContext, Period, TradeSessions } = require("longport");
@@ -26,6 +27,30 @@ function periodDisplayName(iv) {
   const k = String(iv || "5").toUpperCase();
   if (k === "D" || k === "1D") return "日线";
   return `${k}m`;
+}
+
+/** 分钟周期 → 毫秒（与 tvIntervalToPeriod 一致） */
+function tvIntervalToMs(iv) {
+  const k = String(iv || "5").toUpperCase();
+  if (k === "D" || k === "1D") return 24 * 60 * 60 * 1000;
+  const n = parseInt(k, 10);
+  return (Number.isFinite(n) ? n : 5) * 60 * 1000;
+}
+
+/**
+ * 长桥每日开盘前/订阅后常会先推一条「已确认」的历史 K（上一根或上一交易日），不应进入分析。
+ * 刚收盘的 K：timestamp 距现在约为一个周期（起点）或极短（终点）；陈旧快照则远超该范围。
+ */
+function isStaleConfirmedSnapshot(intervalTv, tsMs, nowMs = Date.now()) {
+  const iv = String(intervalTv || "5").toUpperCase();
+  const age = nowMs - tsMs;
+  if (!Number.isFinite(age) || age < 0) return false;
+  if (iv === "D" || iv === "1D") {
+    return age > 36 * 60 * 60 * 1000;
+  }
+  const intervalMs = tvIntervalToMs(iv);
+  const slackMs = 5 * 60 * 1000;
+  return age > intervalMs + slackMs;
 }
 
 function dec(x) {
@@ -129,6 +154,18 @@ async function applyForSelectedSymbol(win, opts) {
       const tsMs = ts instanceof Date ? ts.getTime() : new Date(ts).getTime();
       const barId = `${sym}:${tsMs}`;
       if (seenConfirmedBars.has(barId)) return;
+
+      if (isStaleConfirmedSnapshot(currentIntervalTv, tsMs)) {
+        seenConfirmedBars.add(barId);
+        if (seenConfirmedBars.size > SEEN_CAP) {
+          seenConfirmedBars.clear();
+        }
+        send(w, "market-status", {
+          text: `长桥：跳过开盘前/订阅同步 K（不进入分析）${sym} · ${candle.timestamp}`,
+        });
+        return;
+      }
+
       seenConfirmedBars.add(barId);
       if (seenConfirmedBars.size > SEEN_CAP) {
         seenConfirmedBars.clear();

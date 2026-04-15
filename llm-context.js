@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path");
 
 /** 每个品种+周期保留的「用户+助手」对数（仅文本），约 8 轮 = 16 条 message */
-const MAX_PAIRS = 8;
+const MAX_PAIRS = 64;
 
 function storePath() {
   return path.join(app.getPath("userData"), "argus-llm-conversations.json");

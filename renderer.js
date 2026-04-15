@@ -45,15 +45,18 @@ async function captureTradingViewPng() {
   return { mimeType: "image/png", dataUrl, base64 };
 }
 
-/** 与 app-config.js 内置默认一致（非 Electron 打开页面时兜底） */
-const DEFAULT_SYSTEM_PROMPT_CRYPTO =
+/**
+ * 与 app-config 中 `MIN_FALLBACK_*` 一致：仅当非 Electron 打开页面时用于界面预览兜底。
+ * 正式内容由应用目录 `prompts/system-crypto.txt`、`prompts/system-stocks.txt` 提供。
+ */
+const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
   "先判断趋势、震荡或过渡，再分析本根收盘 K 线在当前位置是延续、测试、拒绝、突破、失败突破还是噪音。" +
   "重点看价格行为本身，不机械复述原始 OHLCV；所有结论都基于概率，没有足够 edge 时优先保守。" +
   "你必须严格服从状态机：只能从 allowed_intents 中选择一个 intent；若当前为 HOLDING_*，禁止重复开仓；若当前为 LOOKING_*，只有确认成立才允许 ENTER_*。" +
   "若信号一般、位置不佳、盈亏比不清晰或只是震荡中部，优先 WAIT / HOLD / CANCEL_LOOKING。" +
   "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
-const DEFAULT_SYSTEM_PROMPT_STOCKS =
+const FALLBACK_SYSTEM_PROMPT_STOCKS =
   "你是资深证券与权益市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
   "先判断趋势、震荡或过渡，再分析本根收盘 K 线在当前位置是延续、测试、拒绝、突破、失败突破还是噪音。" +
   "重点看价格行为本身，不机械复述原始 OHLCV；所有结论都基于概率，没有足够 edge 时优先保守。" +
@@ -74,8 +77,8 @@ const FALLBACK_APP_CONFIG = {
   openaiBaseUrl: "https://api.openai.com/v1",
   openaiModel: "gpt-4o-mini",
   openaiApiKey: "",
-  systemPromptCrypto: DEFAULT_SYSTEM_PROMPT_CRYPTO,
-  systemPromptStocks: DEFAULT_SYSTEM_PROMPT_STOCKS,
+  systemPromptCrypto: FALLBACK_SYSTEM_PROMPT_CRYPTO,
+  systemPromptStocks: FALLBACK_SYSTEM_PROMPT_STOCKS,
   llmReasoningEnabled: false,
 };
 
@@ -590,12 +593,6 @@ function initConfigCenter() {
     if (openaiKeyEl) openaiKeyEl.value = cfg.openaiApiKey ?? FALLBACK_APP_CONFIG.openaiApiKey;
     const reasoningEl = document.getElementById("config-llm-reasoning");
     if (reasoningEl) reasoningEl.checked = cfg.llmReasoningEnabled === true;
-    const sysCryptoEl = document.getElementById("config-system-prompt-crypto");
-    const sysStocksEl = document.getElementById("config-system-prompt-stocks");
-    if (sysCryptoEl)
-      sysCryptoEl.value = cfg.systemPromptCrypto ?? FALLBACK_APP_CONFIG.systemPromptCrypto;
-    if (sysStocksEl)
-      sysStocksEl.value = cfg.systemPromptStocks ?? FALLBACK_APP_CONFIG.systemPromptStocks;
     modal.hidden = false;
   };
 
@@ -654,10 +651,6 @@ function initConfigCenter() {
     const openaiApiKey = openaiKeyEl?.value?.trim() ?? "";
     const reasoningEl = document.getElementById("config-llm-reasoning");
     const llmReasoningEnabled = reasoningEl?.checked === true;
-    const sysCryptoEl = document.getElementById("config-system-prompt-crypto");
-    const sysStocksEl = document.getElementById("config-system-prompt-stocks");
-    const systemPromptCrypto = sysCryptoEl?.value ?? "";
-    const systemPromptStocks = sysStocksEl?.value ?? "";
 
     if (!window.argus || typeof window.argus.saveConfig !== "function") {
       applySymbolSelect({ symbols, defaultSymbol });
@@ -670,8 +663,6 @@ function initConfigCenter() {
           symbols,
           defaultSymbol,
           interval,
-          systemPromptCrypto,
-          systemPromptStocks,
           llmReasoningEnabled,
         },
         selAfter?.value?.trim() || defaultSymbol,
@@ -688,8 +679,6 @@ function initConfigCenter() {
         openaiBaseUrl,
         openaiModel,
         openaiApiKey,
-        systemPromptCrypto,
-        systemPromptStocks,
         llmReasoningEnabled,
       });
       applySymbolSelect(saved);

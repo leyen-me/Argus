@@ -2,10 +2,7 @@
  * OpenAI 兼容 Chat Completions，供长桥推送与加密（Binance WS）共用。
  * 启用条件：ARGUS_ENABLE_LLM=1，且 API Key 来自配置 openaiApiKey 或环境变量 OPENAI_API_KEY（配置优先）。
  */
-const {
-  DEFAULT_SYSTEM_PROMPT_CRYPTO,
-  DEFAULT_SYSTEM_PROMPT_STOCKS,
-} = require("./app-config");
+const { loadSystemPromptsFromDisk } = require("./app-config");
 function resolveOpenAiApiKey(cfg) {
   const fromCfg = cfg && typeof cfg.openaiApiKey === "string" ? cfg.openaiApiKey.trim() : "";
   if (fromCfg) return fromCfg;
@@ -18,15 +15,13 @@ function isLlmEnabled(cfg) {
 }
 
 /**
- * @param {object | null | undefined} cfg loadAppConfig() 结果（须含 systemPromptCrypto / systemPromptStocks）
+ * @param {object | null | undefined} cfg loadAppConfig() 结果（须含 systemPromptCrypto / systemPromptStocks，来自 prompts/*.txt）
  * @param {"crypto" | "longbridge"} feed 与 market.inferFeed 一致：币圈 crypto，股票等走 longbridge
  */
 function resolveSystemPrompt(cfg, feed) {
-  if (!cfg) {
-    return feed === "crypto" ? DEFAULT_SYSTEM_PROMPT_CRYPTO : DEFAULT_SYSTEM_PROMPT_STOCKS;
-  }
-  if (feed === "crypto") return cfg.systemPromptCrypto;
-  return cfg.systemPromptStocks;
+  const p = cfg || loadSystemPromptsFromDisk();
+  if (feed === "crypto") return p.systemPromptCrypto;
+  return p.systemPromptStocks;
 }
 
 /** 与界面默认展示的「上下文窗口」一致（可用环境变量 ARGUS_CONTEXT_WINDOW_TOKENS 覆盖） */

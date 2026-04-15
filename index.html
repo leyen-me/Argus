@@ -170,26 +170,9 @@
         </p>
         <div class="config-section-title">系统提示词</div>
         <p class="modal-hint modal-hint-llm">
-          币圈与股票分开配置。分流规则与行情一致：<code>BINANCE:</code> 前缀或品种行 <code>feed: crypto</code> 为币圈；否则为股票/长桥。股票侧默认强调美股常规时段（美东 9:30–16:00）与盘前盘后差异。
+          已移至应用目录下独立文件，不再写入 <code>config.json</code>。币圈：<code>prompts/system-crypto.txt</code>；股票/长桥：<code>prompts/system-stocks.txt</code>。分流与行情一致：<code>BINANCE:</code> 前缀或品种行
+          <code>feed: crypto</code> 为币圈；否则为股票/长桥。修改 txt 后重新打开应用或保存一次配置即可加载最新内容。
         </p>
-        <div class="config-system-prompt-row">
-          <label for="config-system-prompt-crypto">币圈（7×24）</label>
-          <textarea
-            id="config-system-prompt-crypto"
-            class="config-in config-system-prompt"
-            rows="5"
-            spellcheck="false"
-          ></textarea>
-        </div>
-        <div class="config-system-prompt-row">
-          <label for="config-system-prompt-stocks">股票 / 长桥</label>
-          <textarea
-            id="config-system-prompt-stocks"
-            class="config-in config-system-prompt"
-            rows="5"
-            spellcheck="false"
-          ></textarea>
-        </div>
         <div class="modal-actions">
           <button type="button" class="btn-secondary" id="btn-config-cancel">取消</button>
           <button type="button" class="btn-primary" id="btn-config-save">保存</button>

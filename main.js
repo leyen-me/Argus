@@ -4,7 +4,12 @@ const path = require("path");
 const longbridge = require("./longbridge-llm");
 const cryptoSched = require("./crypto-scheduler");
 const { inferFeed, resolveLongPortSymbol } = require("./market");
-const { loadAppConfig, normalizeConfig, configPath } = require("./app-config");
+const {
+  loadAppConfig,
+  normalizeConfig,
+  configPath,
+  stripSystemPromptsForPersistence,
+} = require("./app-config");
 const { wipeConversationStore } = require("./llm-context");
 const { wipeTradingStateStore } = require("./trading-state");
 
@@ -56,7 +61,11 @@ ipcMain.handle("config:save", async (_event, payload) => {
   const merged = { ...current, ...payload };
   const next = normalizeConfig(merged);
   fs.mkdirSync(path.dirname(configPath()), { recursive: true });
-  fs.writeFileSync(configPath(), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  fs.writeFileSync(
+    configPath(),
+    `${JSON.stringify(stripSystemPromptsForPersistence(next), null, 2)}\n`,
+    "utf8",
+  );
   await routeMarket(next, next.defaultSymbol);
   return next;
 });

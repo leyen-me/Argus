@@ -32,6 +32,21 @@ function resolveSystemPrompt(cfg, feed) {
 /** 与界面默认展示的「上下文窗口」一致（可用环境变量 ARGUS_CONTEXT_WINDOW_TOKENS 覆盖） */
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
 
+const DEFAULT_LLM_TIMEOUT_MS = 300_000;
+
+/** @param {object | null | undefined} cfg */
+function llmFetchSignal(cfg) {
+  let ms = Number(cfg?.llmRequestTimeoutMs);
+  if (!Number.isFinite(ms) || ms <= 0) ms = DEFAULT_LLM_TIMEOUT_MS;
+  ms = Math.floor(ms);
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(ms);
+  }
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), ms);
+  return ac.signal;
+}
+
 /**
  * 粗估文本 tokens（偏中文场景，略偏保守以免低估）。
  * @param {string} s
@@ -232,63 +247,76 @@ async function streamOpenAIChat(messages, options, onEvent) {
     return { ok: false, text: req.error };
   }
 
-  const res = await fetch(req.url, {
-    method: "POST",
-    headers: req.headers,
-    body: JSON.stringify(req.body),
-  });
-
-  if (!res.ok) {
-    const json = await res.json().catch(() => ({}));
-    const errMsg = json?.error?.message || res.statusText || "请求失败";
-    return { ok: false, text: `LLM 请求错误：${errMsg}` };
-  }
-
-  if (!res.body) {
-    return { ok: false, text: "LLM 响应无正文（流式）。" };
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let carry = "";
-  let fullText = "";
+  const signal = llmFetchSignal(cfg);
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      carry += decoder.decode(value, { stream: true });
-      let nl;
-      while ((nl = carry.indexOf("\n")) >= 0) {
-        const line = carry.slice(0, nl).replace(/\r$/, "");
-        carry = carry.slice(nl + 1);
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const dataStr = trimmed.slice(5).trim();
-        if (dataStr === "[DONE]") continue;
-        let json;
-        try {
-          json = JSON.parse(dataStr);
-        } catch {
-          continue;
-        }
-        const piece = json.choices?.[0]?.delta?.content ?? "";
-        if (piece) {
-          fullText += piece;
-          onEvent({ type: "delta", piece, full: fullText });
+    const res = await fetch(req.url, {
+      method: "POST",
+      headers: req.headers,
+      body: JSON.stringify(req.body),
+      signal,
+    });
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      const errMsg = json?.error?.message || res.statusText || "请求失败";
+      return { ok: false, text: `LLM 请求错误：${errMsg}` };
+    }
+
+    if (!res.body) {
+      return { ok: false, text: "LLM 响应无正文（流式）。" };
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let carry = "";
+    let fullText = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        carry += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = carry.indexOf("\n")) >= 0) {
+          const line = carry.slice(0, nl).replace(/\r$/, "");
+          carry = carry.slice(nl + 1);
+          const trimmedLine = line.trim();
+          if (!trimmedLine.startsWith("data:")) continue;
+          const dataStr = trimmedLine.slice(5).trim();
+          if (dataStr === "[DONE]") continue;
+          let json;
+          try {
+            json = JSON.parse(dataStr);
+          } catch {
+            continue;
+          }
+          const piece = json.choices?.[0]?.delta?.content ?? "";
+          if (piece) {
+            fullText += piece;
+            onEvent({ type: "delta", piece, full: fullText });
+          }
         }
       }
+    } finally {
+      reader.releaseLock?.();
     }
-  } finally {
-    reader.releaseLock?.();
-  }
 
-  const trimmed = fullText.trim();
-  onEvent({ type: "done", full: trimmed });
-  if (!trimmed) {
-    return { ok: false, text: "LLM 返回为空。" };
+    const trimmed = fullText.trim();
+    onEvent({ type: "done", full: trimmed });
+    if (!trimmed) {
+      return { ok: false, text: "LLM 返回为空。" };
+    }
+    return { ok: true, text: trimmed };
+  } catch (e) {
+    if (e && (e.name === "AbortError" || e.code === "ABORT_ERR")) {
+      return {
+        ok: false,
+        text: "LLM 请求超时（可在 config.json 里改 llmRequestTimeoutMs，单位毫秒）",
+      };
+    }
+    return { ok: false, text: `LLM 请求失败：${e.message || String(e)}` };
   }
-  return { ok: true, text: trimmed };
 }
 
 /**
@@ -304,21 +332,34 @@ async function callOpenAIChat(userText, options = {}) {
     return { ok: false, text: req.error };
   }
 
-  const res = await fetch(req.url, {
-    method: "POST",
-    headers: req.headers,
-    body: JSON.stringify(req.body),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const errMsg = json?.error?.message || res.statusText || "请求失败";
-    return { ok: false, text: `LLM 请求错误：${errMsg}` };
+  const signal = llmFetchSignal(cfg);
+
+  try {
+    const res = await fetch(req.url, {
+      method: "POST",
+      headers: req.headers,
+      body: JSON.stringify(req.body),
+      signal,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const errMsg = json?.error?.message || res.statusText || "请求失败";
+      return { ok: false, text: `LLM 请求错误：${errMsg}` };
+    }
+    const text = json?.choices?.[0]?.message?.content?.trim();
+    if (!text) {
+      return { ok: false, text: "LLM 返回为空。" };
+    }
+    return { ok: true, text };
+  } catch (e) {
+    if (e && (e.name === "AbortError" || e.code === "ABORT_ERR")) {
+      return {
+        ok: false,
+        text: "LLM 请求超时（可在 config.json 里改 llmRequestTimeoutMs，单位毫秒）",
+      };
+    }
+    return { ok: false, text: `LLM 请求失败：${e.message || String(e)}` };
   }
-  const text = json?.choices?.[0]?.message?.content?.trim();
-  if (!text) {
-    return { ok: false, text: "LLM 返回为空。" };
-  }
-  return { ok: true, text };
 }
 
 function buildUserPrompt(symbol, periodKey, candle) {

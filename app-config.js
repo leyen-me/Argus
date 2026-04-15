@@ -77,6 +77,8 @@ function defaultConfigFallback() {
     openaiApiKey: "",
     systemPromptCrypto: DEFAULT_SYSTEM_PROMPT_CRYPTO,
     systemPromptStocks: DEFAULT_SYSTEM_PROMPT_STOCKS,
+    /** 单次调用 LLM 的超时（毫秒），含流式读完全程 */
+    llmRequestTimeoutMs: 300_000,
   };
 }
 
@@ -201,6 +203,10 @@ function normalizeConfig(raw) {
     base.systemPromptStocks,
   );
 
+  let llmRequestTimeoutMs = base.llmRequestTimeoutMs;
+  const tt = Number(raw.llmRequestTimeoutMs);
+  if (Number.isFinite(tt) && tt > 0) llmRequestTimeoutMs = Math.floor(tt);
+
   return {
     symbols,
     defaultSymbol,
@@ -210,6 +216,7 @@ function normalizeConfig(raw) {
     openaiApiKey,
     systemPromptCrypto,
     systemPromptStocks,
+    llmRequestTimeoutMs,
   };
 }
 

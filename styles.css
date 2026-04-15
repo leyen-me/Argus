@@ -200,6 +200,11 @@ body {
   gap: 10px;
 }
 
+/* `hidden` 默认会被后面的 display:flex 盖掉，空气泡仍会露出浅灰/浅绿框 */
+.llm-chat-strip[hidden] {
+  display: none !important;
+}
+
 .llm-chat-row {
   display: flex;
   width: 100%;

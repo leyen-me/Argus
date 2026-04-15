@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld("argus", {
     });
   },
   requestAnalysis: (payload) => ipcRenderer.invoke("llm-request-analysis", payload),
+  getConfig: () => ipcRenderer.invoke("config:get"),
+  saveConfig: (config) => ipcRenderer.invoke("config:save", config),
+  getConfigPath: () => ipcRenderer.invoke("config:path"),
 });

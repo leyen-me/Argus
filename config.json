@@ -1,0 +1,9 @@
+{
+  "symbols": [
+    { "label": "BTC/USDT", "value": "BINANCE:BTCUSDT" },
+    { "label": "ETH/USDT", "value": "BINANCE:ETHUSDT" },
+    { "label": "SPY", "value": "AMEX:SPY" },
+    { "label": "QQQ", "value": "NASDAQ:QQQ" }
+  ],
+  "defaultSymbol": "BINANCE:BTCUSDT"
+}

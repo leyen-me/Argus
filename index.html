@@ -15,16 +15,15 @@
       <header class="titlebar">
         <span class="titlebar-title">Argus</span>
         <span class="titlebar-hint">左侧 TradingView · 右侧 LLM 分析</span>
+        <button type="button" class="titlebar-config" id="btn-open-config" title="配置中心">
+          配置
+        </button>
       </header>
       <main class="main">
         <section class="panel panel-chart" aria-label="TradingView 图表">
           <div class="panel-header">
             <span class="panel-label">行情</span>
-            <select id="symbol-select" class="symbol-select" title="交易对">
-              <option value="BINANCE:BTCUSDT">BTC/USDT</option>
-              <option value="BINANCE:ETHUSDT">ETH/USDT</option>
-              <option value="NASDAQ:AAPL">AAPL</option>
-            </select>
+            <select id="symbol-select" class="symbol-select" title="交易对"></select>
           </div>
           <div class="chart-wrap">
             <div id="tradingview_chart" class="tradingview-chart"></div>
@@ -53,6 +52,37 @@
         </section>
       </main>
     </div>
+
+    <div class="modal-backdrop" id="config-modal" hidden aria-modal="true" role="dialog" aria-labelledby="config-modal-title">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 class="modal-title" id="config-modal-title">配置中心</h2>
+          <button type="button" class="modal-close" id="btn-config-close" aria-label="关闭">×</button>
+        </div>
+        <p class="modal-desc">
+          配置行情下拉列表中的品种。展示名称可自定义；<strong>TradingView 代码</strong>需与
+          <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView</a>
+          中一致（如 <code>BINANCE:BTCUSDT</code>）。保存后写入本机用户目录，可分发默认模板 <code>config.json</code> 供他人复制。
+        </p>
+        <p class="modal-path" id="config-file-path"></p>
+        <div class="config-table-head">
+          <span>展示名称</span>
+          <span>TradingView 代码</span>
+          <span class="config-col-actions"></span>
+        </div>
+        <div class="config-rows" id="config-rows"></div>
+        <button type="button" class="btn-add-row" id="btn-config-add">+ 添加品种</button>
+        <div class="config-default-row">
+          <label for="config-default-symbol">默认打开</label>
+          <select id="config-default-symbol" class="symbol-select config-default-select"></select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="btn-config-cancel">取消</button>
+          <button type="button" class="btn-primary" id="btn-config-save">保存</button>
+        </div>
+      </div>
+    </div>
+
     <script src="https://s3.tradingview.com/tv.js"></script>
     <script src="renderer.js"></script>
   </body>

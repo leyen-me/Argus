@@ -20,6 +20,217 @@ function setLastChartScreenshot(dataUrl) {
   };
 }
 
+/** 与仓库 config.json 一致，供非 Electron 打开页面时兜底 */
+const FALLBACK_APP_CONFIG = {
+  symbols: [
+    { label: "BTC/USDT", value: "BINANCE:BTCUSDT" },
+    { label: "ETH/USDT", value: "BINANCE:ETHUSDT" },
+    { label: "SPY", value: "AMEX:SPY" },
+    { label: "QQQ", value: "NASDAQ:QQQ" },
+  ],
+  defaultSymbol: "BINANCE:BTCUSDT",
+};
+
+async function loadAppConfig() {
+  if (window.argus && typeof window.argus.getConfig === "function") {
+    try {
+      return await window.argus.getConfig();
+    } catch {
+      /* ignore */
+    }
+  }
+  return FALLBACK_APP_CONFIG;
+}
+
+function applySymbolSelect(config) {
+  const sel = document.getElementById("symbol-select");
+  if (!sel) return;
+  sel.replaceChildren();
+  for (const s of config.symbols) {
+    const opt = document.createElement("option");
+    opt.value = s.value;
+    opt.textContent = s.label;
+    sel.appendChild(opt);
+  }
+  const def =
+    config.symbols.some((x) => x.value === config.defaultSymbol) && config.defaultSymbol
+      ? config.defaultSymbol
+      : config.symbols[0]?.value || "BINANCE:BTCUSDT";
+  sel.value = def;
+}
+
+function collectSymbolsFromConfigRows() {
+  const rows = document.querySelectorAll("#config-rows .config-row");
+  const symbols = [];
+  rows.forEach((row) => {
+    const label = row.querySelector(".config-in-label")?.value.trim() ?? "";
+    const value = row.querySelector(".config-in-value")?.value.trim() ?? "";
+    if (label && value) symbols.push({ label, value });
+  });
+  return symbols;
+}
+
+function fillDefaultSymbolSelect(symbols, selectedValue) {
+  const sel = document.getElementById("config-default-symbol");
+  if (!sel) return;
+  sel.replaceChildren();
+  if (!symbols || symbols.length === 0) return;
+  for (const s of symbols) {
+    const opt = document.createElement("option");
+    opt.value = s.value;
+    opt.textContent = s.label;
+    sel.appendChild(opt);
+  }
+  const pick = symbols.some((s) => s.value === selectedValue) ? selectedValue : symbols[0].value;
+  sel.value = pick;
+}
+
+function onConfigRowRemoved() {
+  const syms = collectSymbolsFromConfigRows();
+  const defSel = document.getElementById("config-default-symbol");
+  const prev = defSel?.value;
+  if (syms.length === 0) {
+    fillDefaultSymbolSelect([], "");
+    return;
+  }
+  fillDefaultSymbolSelect(syms, prev);
+}
+
+function renderConfigRows(symbols) {
+  const container = document.getElementById("config-rows");
+  if (!container) return;
+  container.replaceChildren();
+  const list = symbols.length > 0 ? symbols : [{ label: "", value: "" }];
+  list.forEach((sym) => {
+    const row = document.createElement("div");
+    row.className = "config-row";
+
+    const inLabel = document.createElement("input");
+    inLabel.type = "text";
+    inLabel.className = "config-in config-in-label";
+    inLabel.value = sym.label;
+    inLabel.placeholder = "展示名称";
+
+    const inValue = document.createElement("input");
+    inValue.type = "text";
+    inValue.className = "config-in config-in-value";
+    inValue.value = sym.value;
+    inValue.placeholder = "BINANCE:BTCUSDT";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-row-remove";
+    btn.textContent = "删除";
+    btn.addEventListener("click", () => {
+      row.remove();
+      onConfigRowRemoved();
+    });
+
+    row.append(inLabel, inValue, btn);
+    container.appendChild(row);
+  });
+}
+
+function initConfigCenter() {
+  const modal = document.getElementById("config-modal");
+  const btnOpen = document.getElementById("btn-open-config");
+  const btnClose = document.getElementById("btn-config-close");
+  const btnCancel = document.getElementById("btn-config-cancel");
+  const btnSave = document.getElementById("btn-config-save");
+  const btnAdd = document.getElementById("btn-config-add");
+  const pathEl = document.getElementById("config-file-path");
+
+  if (!modal || !btnOpen || !btnSave) return;
+
+  const closeModal = () => {
+    modal.hidden = true;
+  };
+
+  const openModal = async () => {
+    const cfg = await loadAppConfig();
+    if (pathEl && window.argus && typeof window.argus.getConfigPath === "function") {
+      try {
+        const p = await window.argus.getConfigPath();
+        pathEl.textContent = `保存路径（用户配置）：${p}`;
+      } catch {
+        pathEl.textContent = "";
+      }
+    }
+    renderConfigRows(cfg.symbols);
+    fillDefaultSymbolSelect(cfg.symbols, cfg.defaultSymbol);
+    modal.hidden = false;
+  };
+
+  btnOpen.addEventListener("click", () => {
+    openModal();
+  });
+  btnClose?.addEventListener("click", closeModal);
+  btnCancel?.addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  btnAdd?.addEventListener("click", () => {
+    const container = document.getElementById("config-rows");
+    if (!container) return;
+    const row = document.createElement("div");
+    row.className = "config-row";
+    const inLabel = document.createElement("input");
+    inLabel.type = "text";
+    inLabel.className = "config-in config-in-label";
+    inLabel.placeholder = "展示名称";
+    const inValue = document.createElement("input");
+    inValue.type = "text";
+    inValue.className = "config-in config-in-value";
+    inValue.placeholder = "BINANCE:BTCUSDT";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-row-remove";
+    btn.textContent = "删除";
+    btn.addEventListener("click", () => {
+      row.remove();
+      onConfigRowRemoved();
+    });
+    row.append(inLabel, inValue, btn);
+    container.appendChild(row);
+  });
+
+  btnSave.addEventListener("click", async () => {
+    let symbols = collectSymbolsFromConfigRows();
+    const defEl = document.getElementById("config-default-symbol");
+    let defaultSymbol = defEl?.value?.trim() ?? "";
+    if (symbols.length === 0) {
+      setLlmStatus("请至少填写一行品种");
+      return;
+    }
+    if (!symbols.some((s) => s.value === defaultSymbol)) {
+      defaultSymbol = symbols[0].value;
+    }
+    if (!window.argus || typeof window.argus.saveConfig !== "function") {
+      applySymbolSelect({ symbols, defaultSymbol });
+      createTradingViewWidget(defaultSymbol);
+      closeModal();
+      return;
+    }
+    try {
+      const saved = await window.argus.saveConfig({ symbols, defaultSymbol });
+      applySymbolSelect(saved);
+      createTradingViewWidget(saved.defaultSymbol);
+      closeModal();
+    } catch (err) {
+      console.error(err);
+      setLlmStatus("保存配置失败");
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !modal.hidden) {
+      e.preventDefault();
+      closeModal();
+    }
+  });
+}
+
 function destroyWidget() {
   if (tvWidget && typeof tvWidget.remove === "function") {
     try {
@@ -174,12 +385,13 @@ function bindArgusBridge() {
   });
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  const sel = document.getElementById("symbol-select");
-  const initial = sel ? sel.value : "BINANCE:BTCUSDT";
-  createTradingViewWidget(initial);
+window.addEventListener("DOMContentLoaded", async () => {
+  const cfg = await loadAppConfig();
+  applySymbolSelect(cfg);
+  createTradingViewWidget(cfg.defaultSymbol || cfg.symbols[0]?.value || "BINANCE:BTCUSDT");
   initSymbolSelect();
   initChartCapture();
+  initConfigCenter();
   bindArgusBridge();
   showDemoAnalysis();
 });

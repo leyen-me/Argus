@@ -52,6 +52,25 @@ body {
   -webkit-app-region: no-drag;
 }
 
+.titlebar-config {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #e6edf3;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-config:hover {
+  border-color: #8b949e;
+  background: #30363d;
+}
+
 .main {
   flex: 1;
   display: flex;
@@ -223,4 +242,221 @@ body {
     Consolas,
     monospace;
   color: #c9d1d9;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(1, 4, 9, 0.72);
+  -webkit-app-region: no-drag;
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal {
+  width: min(560px, 100%);
+  max-height: min(90vh, 720px);
+  overflow: auto;
+  padding: 20px 22px;
+  border-radius: 12px;
+  border: 1px solid #30363d;
+  background: #161b22;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.modal-close {
+  border: none;
+  background: transparent;
+  color: #8b949e;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.modal-close:hover {
+  color: #e6edf3;
+  background: #21262d;
+}
+
+.modal-desc {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #8b949e;
+}
+
+.modal-desc a {
+  color: #58a6ff;
+}
+
+.modal-desc code {
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #0d1117;
+  color: #79c0ff;
+}
+
+.modal-path {
+  margin: 0 0 14px;
+  font-size: 11px;
+  line-height: 1.45;
+  word-break: break-all;
+  color: #6e7681;
+  font-family: ui-monospace, Menlo, monospace;
+}
+
+.config-table-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 72px;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8b949e;
+  margin-bottom: 8px;
+}
+
+.config-col-actions {
+  text-align: right;
+}
+
+.config-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.config-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 72px;
+  gap: 8px;
+  align-items: center;
+}
+
+.config-in {
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #e6edf3;
+  font-size: 13px;
+}
+
+.config-in:focus {
+  outline: none;
+  border-color: #388bfd;
+}
+
+.btn-row-remove {
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #f85149;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.btn-row-remove:hover {
+  border-color: #f85149;
+}
+
+.btn-add-row {
+  width: 100%;
+  margin-bottom: 16px;
+  height: 34px;
+  border-radius: 6px;
+  border: 1px dashed #30363d;
+  background: transparent;
+  color: #8b949e;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-add-row:hover {
+  border-color: #8b949e;
+  color: #e6edf3;
+}
+
+.config-default-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.config-default-row label {
+  font-size: 13px;
+  color: #c9d1d9;
+  white-space: nowrap;
+}
+
+.config-default-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-secondary {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #e6edf3;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: #30363d;
+}
+
+.btn-primary {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 6px;
+  border: 1px solid #238636;
+  background: #238636;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background: #2ea043;
 }

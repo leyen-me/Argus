@@ -22,6 +22,7 @@ const {
   syncTradingStateBeforeLlm,
   applyTradingDecision,
 } = require("./trading-state");
+const { notifyTradePositionIfNeeded } = require("./trade-notify-email");
 
 function coerceFiniteNumber(value) {
   const n = Number(value);
@@ -256,6 +257,15 @@ async function emitBarClose(winGetter, ctx) {
   if (stateSync.skipLlm) {
     llm.skippedReason = `未调用 LLM：${stateSync.skipReason}`;
     win.webContents.send("market-bar-close", payloadBase);
+    if (stateSync.hardExit) {
+      void notifyTradePositionIfNeeded(cfg, {
+        tvSymbol: ctx.tvSymbol,
+        interval: ctx.interval,
+        prevState: null,
+        nextState: stateSync.tradeState,
+        hardExit: stateSync.hardExit,
+      }).catch((err) => console.error("[Argus] 仓位通知邮件失败:", err));
+    }
     return;
   }
 
@@ -312,8 +322,20 @@ async function emitBarClose(winGetter, ctx) {
     llm.streaming = false;
     const parsedDecision = parseTradingDecision(result.text, stateSync.tradeState);
     if (parsedDecision.ok) {
+      const tradeStateBefore = stateSync.tradeState;
       const stateResult = applyTradingDecision(convKey, ctx.candle, parsedDecision.decision);
       payloadBase.tradeState = stateResult.tradeState;
+      if (stateResult.applied) {
+        void notifyTradePositionIfNeeded(cfg, {
+          tvSymbol: ctx.tvSymbol,
+          interval: ctx.interval,
+          prevState: tradeStateBefore,
+          nextState: stateResult.tradeState,
+          transition: stateResult.transition,
+          reasoning: parsedDecision.decision?.reasoning || "",
+          hardExit: null,
+        }).catch((err) => console.error("[Argus] 仓位通知邮件失败:", err));
+      }
       if (!stateResult.applied && stateResult.ignoredReason) {
         llm.skippedReason = `状态机未转移：${stateResult.ignoredReason}`;
       }

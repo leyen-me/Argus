@@ -11,5 +11,12 @@
   "openaiModel": "gpt-4o-mini",
   "openaiApiKey": "",
   "llmRequestTimeoutMs": 300000,
-  "llmReasoningEnabled": false
+  "llmReasoningEnabled": false,
+  "tradeNotifyEmailEnabled": false,
+  "smtpHost": "smtp.qq.com",
+  "smtpPort": 465,
+  "smtpSecure": true,
+  "smtpUser": "",
+  "smtpPass": "",
+  "notifyEmailTo": ""
 }

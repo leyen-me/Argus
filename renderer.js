@@ -80,6 +80,13 @@ const FALLBACK_APP_CONFIG = {
   systemPromptCrypto: FALLBACK_SYSTEM_PROMPT_CRYPTO,
   systemPromptStocks: FALLBACK_SYSTEM_PROMPT_STOCKS,
   llmReasoningEnabled: false,
+  tradeNotifyEmailEnabled: false,
+  smtpHost: "smtp.qq.com",
+  smtpPort: 465,
+  smtpSecure: true,
+  smtpUser: "",
+  smtpPass: "",
+  notifyEmailTo: "",
 };
 
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
@@ -593,6 +600,14 @@ function initConfigCenter() {
     if (openaiKeyEl) openaiKeyEl.value = cfg.openaiApiKey ?? FALLBACK_APP_CONFIG.openaiApiKey;
     const reasoningEl = document.getElementById("config-llm-reasoning");
     if (reasoningEl) reasoningEl.checked = cfg.llmReasoningEnabled === true;
+    const tradeNotifyEl = document.getElementById("config-trade-notify-email");
+    if (tradeNotifyEl) tradeNotifyEl.checked = cfg.tradeNotifyEmailEnabled === true;
+    const smtpUserEl = document.getElementById("config-smtp-user");
+    const smtpPassEl = document.getElementById("config-smtp-pass");
+    const notifyToEl = document.getElementById("config-notify-email-to");
+    if (smtpUserEl) smtpUserEl.value = cfg.smtpUser ?? FALLBACK_APP_CONFIG.smtpUser;
+    if (smtpPassEl) smtpPassEl.value = cfg.smtpPass ?? FALLBACK_APP_CONFIG.smtpPass;
+    if (notifyToEl) notifyToEl.value = cfg.notifyEmailTo ?? FALLBACK_APP_CONFIG.notifyEmailTo;
     modal.hidden = false;
   };
 
@@ -651,6 +666,14 @@ function initConfigCenter() {
     const openaiApiKey = openaiKeyEl?.value?.trim() ?? "";
     const reasoningEl = document.getElementById("config-llm-reasoning");
     const llmReasoningEnabled = reasoningEl?.checked === true;
+    const tradeNotifyEl = document.getElementById("config-trade-notify-email");
+    const tradeNotifyEmailEnabled = tradeNotifyEl?.checked === true;
+    const smtpUserEl = document.getElementById("config-smtp-user");
+    const smtpPassEl = document.getElementById("config-smtp-pass");
+    const notifyToEl = document.getElementById("config-notify-email-to");
+    const smtpUser = smtpUserEl?.value?.trim() ?? "";
+    const smtpPass = smtpPassEl?.value?.trim() ?? "";
+    const notifyEmailTo = notifyToEl?.value?.trim() ?? "";
 
     if (!window.argus || typeof window.argus.saveConfig !== "function") {
       applySymbolSelect({ symbols, defaultSymbol });
@@ -664,6 +687,10 @@ function initConfigCenter() {
           defaultSymbol,
           interval,
           llmReasoningEnabled,
+          tradeNotifyEmailEnabled,
+          smtpUser,
+          smtpPass,
+          notifyEmailTo,
         },
         selAfter?.value?.trim() || defaultSymbol,
       );
@@ -680,6 +707,10 @@ function initConfigCenter() {
         openaiModel,
         openaiApiKey,
         llmReasoningEnabled,
+        tradeNotifyEmailEnabled,
+        smtpUser,
+        smtpPass,
+        notifyEmailTo,
       });
       applySymbolSelect(saved);
       chartInterval = saved.interval || interval;

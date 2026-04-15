@@ -1,1 +1,2 @@
 配置文件为：config.json
+使用pnpm作为包管理

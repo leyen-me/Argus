@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "longport": "^3.0.23",
+    "nodemailer": "^6.9.16",
     "ws": "^8.20.0"
   }
 }

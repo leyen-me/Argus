@@ -168,6 +168,50 @@
           <a href="https://openrouter.ai/docs" target="_blank" rel="noreferrer">OpenRouter</a>
           一致）。仅部分模型/网关支持；官方 OpenAI 等可能忽略或报错，请按需使用。
         </p>
+        <div class="config-section-title">仓位变化邮件（QQ 邮箱 SMTP）</div>
+        <p class="modal-hint modal-hint-llm">
+          当模拟仓位<strong>开仓、平仓</strong>或<strong>触发止损/止盈</strong>时发送邮件。需在
+          <a href="https://wx.mail.qq.com/list/readtemplate?name=app_intro.html#/agreement/authorizationCode" target="_blank" rel="noreferrer">QQ 邮箱</a>
+          开启 SMTP，并使用<strong>授权码</strong>作为密码（非 QQ 登录密码）。也可用环境变量
+          <code>ARGUS_SMTP_USER</code>、<code>ARGUS_SMTP_PASS</code>；收件人可用 <code>ARGUS_NOTIFY_EMAIL_TO</code>。
+        </p>
+        <div class="config-interval-row config-checkbox-row">
+          <label for="config-trade-notify-email" class="config-checkbox-label">启用仓位邮件</label>
+          <input type="checkbox" id="config-trade-notify-email" title="写入 config.json 的 tradeNotifyEmailEnabled" />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-smtp-user">发件 QQ 邮箱</label>
+          <input
+            type="text"
+            id="config-smtp-user"
+            class="config-in config-openai-input"
+            placeholder="123456789@qq.com"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-smtp-pass">SMTP 授权码</label>
+          <input
+            type="password"
+            id="config-smtp-pass"
+            class="config-in config-openai-input"
+            placeholder="在 QQ 邮箱设置中生成"
+            spellcheck="false"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-notify-email-to">收件人（可选）</label>
+          <input
+            type="text"
+            id="config-notify-email-to"
+            class="config-in config-openai-input"
+            placeholder="默认同发件邮箱"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </div>
         <div class="config-section-title">系统提示词</div>
         <p class="modal-hint modal-hint-llm">
           已移至应用目录下独立文件，不再写入 <code>config.json</code>。币圈：<code>prompts/system-crypto.txt</code>；股票/长桥：<code>prompts/system-stocks.txt</code>。分流与行情一致：<code>BINANCE:</code> 前缀或品种行

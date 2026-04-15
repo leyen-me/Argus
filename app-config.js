@@ -90,6 +90,15 @@ function defaultConfigFallback() {
      * 默认关闭；非 OpenRouter 或模型不支持时可能被忽略或报错，请按需开启。
      */
     llmReasoningEnabled: false,
+    /** 模拟仓位开仓/平仓（含止损止盈硬触发）时发邮件；需配置 QQ SMTP 授权码 */
+    tradeNotifyEmailEnabled: false,
+    smtpHost: "smtp.qq.com",
+    smtpPort: 465,
+    smtpSecure: true,
+    smtpUser: "",
+    smtpPass: "",
+    /** 留空则发到发件邮箱本号 */
+    notifyEmailTo: "",
   };
 }
 
@@ -219,6 +228,24 @@ function normalizeConfig(raw) {
   if (raw.llmReasoningEnabled === true) llmReasoningEnabled = true;
   else if (raw.llmReasoningEnabled === false) llmReasoningEnabled = false;
 
+  let tradeNotifyEmailEnabled = base.tradeNotifyEmailEnabled;
+  if (raw.tradeNotifyEmailEnabled === true) tradeNotifyEmailEnabled = true;
+  else if (raw.tradeNotifyEmailEnabled === false) tradeNotifyEmailEnabled = false;
+
+  let smtpHost =
+    typeof raw.smtpHost === "string" && raw.smtpHost.trim() ? raw.smtpHost.trim() : base.smtpHost;
+  let smtpPort = base.smtpPort;
+  const sp = Number(raw.smtpPort);
+  if (Number.isFinite(sp) && sp > 0) smtpPort = Math.floor(sp);
+  let smtpSecure = base.smtpSecure;
+  if (raw.smtpSecure === true) smtpSecure = true;
+  else if (raw.smtpSecure === false) smtpSecure = false;
+
+  const smtpUser = typeof raw.smtpUser === "string" ? raw.smtpUser.trim() : base.smtpUser;
+  const smtpPass = typeof raw.smtpPass === "string" ? raw.smtpPass.trim() : base.smtpPass;
+  const notifyEmailTo =
+    typeof raw.notifyEmailTo === "string" ? raw.notifyEmailTo.trim() : base.notifyEmailTo;
+
   return {
     symbols,
     defaultSymbol,
@@ -230,6 +257,13 @@ function normalizeConfig(raw) {
     systemPromptStocks,
     llmRequestTimeoutMs,
     llmReasoningEnabled,
+    tradeNotifyEmailEnabled,
+    smtpHost,
+    smtpPort,
+    smtpSecure,
+    smtpUser,
+    smtpPass,
+    notifyEmailTo,
   };
 }
 

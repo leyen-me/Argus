@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://*.tradingview.com https://s3.tradingview.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://*.tradingview.com; img-src 'self' data: https: blob:; font-src 'self' data: https://*.tradingview.com; connect-src 'self' https://*.tradingview.com wss://*.tradingview.com; frame-src https://*.tradingview.com; worker-src blob:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Argus — 多模态融合分析</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="titlebar">
+        <span class="titlebar-title">Argus</span>
+        <span class="titlebar-hint">左侧 TradingView · 右侧 LLM 分析</span>
+      </header>
+      <main class="main">
+        <section class="panel panel-chart" aria-label="TradingView 图表">
+          <div class="panel-header">
+            <span class="panel-label">行情</span>
+            <select id="symbol-select" class="symbol-select" title="交易对">
+              <option value="BINANCE:BTCUSDT">BTC/USDT</option>
+              <option value="BINANCE:ETHUSDT">ETH/USDT</option>
+              <option value="NASDAQ:AAPL">AAPL</option>
+            </select>
+          </div>
+          <div class="chart-wrap">
+            <div id="tradingview_chart" class="tradingview-chart"></div>
+          </div>
+        </section>
+        <section class="panel panel-llm" aria-label="LLM 分析">
+          <div class="panel-header">
+            <span class="panel-label">LLM 分析</span>
+            <span class="panel-badge" id="llm-status">就绪</span>
+          </div>
+          <div class="llm-body">
+            <div class="llm-placeholder" id="llm-placeholder">
+              分析结果将显示在此处。后续可接入模型 API，或通过 <code>window.argus</code> 接收推送。
+            </div>
+            <pre class="llm-output" id="llm-output" hidden></pre>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="https://s3.tradingview.com/tv.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>

@@ -78,9 +78,11 @@ async function emitBarClose(winGetter, ctx) {
   const textForLlm = buildUserPrompt(ctx.tvSymbol, ctx.periodLabel, ctx.candle);
   const barCloseId = crypto.randomUUID();
 
-  /** @type {{ enabled: boolean, streaming?: boolean, analysisText: string | null, skippedReason: string | null, error: string | null }} */
+  /** @type {{ enabled: boolean, streaming?: boolean, reasoningEnabled?: boolean, reasoningText?: string | null, analysisText: string | null, skippedReason: string | null, error: string | null }} */
   const llm = {
     enabled: isLlmEnabled(cfg),
+    reasoningEnabled: cfg.llmReasoningEnabled === true,
+    reasoningText: null,
     analysisText: null,
     skippedReason: null,
     error: null,
@@ -149,19 +151,28 @@ async function emitBarClose(winGetter, ctx) {
 
   const result = await streamOpenAIChat(messages, streamOpts, (ev) => {
     if (ev.type === "delta") {
-      win.webContents.send("llm-stream-delta", { barCloseId, full: ev.full });
+      win.webContents.send("llm-stream-delta", {
+        barCloseId,
+        full: ev.full,
+        reasoningFull: ev.reasoningFull ?? "",
+      });
     }
   });
 
   if (result.ok) {
     llm.analysisText = result.text;
+    llm.reasoningText = result.reasoningText ?? "";
     llm.streaming = false;
     appendSuccessfulTurn(
       convKey,
       buildUserTextForHistory(textForLlm, !!chartImage?.base64),
       result.text,
     );
-    win.webContents.send("llm-stream-end", { barCloseId, analysisText: result.text });
+    win.webContents.send("llm-stream-end", {
+      barCloseId,
+      analysisText: result.text,
+      reasoningText: result.reasoningText ?? "",
+    });
   } else {
     llm.error = result.text;
     llm.streaming = false;

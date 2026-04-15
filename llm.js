@@ -203,6 +203,10 @@ function buildChatCompletionRequestFromMessages(messages, options, stream) {
     stream: !!stream,
     messages,
   };
+  /** OpenRouter 等：与 curl 示例一致 `reasoning: { enabled: true }` */
+  if (cfg && cfg.llmReasoningEnabled === true) {
+    body.reasoning = { enabled: true };
+  }
 
   return {
     url,
@@ -234,8 +238,31 @@ function buildChatCompletionRequest(userText, options, stream) {
 }
 
 /**
+ * 从流式 chunk 的 delta 中拼接可展示的推理文本（OpenRouter：`reasoning` / `reasoning_details`）。
+ * @param {Record<string, unknown>} delta
+ */
+function appendReasoningFromDelta(delta) {
+  if (!delta || typeof delta !== "object") return "";
+  let s = "";
+  const r = delta.reasoning ?? delta.reasoning_content;
+  if (typeof r === "string" && r) s += r;
+  const details = delta.reasoning_details;
+  if (!Array.isArray(details)) return s;
+  for (const d of details) {
+    if (!d || typeof d !== "object") continue;
+    const t = d.type;
+    if (t === "reasoning.text" && typeof d.text === "string") s += d.text;
+    else if (t === "reasoning.summary" && typeof d.summary === "string") s += d.summary;
+  }
+  return s;
+}
+
+/**
  * 流式：完整 messages（含多轮历史）
- * @param {(ev: { type: 'delta', piece: string, full: string } | { type: 'done', full: string }) => void} onEvent
+ * @param {(ev:
+ *   | { type: 'delta', piece: string, full: string, reasoningFull: string }
+ *   | { type: 'done', full: string, reasoningFull: string }
+ * ) => void} onEvent
  */
 async function streamOpenAIChat(messages, options, onEvent) {
   const cfg = options.appConfig;
@@ -271,6 +298,8 @@ async function streamOpenAIChat(messages, options, onEvent) {
     const decoder = new TextDecoder();
     let carry = "";
     let fullText = "";
+    let fullReasoning = "";
+    const wantReasoning = !!(cfg && cfg.llmReasoningEnabled === true);
 
     try {
       while (true) {
@@ -291,10 +320,20 @@ async function streamOpenAIChat(messages, options, onEvent) {
           } catch {
             continue;
           }
-          const piece = json.choices?.[0]?.delta?.content ?? "";
-          if (piece) {
-            fullText += piece;
-            onEvent({ type: "delta", piece, full: fullText });
+          if (json && typeof json === "object" && json.error) {
+            const em =
+              json.error && typeof json.error === "object" && json.error.message
+                ? String(json.error.message)
+                : "流式响应错误";
+            return { ok: false, text: `LLM 请求错误：${em}` };
+          }
+          const delta = json.choices?.[0]?.delta;
+          const piece = typeof delta?.content === "string" ? delta.content : "";
+          const reasoningPiece = wantReasoning && delta ? appendReasoningFromDelta(delta) : "";
+          if (piece) fullText += piece;
+          if (reasoningPiece) fullReasoning += reasoningPiece;
+          if (piece || reasoningPiece) {
+            onEvent({ type: "delta", piece, full: fullText, reasoningFull: fullReasoning });
           }
         }
       }
@@ -303,11 +342,12 @@ async function streamOpenAIChat(messages, options, onEvent) {
     }
 
     const trimmed = fullText.trim();
-    onEvent({ type: "done", full: trimmed });
-    if (!trimmed) {
+    const reasoningTrimmed = fullReasoning.trim();
+    onEvent({ type: "done", full: trimmed, reasoningFull: reasoningTrimmed });
+    if (!trimmed && !reasoningTrimmed) {
       return { ok: false, text: "LLM 返回为空。" };
     }
-    return { ok: true, text: trimmed };
+    return { ok: true, text: trimmed, reasoningText: reasoningTrimmed };
   } catch (e) {
     if (e && (e.name === "AbortError" || e.code === "ABORT_ERR")) {
       return {

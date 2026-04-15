@@ -70,6 +70,7 @@ const FALLBACK_APP_CONFIG = {
   openaiApiKey: "",
   systemPromptCrypto: DEFAULT_SYSTEM_PROMPT_CRYPTO,
   systemPromptStocks: DEFAULT_SYSTEM_PROMPT_STOCKS,
+  llmReasoningEnabled: false,
 };
 
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
@@ -184,6 +185,18 @@ function findAssistantBubbleForBar(barCloseId) {
 }
 
 /**
+ * @param {string} barCloseId
+ * @returns {HTMLElement | null}
+ */
+function findReasoningBubbleForBar(barCloseId) {
+  if (!barCloseId) return null;
+  const id = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(barCloseId) : barCloseId;
+  return document.querySelector(
+    `#llm-chat-history .llm-round[data-bar-close-id="${id}"] .llm-bubble--reasoning`,
+  );
+}
+
+/**
  * 每根 K 线收盘且启用 LLM 时追加一轮（左模型回复 / 右用户与推送摘要），流式时先占位「…」。
  * @returns {HTMLElement | null} 本轮助手气泡，便于调试
  */
@@ -231,6 +244,32 @@ function appendLlmRound(payload) {
   bubbleUser.className = "llm-bubble llm-bubble--user";
   bubbleUser.textContent = truncateText(payload?.textForLlm || "", 400);
 
+  /** @type {HTMLElement | null} */
+  let rowReasoning = null;
+  if (llm.reasoningEnabled) {
+    rowReasoning = document.createElement("div");
+    rowReasoning.className = "llm-chat-row llm-chat-row--reasoning";
+    const wrap = document.createElement("div");
+    wrap.className = "llm-reasoning-wrap";
+    const label = document.createElement("div");
+    label.className = "llm-reasoning-label";
+    label.textContent = "深度思考";
+    const bubbleReasoning = document.createElement("div");
+    bubbleReasoning.className = "llm-bubble llm-bubble--reasoning";
+    if (llm.streaming) {
+      bubbleReasoning.textContent =
+        llm.reasoningText != null && String(llm.reasoningText).length > 0
+          ? normalizeAssistantDisplayText(llm.reasoningText)
+          : "…";
+    } else if (llm.reasoningText != null && String(llm.reasoningText).trim()) {
+      bubbleReasoning.textContent = normalizeAssistantDisplayText(llm.reasoningText);
+    } else {
+      bubbleReasoning.textContent = "";
+    }
+    wrap.append(label, bubbleReasoning);
+    rowReasoning.appendChild(wrap);
+  }
+
   const rowAsst = document.createElement("div");
   rowAsst.className = "llm-chat-row llm-chat-row--assistant";
   const bubbleAsst = document.createElement("div");
@@ -249,7 +288,9 @@ function appendLlmRound(payload) {
   rowAsst.appendChild(bubbleAsst);
   const parts = [meta];
   if (thumbRow) parts.push(thumbRow);
-  parts.push(rowUser, rowAsst);
+  parts.push(rowUser);
+  if (rowReasoning) parts.push(rowReasoning);
+  parts.push(rowAsst);
   round.append(...parts);
   history.appendChild(round);
   history.hidden = false;
@@ -406,6 +447,8 @@ function initConfigCenter() {
     if (openaiModelEl) openaiModelEl.value = cfg.openaiModel || FALLBACK_APP_CONFIG.openaiModel;
     const openaiKeyEl = document.getElementById("config-openai-api-key");
     if (openaiKeyEl) openaiKeyEl.value = cfg.openaiApiKey ?? FALLBACK_APP_CONFIG.openaiApiKey;
+    const reasoningEl = document.getElementById("config-llm-reasoning");
+    if (reasoningEl) reasoningEl.checked = cfg.llmReasoningEnabled === true;
     const sysCryptoEl = document.getElementById("config-system-prompt-crypto");
     const sysStocksEl = document.getElementById("config-system-prompt-stocks");
     if (sysCryptoEl)
@@ -468,6 +511,8 @@ function initConfigCenter() {
     const openaiBaseUrl = openaiUrlEl?.value?.trim() ?? "";
     const openaiModel = openaiModelEl?.value?.trim() ?? "";
     const openaiApiKey = openaiKeyEl?.value?.trim() ?? "";
+    const reasoningEl = document.getElementById("config-llm-reasoning");
+    const llmReasoningEnabled = reasoningEl?.checked === true;
     const sysCryptoEl = document.getElementById("config-system-prompt-crypto");
     const sysStocksEl = document.getElementById("config-system-prompt-stocks");
     const systemPromptCrypto = sysCryptoEl?.value ?? "";
@@ -486,6 +531,7 @@ function initConfigCenter() {
           interval,
           systemPromptCrypto,
           systemPromptStocks,
+          llmReasoningEnabled,
         },
         selAfter?.value?.trim() || defaultSymbol,
       );
@@ -502,6 +548,7 @@ function initConfigCenter() {
         openaiApiKey,
         systemPromptCrypto,
         systemPromptStocks,
+        llmReasoningEnabled,
       });
       applySymbolSelect(saved);
       chartInterval = saved.interval || interval;
@@ -766,10 +813,14 @@ function bindLlmStream() {
   if (typeof window.argus === "undefined") return;
   const { onLlmStreamDelta, onLlmStreamEnd, onLlmStreamError } = window.argus;
   if (typeof onLlmStreamDelta === "function") {
-    onLlmStreamDelta(({ barCloseId, full }) => {
+    onLlmStreamDelta(({ barCloseId, full, reasoningFull }) => {
       if (barCloseId !== latestBarCloseId) return;
       const bubbleAsst = findAssistantBubbleForBar(barCloseId);
+      const bubbleReas = findReasoningBubbleForBar(barCloseId);
       const status = document.getElementById("llm-status");
+      if (bubbleReas && reasoningFull != null) {
+        bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningFull));
+      }
       if (bubbleAsst) {
         bubbleAsst.textContent = normalizeAssistantDisplayText(full);
         bubbleAsst.classList.remove("llm-bubble--error");
@@ -780,12 +831,17 @@ function bindLlmStream() {
     });
   }
   if (typeof onLlmStreamEnd === "function") {
-    onLlmStreamEnd(({ barCloseId, analysisText }) => {
+    onLlmStreamEnd(({ barCloseId, analysisText, reasoningText }) => {
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.analysisText = analysisText;
+        window.argusLastBarClose.llm.reasoningText = reasoningText ?? "";
         window.argusLastBarClose.llm.streaming = false;
         window.argusLastBarClose.llm.error = null;
+      }
+      const bubbleReas = findReasoningBubbleForBar(barCloseId);
+      if (bubbleReas && reasoningText != null) {
+        bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningText));
       }
       const status = document.getElementById("llm-status");
       if (status) status.textContent = "收盘 · LLM 已分析";

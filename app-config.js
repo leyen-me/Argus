@@ -79,6 +79,11 @@ function defaultConfigFallback() {
     systemPromptStocks: DEFAULT_SYSTEM_PROMPT_STOCKS,
     /** 单次调用 LLM 的超时（毫秒），含流式读完全程 */
     llmRequestTimeoutMs: 300_000,
+    /**
+     * 是否请求并展示「深度思考 / reasoning」（OpenRouter 等兼容接口的 `reasoning.enabled`）。
+     * 默认关闭；非 OpenRouter 或模型不支持时可能被忽略或报错，请按需开启。
+     */
+    llmReasoningEnabled: false,
   };
 }
 
@@ -207,6 +212,10 @@ function normalizeConfig(raw) {
   const tt = Number(raw.llmRequestTimeoutMs);
   if (Number.isFinite(tt) && tt > 0) llmRequestTimeoutMs = Math.floor(tt);
 
+  let llmReasoningEnabled = base.llmReasoningEnabled;
+  if (raw.llmReasoningEnabled === true) llmReasoningEnabled = true;
+  else if (raw.llmReasoningEnabled === false) llmReasoningEnabled = false;
+
   return {
     symbols,
     defaultSymbol,
@@ -217,6 +226,7 @@ function normalizeConfig(raw) {
     systemPromptCrypto,
     systemPromptStocks,
     llmRequestTimeoutMs,
+    llmReasoningEnabled,
   };
 }
 

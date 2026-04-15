@@ -29,6 +29,7 @@ body {
 }
 
 .titlebar {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -39,6 +40,18 @@ body {
   border-bottom: 1px solid #21262d;
   background: #161b22;
   -webkit-app-region: drag;
+}
+
+/* 与系统红绿灯重叠区域不可 drag，否则 macOS 上点「关闭」无响应 */
+.titlebar-traffic-guard {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 80px;
+  z-index: 1;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
 
 .titlebar-title {

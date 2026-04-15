@@ -2,6 +2,10 @@
  * OpenAI 兼容 Chat Completions，供长桥推送与加密（Binance WS）共用。
  * 启用条件：ARGUS_ENABLE_LLM=1，且 API Key 来自配置 openaiApiKey 或环境变量 OPENAI_API_KEY（配置优先）。
  */
+const {
+  DEFAULT_SYSTEM_PROMPT_CRYPTO,
+  DEFAULT_SYSTEM_PROMPT_STOCKS,
+} = require("./app-config");
 function resolveOpenAiApiKey(cfg) {
   const fromCfg = cfg && typeof cfg.openaiApiKey === "string" ? cfg.openaiApiKey.trim() : "";
   if (fromCfg) return fromCfg;
@@ -13,10 +17,17 @@ function isLlmEnabled(cfg) {
   return process.env.ARGUS_ENABLE_LLM === "1" && !!resolveOpenAiApiKey(cfg);
 }
 
-const SYSTEM_PROMPT =
-  "你是资深市场分析助手。用户会进行**多轮对话**：每轮提供一根**已收盘确认**的 K 线数据，必要时附带当前图表截图。" +
-  "请结合**此前对话中你已给出的判断**，与本轮新数据衔接分析，用简体中文作答：短期趋势、关键价位与观察点、风险提醒。" +
-  "单轮回复仍宜简洁（约 200 字内），勿输出 Markdown 代码块。";
+/**
+ * @param {object | null | undefined} cfg loadAppConfig() 结果（须含 systemPromptCrypto / systemPromptStocks）
+ * @param {"crypto" | "longbridge"} feed 与 market.inferFeed 一致：币圈 crypto，股票等走 longbridge
+ */
+function resolveSystemPrompt(cfg, feed) {
+  if (!cfg) {
+    return feed === "crypto" ? DEFAULT_SYSTEM_PROMPT_CRYPTO : DEFAULT_SYSTEM_PROMPT_STOCKS;
+  }
+  if (feed === "crypto") return cfg.systemPromptCrypto;
+  return cfg.systemPromptStocks;
+}
 
 /** 与界面默认展示的「上下文窗口」一致（可用环境变量 ARGUS_CONTEXT_WINDOW_TOKENS 覆盖） */
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
@@ -197,8 +208,11 @@ function buildChatCompletionRequest(userText, options, stream) {
     options.imageBase64,
     options.mimeType,
   );
+  const cfg = options.appConfig;
+  const feed = options.feed === "longbridge" ? "longbridge" : "crypto";
+  const systemContent = cfg ? resolveSystemPrompt(cfg, feed) : "";
   const messages = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemContent },
     { role: "user", content: userContent },
   ];
   return buildChatCompletionRequestFromMessages(messages, options, stream);
@@ -327,7 +341,7 @@ module.exports = {
   buildMultimodalUserContent,
   buildUserTextForHistory,
   buildChatCompletionRequestFromMessages,
-  SYSTEM_PROMPT,
+  resolveSystemPrompt,
   isLlmEnabled,
   resolveOpenAiApiKey,
   DEFAULT_CONTEXT_WINDOW_TOKENS,

@@ -5,13 +5,14 @@ const crypto = require("crypto");
 const { ipcMain } = require("electron");
 const { loadAppConfig } = require("./app-config");
 const { conversationKey, getHistoryMessages, appendSuccessfulTurn } = require("./llm-context");
+const { inferFeed } = require("./market");
 const {
   isLlmEnabled,
   buildUserPrompt,
   streamOpenAIChat,
   buildMultimodalUserContent,
   buildUserTextForHistory,
-  SYSTEM_PROMPT,
+  resolveSystemPrompt,
   DEFAULT_CONTEXT_WINDOW_TOKENS,
   estimatePromptTokensFromMessages,
   keepOnlyLastUserImageInMessages,
@@ -111,13 +112,16 @@ async function emitBarClose(winGetter, ctx) {
   }
 
   const history = getHistoryMessages(convKey);
+  const symEntry = cfg.symbols.find((s) => s.value === ctx.tvSymbol);
+  const feed = inferFeed(ctx.tvSymbol, symEntry?.feed);
+  const systemPrompt = resolveSystemPrompt(cfg, feed);
   const currentUserContent = buildMultimodalUserContent(
     textForLlm,
     chartImage?.base64 ?? null,
     chartImage?.mimeType || "image/png",
   );
   const messages = keepOnlyLastUserImageInMessages([
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt },
     ...history,
     { role: "user", content: currentUserContent },
   ]);

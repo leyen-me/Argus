@@ -45,6 +45,16 @@ async function captureTradingViewPng() {
   return { mimeType: "image/png", dataUrl, base64 };
 }
 
+/** 与 app-config.js 内置默认一致（非 Electron 打开页面时兜底） */
+const DEFAULT_SYSTEM_PROMPT_CRYPTO =
+  "你是资深加密市场分析助手。加密资产**7×24 小时连续交易**，无传统股市的固定「开盘/收盘」日界；每轮用户会提供一根**已收盘确认**的 K 线数据，必要时附带当前图表截图。" +
+  "请结合**此前对话中你已给出的判断**，与本轮新数据衔接分析，用简体中文作答：短期趋势、关键价位与观察点、风险提醒。注意不同时区下各时段流动性可能差异较大。" +
+  "单轮回复仍宜简洁（约 200 字内），勿输出 Markdown 代码块。";
+const DEFAULT_SYSTEM_PROMPT_STOCKS =
+  "你是资深证券与权益市场分析助手。标的通常为**分段交易时段**品种：例如美股**常规交易时段**一般为**美东 9:30–16:00**；盘前、盘后与常规时段相比，流动性与价差特征可能不同；港股等另有当地交易时段。" +
+  "每轮用户会提供一根**已收盘确认**的 K 线数据，必要时附带当前图表截图。请结合**此前对话中你已给出的判断**，与本轮新数据衔接分析，用简体中文作答：短期趋势、关键价位与观察点、风险提醒；" +
+  "若该根 K 线明显落在常规时段之外，可简要提醒流动性与解读注意点。单轮回复仍宜简洁（约 200 字内），勿输出 Markdown 代码块。";
+
 /** 与仓库 config.json 一致，供非 Electron 打开页面时兜底 */
 const FALLBACK_APP_CONFIG = {
   symbols: [
@@ -58,6 +68,8 @@ const FALLBACK_APP_CONFIG = {
   openaiBaseUrl: "https://api.openai.com/v1",
   openaiModel: "gpt-4o-mini",
   openaiApiKey: "",
+  systemPromptCrypto: DEFAULT_SYSTEM_PROMPT_CRYPTO,
+  systemPromptStocks: DEFAULT_SYSTEM_PROMPT_STOCKS,
 };
 
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
@@ -280,7 +292,7 @@ function initConfigCenter() {
     if (pathEl && window.argus && typeof window.argus.getConfigPath === "function") {
       try {
         const p = await window.argus.getConfigPath();
-        pathEl.textContent = `保存路径（用户配置）：${p}`;
+        pathEl.textContent = `配置文件（仅此一份）：${p}`;
       } catch {
         pathEl.textContent = "";
       }
@@ -295,6 +307,12 @@ function initConfigCenter() {
     if (openaiModelEl) openaiModelEl.value = cfg.openaiModel || FALLBACK_APP_CONFIG.openaiModel;
     const openaiKeyEl = document.getElementById("config-openai-api-key");
     if (openaiKeyEl) openaiKeyEl.value = cfg.openaiApiKey ?? FALLBACK_APP_CONFIG.openaiApiKey;
+    const sysCryptoEl = document.getElementById("config-system-prompt-crypto");
+    const sysStocksEl = document.getElementById("config-system-prompt-stocks");
+    if (sysCryptoEl)
+      sysCryptoEl.value = cfg.systemPromptCrypto ?? FALLBACK_APP_CONFIG.systemPromptCrypto;
+    if (sysStocksEl)
+      sysStocksEl.value = cfg.systemPromptStocks ?? FALLBACK_APP_CONFIG.systemPromptStocks;
     modal.hidden = false;
   };
 
@@ -351,6 +369,10 @@ function initConfigCenter() {
     const openaiBaseUrl = openaiUrlEl?.value?.trim() ?? "";
     const openaiModel = openaiModelEl?.value?.trim() ?? "";
     const openaiApiKey = openaiKeyEl?.value?.trim() ?? "";
+    const sysCryptoEl = document.getElementById("config-system-prompt-crypto");
+    const sysStocksEl = document.getElementById("config-system-prompt-stocks");
+    const systemPromptCrypto = sysCryptoEl?.value ?? "";
+    const systemPromptStocks = sysStocksEl?.value ?? "";
 
     if (!window.argus || typeof window.argus.saveConfig !== "function") {
       applySymbolSelect({ symbols, defaultSymbol });
@@ -367,6 +389,8 @@ function initConfigCenter() {
         openaiBaseUrl,
         openaiModel,
         openaiApiKey,
+        systemPromptCrypto,
+        systemPromptStocks,
       });
       applySymbolSelect(saved);
       chartInterval = saved.interval || interval;

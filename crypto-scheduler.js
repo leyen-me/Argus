@@ -282,14 +282,17 @@ function connectOkx() {
     return;
   }
 
+  // 必须用创建时的实例判断：模块级 `ws` 可能被重连/stop 换掉，旧连接的 `open` 晚到时会误对 null 或新套接字 send
+  const okxSocket = ws;
   ws.on("open", () => {
+    if (ws !== okxSocket || okxSocket.readyState !== WebSocket.OPEN) return;
     reconnectAttempt = 0;
     const sub = {
       op: "subscribe",
       args: [{ channel, instId }],
     };
     try {
-      ws.send(JSON.stringify(sub));
+      okxSocket.send(JSON.stringify(sub));
     } catch (e) {
       console.error("OKX subscribe send", e);
     }

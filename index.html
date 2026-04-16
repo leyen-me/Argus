@@ -160,12 +160,12 @@
         </div>
         <div class="config-interval-row config-checkbox-row">
           <label for="config-llm-reasoning" class="config-checkbox-label">深度思考 reasoning</label>
-          <input type="checkbox" id="config-llm-reasoning" title="向兼容接口（如 OpenRouter）发送 reasoning.enabled，并流式展示推理内容；默认关闭" />
+          <input type="checkbox" id="config-llm-reasoning" title="OpenRouter 发 reasoning.enabled；通义等发 enable_thinking，并流式展示思考；默认关闭" />
         </div>
         <p class="modal-hint modal-hint-llm modal-hint-after-reasoning">
-          开启后请求体会包含 <code>reasoning: { &quot;enabled&quot;: true }</code>（与
           <a href="https://openrouter.ai/docs" target="_blank" rel="noreferrer">OpenRouter</a>
-          一致）。仅部分模型/网关支持；官方 OpenAI 等可能忽略或报错，请按需使用。
+          使用 <code>reasoning: { &quot;enabled&quot;: true }</code>；其它兼容端点（如阿里云通义）使用
+          <code>enable_thinking: true</code>。仅部分模型支持；不支持时可能被忽略或报错。
         </p>
         <div class="config-section-title">仓位变化邮件（QQ 邮箱 SMTP）</div>
         <p class="modal-hint modal-hint-llm">

@@ -1,7 +1,8 @@
 /**
- * OpenAI 兼容 Chat Completions，供长桥推送与加密（Binance / OKX WS）共用。
+ * OpenAI 兼容 Chat Completions（官方 `openai` Node SDK + 任意兼容端点），供长桥推送与加密（Binance / OKX WS）共用。
  * 启用条件：在配置中填写 openaiApiKey，或设置环境变量 OPENAI_API_KEY（配置优先）。
  */
+const { OpenAI, APIError, APIUserAbortError } = require("openai");
 const { loadSystemPromptsFromDisk } = require("./app-config");
 function resolveOpenAiApiKey(cfg) {
   const fromCfg = cfg && typeof cfg.openaiApiKey === "string" ? cfg.openaiApiKey.trim() : "";
@@ -30,16 +31,44 @@ const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
 const DEFAULT_LLM_TIMEOUT_MS = 300_000;
 
 /** @param {object | null | undefined} cfg */
-function llmFetchSignal(cfg) {
+function llmRequestTimeoutMs(cfg) {
   let ms = Number(cfg?.llmRequestTimeoutMs);
   if (!Number.isFinite(ms) || ms <= 0) ms = DEFAULT_LLM_TIMEOUT_MS;
-  ms = Math.floor(ms);
+  return Math.floor(ms);
+}
+
+/** @param {object | null | undefined} cfg */
+function llmAbortSignal(cfg) {
+  const ms = llmRequestTimeoutMs(cfg);
   if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
     return AbortSignal.timeout(ms);
   }
   const ac = new AbortController();
   setTimeout(() => ac.abort(), ms);
   return ac.signal;
+}
+
+/** OpenRouter 专用 `reasoning`；其余兼容端点（如通义 DashScope）用 `enable_thinking`，见 tests/dashscope-generation-demo.test.js */
+function isOpenRouterBaseUrl(baseURL) {
+  return String(baseURL || "").toLowerCase().includes("openrouter.ai");
+}
+
+/** @param {unknown} e
+ * @param {object | null | undefined} cfg */
+function mapLlmSdkError(e, cfg) {
+  const timeoutMsg =
+    "LLM 请求超时（可在 config.json 里改 llmRequestTimeoutMs，单位毫秒）";
+  if (e instanceof APIUserAbortError) {
+    return { ok: false, text: timeoutMsg };
+  }
+  if (e && typeof e === "object" && (e.name === "AbortError" || e.code === "ABORT_ERR")) {
+    return { ok: false, text: timeoutMsg };
+  }
+  if (e instanceof APIError) {
+    return { ok: false, text: `LLM 请求错误：${e.message}` };
+  }
+  const msg = e && typeof e === "object" && "message" in e ? String(e.message) : String(e);
+  return { ok: false, text: `LLM 请求失败：${msg}` };
 }
 
 /**
@@ -189,8 +218,7 @@ function buildChatCompletionRequestFromMessages(messages, options, stream) {
     (options.baseUrl && String(options.baseUrl).trim()) ||
     process.env.OPENAI_BASE_URL ||
     "https://api.openai.com/v1";
-  const base = baseRaw.replace(/\/+$/, "");
-  const url = `${base}/chat/completions`;
+  const baseURL = baseRaw.replace(/\/+$/, "");
 
   const body = {
     model,
@@ -198,19 +226,15 @@ function buildChatCompletionRequestFromMessages(messages, options, stream) {
     stream: !!stream,
     messages,
   };
-  /** OpenRouter 等：与 curl 示例一致 `reasoning: { enabled: true }` */
   if (cfg && cfg.llmReasoningEnabled === true) {
-    body.reasoning = { enabled: true };
+    if (isOpenRouterBaseUrl(baseURL)) {
+      body.reasoning = { enabled: true };
+    } else {
+      body.enable_thinking = true;
+    }
   }
 
-  return {
-    url,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body,
-  };
+  return { baseURL, body };
 }
 
 /**
@@ -281,94 +305,49 @@ async function streamOpenAIChat(messages, options, onEvent) {
   if (!isLlmEnabled(cfg)) {
     return { ok: false, text: "LLM 未启用。" };
   }
-  const req = buildChatCompletionRequestFromMessages(messages, options, true);
-  if (req.error) {
-    return { ok: false, text: req.error };
+  const built = buildChatCompletionRequestFromMessages(messages, options, true);
+  if (built.error) {
+    return { ok: false, text: built.error };
   }
 
-  const signal = llmFetchSignal(cfg);
+  const apiKey = resolveOpenAiApiKey(cfg);
+  const signal = llmAbortSignal(cfg);
+  const client = new OpenAI({
+    apiKey,
+    baseURL: built.baseURL,
+    timeout: llmRequestTimeoutMs(cfg),
+    maxRetries: 0,
+  });
+
+  let fullText = "";
+  let fullReasoning = "";
+  const wantReasoning = !!(cfg && cfg.llmReasoningEnabled === true);
 
   try {
-    const res = await fetch(req.url, {
-      method: "POST",
-      headers: req.headers,
-      body: JSON.stringify(req.body),
-      signal,
-    });
-
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      const errMsg = json?.error?.message || res.statusText || "请求失败";
-      return { ok: false, text: `LLM 请求错误：${errMsg}` };
-    }
-
-    if (!res.body) {
-      return { ok: false, text: "LLM 响应无正文（流式）。" };
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let carry = "";
-    let fullText = "";
-    let fullReasoning = "";
-    const wantReasoning = !!(cfg && cfg.llmReasoningEnabled === true);
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        carry += decoder.decode(value, { stream: true });
-        let nl;
-        while ((nl = carry.indexOf("\n")) >= 0) {
-          const line = carry.slice(0, nl).replace(/\r$/, "");
-          carry = carry.slice(nl + 1);
-          const trimmedLine = line.trim();
-          if (!trimmedLine.startsWith("data:")) continue;
-          const dataStr = trimmedLine.slice(5).trim();
-          if (dataStr === "[DONE]") continue;
-          let json;
-          try {
-            json = JSON.parse(dataStr);
-          } catch {
-            continue;
-          }
-          if (json && typeof json === "object" && json.error) {
-            const em =
-              json.error && typeof json.error === "object" && json.error.message
-                ? String(json.error.message)
-                : "流式响应错误";
-            return { ok: false, text: `LLM 请求错误：${em}` };
-          }
-          const delta = json.choices?.[0]?.delta;
-          const piece = typeof delta?.content === "string" ? delta.content : "";
-          const reasoningPiece = wantReasoning && delta ? appendReasoningFromDelta(delta) : "";
-          if (piece) fullText += piece;
-          if (reasoningPiece) fullReasoning = mergeReasoningChunk(fullReasoning, reasoningPiece);
-          if (piece || reasoningPiece) {
-            onEvent({ type: "delta", piece, full: fullText, reasoningFull: fullReasoning });
-          }
-        }
+    const stream = await client.chat.completions.create(built.body, { signal });
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta;
+      const d =
+        delta && typeof delta === "object" ? /** @type {Record<string, unknown>} */ (delta) : {};
+      const piece = typeof d.content === "string" ? d.content : "";
+      const reasoningPiece = wantReasoning && delta ? appendReasoningFromDelta(d) : "";
+      if (piece) fullText += piece;
+      if (reasoningPiece) fullReasoning = mergeReasoningChunk(fullReasoning, reasoningPiece);
+      if (piece || reasoningPiece) {
+        onEvent({ type: "delta", piece, full: fullText, reasoningFull: fullReasoning });
       }
-    } finally {
-      reader.releaseLock?.();
     }
-
-    const trimmed = fullText.trim();
-    const reasoningTrimmed = fullReasoning.trim();
-    onEvent({ type: "done", full: trimmed, reasoningFull: reasoningTrimmed });
-    if (!trimmed && !reasoningTrimmed) {
-      return { ok: false, text: "LLM 返回为空。" };
-    }
-    return { ok: true, text: trimmed, reasoningText: reasoningTrimmed };
   } catch (e) {
-    if (e && (e.name === "AbortError" || e.code === "ABORT_ERR")) {
-      return {
-        ok: false,
-        text: "LLM 请求超时（可在 config.json 里改 llmRequestTimeoutMs，单位毫秒）",
-      };
-    }
-    return { ok: false, text: `LLM 请求失败：${e.message || String(e)}` };
+    return mapLlmSdkError(e, cfg);
   }
+
+  const trimmed = fullText.trim();
+  const reasoningTrimmed = fullReasoning.trim();
+  onEvent({ type: "done", full: trimmed, reasoningFull: reasoningTrimmed });
+  if (!trimmed && !reasoningTrimmed) {
+    return { ok: false, text: "LLM 返回为空。" };
+  }
+  return { ok: true, text: trimmed, reasoningText: reasoningTrimmed };
 }
 
 /**
@@ -379,38 +358,29 @@ async function callOpenAIChat(userText, options = {}) {
   if (!isLlmEnabled(cfg)) {
     return { ok: false, text: "LLM 未启用。" };
   }
-  const req = buildChatCompletionRequest(userText, options, false);
-  if (req.error) {
-    return { ok: false, text: req.error };
+  const built = buildChatCompletionRequest(userText, options, false);
+  if (built.error) {
+    return { ok: false, text: built.error };
   }
 
-  const signal = llmFetchSignal(cfg);
+  const apiKey = resolveOpenAiApiKey(cfg);
+  const signal = llmAbortSignal(cfg);
+  const client = new OpenAI({
+    apiKey,
+    baseURL: built.baseURL,
+    timeout: llmRequestTimeoutMs(cfg),
+    maxRetries: 0,
+  });
 
   try {
-    const res = await fetch(req.url, {
-      method: "POST",
-      headers: req.headers,
-      body: JSON.stringify(req.body),
-      signal,
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const errMsg = json?.error?.message || res.statusText || "请求失败";
-      return { ok: false, text: `LLM 请求错误：${errMsg}` };
-    }
-    const text = json?.choices?.[0]?.message?.content?.trim();
+    const completion = await client.chat.completions.create(built.body, { signal });
+    const text = completion?.choices?.[0]?.message?.content?.trim();
     if (!text) {
       return { ok: false, text: "LLM 返回为空。" };
     }
     return { ok: true, text };
   } catch (e) {
-    if (e && (e.name === "AbortError" || e.code === "ABORT_ERR")) {
-      return {
-        ok: false,
-        text: "LLM 请求超时（可在 config.json 里改 llmRequestTimeoutMs，单位毫秒）",
-      };
-    }
-    return { ok: false, text: `LLM 请求失败：${e.message || String(e)}` };
+    return mapLlmSdkError(e, cfg);
   }
 }
 

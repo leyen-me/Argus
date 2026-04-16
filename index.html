@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; connect-src 'self' https://api.openai.com; worker-src blob:;"
+      content="default-src 'self'; script-src 'self' https://*.tradingview.com https://s3.tradingview.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://*.tradingview.com; img-src 'self' data: https: blob:; font-src 'self' data: https://*.tradingview.com; connect-src 'self' https://*.tradingview.com wss://*.tradingview.com https://api.openai.com; frame-src https://*.tradingview.com; worker-src blob:;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Argus — 多模态融合分析</title>
@@ -15,7 +15,7 @@
       <header class="titlebar">
         <span class="titlebar-traffic-guard" aria-hidden="true"></span>
         <span class="titlebar-title">Argus</span>
-        <span class="titlebar-hint">品种与周期 · 截图来自 Google Chrome 窗口</span>
+        <span class="titlebar-hint">左侧 TradingView · 右侧 LLM 分析</span>
         <div class="titlebar-actions">
           <button
             type="button"
@@ -35,10 +35,13 @@
         </div>
       </header>
       <main class="main">
-        <section class="panel panel-chart" aria-label="行情与品种">
+        <section class="panel panel-chart" aria-label="TradingView 图表">
           <div class="panel-header">
             <span class="panel-label">行情</span>
             <select id="symbol-select" class="symbol-select" title="交易对"></select>
+          </div>
+          <div class="chart-wrap">
+            <div id="tradingview_chart" class="tradingview-chart"></div>
           </div>
         </section>
         <section class="panel panel-llm" aria-label="LLM 分析">
@@ -253,6 +256,7 @@
       </div>
     </div>
 
+    <script src="https://s3.tradingview.com/tv.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>

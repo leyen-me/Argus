@@ -105,14 +105,12 @@ body {
 }
 
 .panel-chart {
-  flex: 0 0 auto;
-  width: min(260px, 32vw);
+  flex: 1.75;
   border-right: 1px solid #21262d;
 }
 
 .panel-llm {
-  flex: 1;
-  min-width: 0;
+  flex: 0.75;
   background: #0d1117;
 }
 
@@ -149,6 +147,17 @@ body {
   line-height: 26px;
   cursor: pointer;
   -webkit-app-region: no-drag;
+}
+
+.chart-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.tradingview-chart {
+  position: absolute;
+  inset: 0;
 }
 
 .panel-header-actions {

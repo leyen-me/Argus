@@ -1,5 +1,5 @@
 /**
- * K 线收盘后：请求渲染进程截取 Google Chrome 窗口，与行情数据组装为统一 payload（供后续多模态 LLM）。
+ * K 线收盘后：请求渲染进程截取左侧 TradingView，与行情数据组装为统一 payload（供后续多模态 LLM）。
  */
 const crypto = require("crypto");
 const { ipcMain } = require("electron");

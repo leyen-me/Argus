@@ -36,7 +36,8 @@ const TV_TO_OKX_CHANNEL = {
 };
 
 const BINANCE_WS_BASE = "wss://stream.binance.com:9443/ws";
-const OKX_WS_PUBLIC = "wss://ws.okx.com:8443/ws/v5/public";
+/** OKX K 线（candle*）须走 business，/public 不再提供该频道，否则会报 60018 */
+const OKX_WS_BUSINESS = "wss://ws.okx.com:8443/ws/v5/business";
 
 let ws = null;
 let reconnectTimer = null;
@@ -258,7 +259,7 @@ function connectOkx() {
   clearReconnectTimer();
 
   try {
-    ws = new WebSocket(OKX_WS_PUBLIC);
+    ws = new WebSocket(OKX_WS_BUSINESS);
   } catch (e) {
     console.error("OKX WS create", e);
     scheduleReconnect();

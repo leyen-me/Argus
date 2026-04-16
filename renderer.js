@@ -115,6 +115,13 @@ function conversationKeyForUi(tvSymbol, interval) {
   return sym ? `${sym}|${iv}` : "";
 }
 
+/** 当前界面选中的品种 + chartInterval，与主进程 `conversationKey(tvSymbol, interval)` 对齐 */
+function currentConversationKeyForUi() {
+  const sel = document.getElementById("symbol-select");
+  const sym = sel?.value?.trim() || "";
+  return conversationKeyForUi(sym, chartInterval);
+}
+
 /**
  * @param {string} key
  * @param {object | null | undefined} tradeState
@@ -816,10 +823,10 @@ function createTradingViewWidget(symbol, interval) {
     locale: "zh_CN",
     toolbar_bg: "#161b22",
     enable_publishing: false,
-    hide_top_toolbar: false,
+    hide_top_toolbar: true,
     hide_side_toolbar: true,
-    hide_legend: false,
-    hide_volume: false,
+    hide_legend: true,
+    hide_volume: true,
     hideideasbutton: true,
     /** 为 false 时 iframe 可能拒绝 imageCanvas 截图，需保留导出能力 */
     save_image: true,
@@ -1029,7 +1036,7 @@ function bindMarketBarClose() {
 
     if (payload?.conversationKey && payload?.tradeState) {
       rememberTradeState(payload.conversationKey, payload.tradeState);
-      if (payload.conversationKey === conversationKeyForUi()) {
+      if (payload.conversationKey === currentConversationKeyForUi()) {
         updateTradeStateDisplay(payload.tradeState, payload.tradeStateEvent ?? null);
       }
     }
@@ -1098,18 +1105,18 @@ function bindLlmStream() {
       if (bubbleReas && reasoningText != null) {
         bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningText));
       }
+      if (conversationKey && tradeState) {
+        rememberTradeState(conversationKey, tradeState);
+        if (conversationKey === currentConversationKeyForUi()) {
+          updateTradeStateDisplay(tradeState, tradeStateEvent ?? null);
+        }
+      }
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.analysisText = analysisText;
         window.argusLastBarClose.llm.reasoningText = reasoningText ?? "";
         window.argusLastBarClose.llm.streaming = false;
         window.argusLastBarClose.llm.error = null;
-      }
-      if (conversationKey && tradeState) {
-        rememberTradeState(conversationKey, tradeState);
-        if (conversationKey === conversationKeyForUi()) {
-          updateTradeStateDisplay(tradeState, tradeStateEvent ?? null);
-        }
       }
       if (window.argusLastBarClose && tradeState) {
         window.argusLastBarClose.tradeState = tradeState;

@@ -9,6 +9,7 @@ const {
   normalizeConfig,
   configPath,
   stripSystemPromptsForPersistence,
+  resetAppConfig,
 } = require("./app-config");
 const { wipeConversationStore } = require("./llm-context");
 const { wipeTradingStateStore } = require("./trading-state");
@@ -66,6 +67,12 @@ ipcMain.handle("config:save", async (_event, payload) => {
     `${JSON.stringify(stripSystemPromptsForPersistence(next), null, 2)}\n`,
     "utf8",
   );
+  await routeMarket(next, next.defaultSymbol);
+  return next;
+});
+
+ipcMain.handle("config:reset", async () => {
+  const next = resetAppConfig();
   await routeMarket(next, next.defaultSymbol);
   return next;
 });

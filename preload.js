@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld("argus", {
   requestAnalysis: (payload) => ipcRenderer.invoke("llm-request-analysis", payload),
   getConfig: () => ipcRenderer.invoke("config:get"),
   saveConfig: (config) => ipcRenderer.invoke("config:save", config),
+  resetConfig: () => ipcRenderer.invoke("config:reset"),
   getConfigPath: () => ipcRenderer.invoke("config:path"),
   openDevTools: () => ipcRenderer.invoke("devtools:open"),
 });

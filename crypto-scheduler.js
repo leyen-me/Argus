@@ -63,7 +63,8 @@ function binancePairFromTv(tv) {
 }
 
 /**
- * OKX:BTC-USDT 或 OKX:BTCUSDT → BTC-USDT（现货 instId）
+ * TradingView 写法为 OKX:BTCUSDT（无连字符）；订阅 OKX WS 时需 instId「BASE-QUOTE」，此处转为 BTC-USDT。
+ * 仍接受 OKX:BTC-USDT，与官方 instId 一致时直接使用。
  * @param {string} tv
  * @returns {string | null}
  */
@@ -249,7 +250,7 @@ function connectOkx() {
   const { winGetter, tvSymbol, intervalTv } = session;
   const instId = okxInstIdFromTv(tvSymbol);
   if (!instId) {
-    send(winGetter, "market-status", { text: "加密：无效 OKX 代码（示例 OKX:BTC-USDT）" });
+    send(winGetter, "market-status", { text: "加密：无效 OKX 代码（示例 OKX:BTCUSDT）" });
     return;
   }
 
@@ -324,7 +325,7 @@ function connect() {
   const route = parseCryptoRoute(tvSymbol);
   if (!route) {
     send(session.winGetter, "market-status", {
-      text: "加密：请使用 BINANCE: 或 OKX: 前缀（如 BINANCE:BTCUSDT、OKX:BTC-USDT）",
+      text: "加密：请使用 BINANCE: 或 OKX: 前缀（如 BINANCE:BTCUSDT、OKX:BTCUSDT）",
     });
     return;
   }

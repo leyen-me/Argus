@@ -727,7 +727,12 @@ body {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 10px;
+}
+
+#btn-config-reset {
+  margin-right: auto;
 }
 
 .btn-secondary {

@@ -72,12 +72,12 @@ function loadSystemPromptsFromDisk() {
 function defaultConfigFallback() {
   return {
     symbols: [
-      { label: "BTC/USDT (OKX)", value: "OKX:BTC-USDT" },
-      { label: "ETH/USDT (OKX)", value: "OKX:ETH-USDT" },
+      { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
+      { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
       { label: "SPY", value: "AMEX:SPY" },
       { label: "QQQ", value: "NASDAQ:QQQ" },
     ],
-    defaultSymbol: "OKX:BTC-USDT",
+    defaultSymbol: "OKX:BTCUSDT",
     interval: "5",
     openaiBaseUrl: DEFAULT_OPENAI_BASE_URL,
     openaiModel: DEFAULT_OPENAI_MODEL,
@@ -123,6 +123,38 @@ function userConfigPath() {
 }
 
 /**
+ * 与首次启动种子一致：优先使用安装目录旁 `config.json` 模板，否则用内置默认再 `normalizeConfig`。
+ * @returns {ReturnType<typeof normalizeConfig>}
+ */
+function buildInitialConfigFromBundled() {
+  let raw = null;
+  try {
+    if (fs.existsSync(BUNDLED_CONFIG)) {
+      raw = JSON.parse(fs.readFileSync(BUNDLED_CONFIG, "utf8"));
+    }
+  } catch {
+    raw = null;
+  }
+  return normalizeConfig(raw && typeof raw === "object" ? raw : defaultConfigFallback());
+}
+
+/**
+ * 将用户 `config.json` 重置为模板/内置默认值（覆盖写入），并返回规范化后的完整配置（含当前磁盘上的系统提示词）。
+ * @returns {ReturnType<typeof normalizeConfig>}
+ */
+function resetAppConfig() {
+  const initial = buildInitialConfigFromBundled();
+  const p = configPath();
+  try {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, `${JSON.stringify(stripSystemPromptsForPersistence(initial), null, 2)}\n`, "utf8");
+  } catch {
+    /* ignore */
+  }
+  return initial;
+}
+
+/**
  * 确保 userData/config.json 存在：优先迁移旧 argus-config.json，否则从仓库旁 config.json 或内置默认写入。
  */
 function ensureConfigFile() {
@@ -146,15 +178,7 @@ function ensureConfigFile() {
     }
   }
 
-  let raw = null;
-  try {
-    if (fs.existsSync(BUNDLED_CONFIG)) {
-      raw = JSON.parse(fs.readFileSync(BUNDLED_CONFIG, "utf8"));
-    }
-  } catch {
-    raw = null;
-  }
-  const initial = normalizeConfig(raw && typeof raw === "object" ? raw : defaultConfigFallback());
+  const initial = buildInitialConfigFromBundled();
   try {
     fs.writeFileSync(p, `${JSON.stringify(stripSystemPromptsForPersistence(initial), null, 2)}\n`, "utf8");
   } catch {
@@ -283,6 +307,8 @@ module.exports = {
   normalizeConfig,
   configPath,
   userConfigPath,
+  buildInitialConfigFromBundled,
+  resetAppConfig,
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
   loadSystemPromptsFromDisk,

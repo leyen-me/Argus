@@ -67,12 +67,12 @@ const FALLBACK_SYSTEM_PROMPT_STOCKS =
 /** 与仓库 config.json 一致，供非 Electron 打开页面时兜底 */
 const FALLBACK_APP_CONFIG = {
   symbols: [
-    { label: "BTC/USDT (OKX)", value: "OKX:BTC-USDT" },
-    { label: "ETH/USDT (OKX)", value: "OKX:ETH-USDT" },
+    { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
+    { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
     { label: "SPY", value: "AMEX:SPY" },
     { label: "QQQ", value: "NASDAQ:QQQ" },
   ],
-  defaultSymbol: "OKX:BTC-USDT",
+  defaultSymbol: "OKX:BTCUSDT",
   interval: "5",
   openaiBaseUrl: "https://api.openai.com/v1",
   openaiModel: "gpt-4o-mini",
@@ -290,7 +290,7 @@ async function refreshCurrentSystemPromptPreview() {
     sel?.value?.trim() ||
     cfg.defaultSymbol ||
     cfg.symbols[0]?.value ||
-    "OKX:BTC-USDT";
+    "OKX:BTCUSDT";
   updateCurrentSystemPromptPreview(cfg, sym);
 }
 
@@ -448,7 +448,7 @@ function applySymbolSelect(config) {
   const def =
     config.symbols.some((x) => x.value === config.defaultSymbol) && config.defaultSymbol
       ? config.defaultSymbol
-      : config.symbols[0]?.value || "OKX:BTC-USDT";
+      : config.symbols[0]?.value || "OKX:BTCUSDT";
   sel.value = def;
 }
 
@@ -508,7 +508,7 @@ function renderConfigRows(symbols) {
     inValue.type = "text";
     inValue.className = "config-in config-in-value";
     inValue.value = sym.value;
-    inValue.placeholder = "OKX:BTC-USDT";
+    inValue.placeholder = "OKX:BTCUSDT";
 
     const btn = document.createElement("button");
     btn.type = "button";
@@ -569,25 +569,13 @@ function initConfigCenter() {
   const btnClose = document.getElementById("btn-config-close");
   const btnCancel = document.getElementById("btn-config-cancel");
   const btnSave = document.getElementById("btn-config-save");
+  const btnReset = document.getElementById("btn-config-reset");
   const btnAdd = document.getElementById("btn-config-add");
   const pathEl = document.getElementById("config-file-path");
 
   if (!modal || !btnOpen || !btnSave) return;
 
-  const closeModal = () => {
-    modal.hidden = true;
-  };
-
-  const openModal = async () => {
-    const cfg = await loadAppConfig();
-    if (pathEl && window.argus && typeof window.argus.getConfigPath === "function") {
-      try {
-        const p = await window.argus.getConfigPath();
-        pathEl.textContent = `配置文件（仅此一份）：${p}`;
-      } catch {
-        pathEl.textContent = "";
-      }
-    }
+  const fillConfigModalFields = (cfg) => {
     renderConfigRows(cfg.symbols);
     fillDefaultSymbolSelect(cfg.symbols, cfg.defaultSymbol);
     const intSel = document.getElementById("config-interval");
@@ -608,11 +596,58 @@ function initConfigCenter() {
     if (smtpUserEl) smtpUserEl.value = cfg.smtpUser ?? FALLBACK_APP_CONFIG.smtpUser;
     if (smtpPassEl) smtpPassEl.value = cfg.smtpPass ?? FALLBACK_APP_CONFIG.smtpPass;
     if (notifyToEl) notifyToEl.value = cfg.notifyEmailTo ?? FALLBACK_APP_CONFIG.notifyEmailTo;
+  };
+
+  const closeModal = () => {
+    modal.hidden = true;
+  };
+
+  const openModal = async () => {
+    const cfg = await loadAppConfig();
+    if (pathEl && window.argus && typeof window.argus.getConfigPath === "function") {
+      try {
+        const p = await window.argus.getConfigPath();
+        pathEl.textContent = `配置文件（仅此一份）：${p}`;
+      } catch {
+        pathEl.textContent = "";
+      }
+    }
+    fillConfigModalFields(cfg);
     modal.hidden = false;
   };
 
   btnOpen.addEventListener("click", () => {
     openModal();
+  });
+  btnReset?.addEventListener("click", async () => {
+    const ok = window.confirm(
+      "将用户目录下的 config.json 恢复为安装目录模板（或内置默认值）。API Key、SMTP 等将清空为默认，是否继续？",
+    );
+    if (!ok) return;
+
+    if (!window.argus || typeof window.argus.resetConfig !== "function") {
+      fillConfigModalFields(FALLBACK_APP_CONFIG);
+      applySymbolSelect(FALLBACK_APP_CONFIG);
+      chartInterval = FALLBACK_APP_CONFIG.interval || "5";
+      createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol);
+      void refreshCurrentSystemPromptPreview();
+      setLlmStatus("已恢复界面为内置默认（非 Electron 环境不会写入磁盘）");
+      refreshTradeStateBarFromCache();
+      return;
+    }
+    try {
+      const saved = await window.argus.resetConfig();
+      fillConfigModalFields(saved);
+      applySymbolSelect(saved);
+      chartInterval = saved.interval || "5";
+      createTradingViewWidget(saved.defaultSymbol);
+      void refreshCurrentSystemPromptPreview();
+      setLlmStatus("配置已恢复默认");
+      refreshTradeStateBarFromCache();
+    } catch (err) {
+      console.error(err);
+      setLlmStatus("恢复默认配置失败");
+    }
   });
   btnClose?.addEventListener("click", closeModal);
   btnCancel?.addEventListener("click", closeModal);
@@ -632,7 +667,7 @@ function initConfigCenter() {
     const inValue = document.createElement("input");
     inValue.type = "text";
     inValue.className = "config-in config-in-value";
-    inValue.placeholder = "OKX:BTC-USDT";
+    inValue.placeholder = "OKX:BTCUSDT";
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn-row-remove";
@@ -773,7 +808,7 @@ function createTradingViewWidget(symbol, interval) {
    */
   tvWidget = new TradingView.widget({
     autosize: true,
-    symbol: symbol || "OKX:BTC-USDT",
+    symbol: symbol || "OKX:BTCUSDT",
     interval: iv,
     timezone: "Asia/Shanghai",
     theme: "dark",
@@ -1064,7 +1099,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const cfg = await loadAppConfig();
   chartInterval = cfg.interval || "5";
   applySymbolSelect(cfg);
-  const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTC-USDT";
+  const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
   createTradingViewWidget(sym, chartInterval);
   const sel = document.getElementById("symbol-select");
   updateCurrentSystemPromptPreview(cfg, sel?.value?.trim() || sym);

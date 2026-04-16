@@ -1,11 +1,11 @@
 {
   "symbols": [
-    { "label": "BTC/USDT (OKX)", "value": "OKX:BTC-USDT" },
-    { "label": "ETH/USDT (OKX)", "value": "OKX:ETH-USDT" },
+    { "label": "BTC/USDT (OKX)", "value": "OKX:BTCUSDT" },
+    { "label": "ETH/USDT (OKX)", "value": "OKX:ETHUSDT" },
     { "label": "SPY", "value": "AMEX:SPY" },
     { "label": "QQQ", "value": "NASDAQ:QQQ" }
   ],
-  "defaultSymbol": "OKX:BTC-USDT",
+  "defaultSymbol": "OKX:BTCUSDT",
   "interval": "5",
   "openaiBaseUrl": "https://api.openai.com/v1",
   "openaiModel": "gpt-4o-mini",

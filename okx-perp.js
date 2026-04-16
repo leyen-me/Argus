@@ -6,16 +6,56 @@
 const crypto = require("crypto");
 const https = require("https");
 const { inferFeed } = require("./market");
-const { okxInstIdFromTv } = require("./crypto-scheduler");
 
 const OKX_REST = "https://www.okx.com";
+
+/**
+ * OKX 失败时顶层 `msg` 常为「All operations failed」，具体原因在 `data[].sCode` / `data[].sMsg`。
+ * @param {object} json
+ */
+function formatOkxErrorBody(json) {
+  const msg = typeof json.msg === "string" ? json.msg : "";
+  const rows = Array.isArray(json.data) ? json.data : [];
+  const details = rows
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const sc = row.sCode != null ? String(row.sCode) : "";
+      const sm = typeof row.sMsg === "string" ? row.sMsg : "";
+      if (!sc && !sm) return null;
+      return sc && sm ? `[${sc}] ${sm}` : sc || sm;
+    })
+    .filter(Boolean);
+  if (details.length) return [msg, ...details].filter(Boolean).join(" | ");
+  if (msg) return msg;
+  try {
+    return JSON.stringify(json);
+  } catch {
+    return String(json);
+  }
+}
+
+/**
+ * 与 crypto-scheduler 中 OKX 现货 instId 规则一致（避免 require crypto-scheduler → bar-close 循环依赖）。
+ * @param {string} tv
+ * @returns {string | null}
+ */
+function okxSpotInstIdFromTv(tv) {
+  const v = String(tv || "").trim();
+  if (!v.startsWith("OKX:")) return null;
+  const rest = v.slice("OKX:".length).trim().toUpperCase();
+  if (!rest) return null;
+  if (rest.includes("-")) return rest;
+  const m = /^(.+)(USDT|USDC|DAI|BUSD|EUR|USD|BTC|ETH)$/.exec(rest);
+  if (m) return `${m[1]}-${m[2]}`;
+  return null;
+}
 
 /**
  * @param {string} tvSymbol
  * @returns {string | null}
  */
 function tvSymbolToSwapInstId(tv) {
-  const spotLike = okxInstIdFromTv(tv);
+  const spotLike = okxSpotInstIdFromTv(tv);
   if (!spotLike) return null;
   return `${spotLike}-SWAP`;
 }
@@ -72,8 +112,7 @@ function createOkxClient(opts) {
             return;
           }
           if (String(json.code) !== "0") {
-            const msg = json.msg || json.data?.[0]?.sMsg || JSON.stringify(json);
-            reject(new Error(`OKX ${json.code}: ${msg}`));
+            reject(new Error(`OKX ${json.code}: ${formatOkxErrorBody(json)}`));
             return;
           }
           resolve(json);
@@ -105,7 +144,7 @@ function publicGet(pathWithQuery) {
           try {
             const json = JSON.parse(Buffer.concat(chunks).toString("utf8"));
             if (String(json.code) !== "0") {
-              reject(new Error(`OKX ${json.code}: ${json.msg || JSON.stringify(json)}`));
+              reject(new Error(`OKX ${json.code}: ${formatOkxErrorBody(json)}`));
               return;
             }
             resolve(json);
@@ -265,6 +304,116 @@ function clOrdIdFrom(barCloseId, tag) {
   const t = String(tag).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 4) || "x";
   const u = String(barCloseId).replace(/-/g, "");
   return (`a${t}${u}`).slice(0, 32);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 集成冒烟：市价开多（最小张数）再全部平仓。用于 `tests/okx-swap-open-close.test.js` 或手动验证。
+ * 需该合约无持仓、且账户有足够 USDT 可用保证金（模拟盘用模拟 API Key）。
+ *
+ * @param {object} opts
+ * @param {string} opts.apiKey
+ * @param {string} opts.secretKey
+ * @param {string} opts.passphrase
+ * @param {boolean} [opts.simulated=true]
+ * @param {string} [opts.instId="BTC-USDT-SWAP"]
+ * @param {"cross"|"isolated"} [opts.tdMode="cross"]
+ * @param {number} [opts.lever=10]
+ */
+async function smokeSwapOpenLongThenClose(opts) {
+  const {
+    apiKey,
+    secretKey,
+    passphrase,
+    simulated = true,
+    instId = "BTC-USDT-SWAP",
+    tdMode = "cross",
+    lever = 10,
+  } = opts;
+
+  if (!apiKey || !secretKey || !passphrase) {
+    throw new Error("缺少 apiKey / secretKey / passphrase");
+  }
+
+  const mgn = tdMode === "isolated" ? "isolated" : "cross";
+  const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
+  const posMode = await fetchAccountPosMode(client);
+
+  const existing = await fetchSwapPositionDetail(client, instId);
+  if (existing.absPos > 0) {
+    throw new Error(`${instId} 已有持仓，请先手动平仓后再跑冒烟测试`);
+  }
+
+  const inst = await fetchSwapInstrument(instId);
+  const openSz = String(inst.minSz);
+  const levStr = String(Math.min(125, Math.max(1, Math.floor(Number(lever) || 10))));
+
+  if (posMode === "hedge") {
+    await setLeverageSafe(client, {
+      instId,
+      mgnMode: mgn,
+      lever: levStr,
+      posSide: "long",
+    });
+  } else {
+    await setLeverageSafe(client, {
+      instId,
+      mgnMode: mgn,
+      lever: levStr,
+      posSide: "net",
+    });
+  }
+
+  const hedge = posMode === "hedge";
+  const openPosSide = hedge ? "long" : "net";
+
+  const openBody = await placeMarket(client, {
+    instId,
+    tdMode: mgn,
+    side: "buy",
+    sz: openSz,
+    reduceOnly: false,
+    posSide: openPosSide,
+    clOrdId: clOrdIdFrom(crypto.randomUUID(), "op"),
+  });
+  const openOrdId = openBody.data?.[0]?.ordId ?? "";
+  const openClOrdId = openBody.data?.[0]?.clOrdId ?? "";
+
+  await delay(2000);
+  let detail = await fetchSwapPositionDetail(client, instId);
+  if (detail.absPos <= 0) {
+    await delay(2000);
+    detail = await fetchSwapPositionDetail(client, instId);
+  }
+  if (detail.absPos <= 0) {
+    throw new Error("开仓后未读到持仓：请检查权限（Trade）、资金、或稍后在网络稳定时重试");
+  }
+
+  const { closeSide, orderPosSide } = resolveCloseParams(posMode, detail);
+  const closeBody = await placeMarket(client, {
+    instId,
+    tdMode: mgn,
+    side: closeSide,
+    sz: String(detail.absPos),
+    reduceOnly: true,
+    posSide: orderPosSide,
+    clOrdId: clOrdIdFrom(crypto.randomUUID(), "cl"),
+  });
+  const closeOrdId = closeBody.data?.[0]?.ordId ?? "";
+  const closeClOrdId = closeBody.data?.[0]?.clOrdId ?? "";
+
+  return {
+    instId,
+    openSz,
+    openOrdId,
+    openClOrdId,
+    closeOrdId,
+    closeClOrdId,
+    simulated: !!simulated,
+  };
 }
 
 /**
@@ -442,4 +591,5 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
 module.exports = {
   tvSymbolToSwapInstId,
   maybeExecuteOkxSwapOrders,
+  smokeSwapOpenLongThenClose,
 };

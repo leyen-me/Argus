@@ -14,7 +14,7 @@ const { wipeConversationStore } = require("./llm-context");
 const { wipeTradingStateStore } = require("./trading-state");
 
 /**
- * 左侧当前品种：加密走 Binance WS K 线；美股/港股走长桥订阅（切换时先停另一侧）。
+ * 左侧当前品种：加密走 Binance / OKX WS K 线；美股/港股走长桥订阅（切换时先停另一侧）。
  */
 async function routeMarket(cfg, tvSymbol) {
   const interval = cfg.interval || "5";

@@ -1,5 +1,5 @@
 /**
- * OpenAI 兼容 Chat Completions，供长桥推送与加密（Binance WS）共用。
+ * OpenAI 兼容 Chat Completions，供长桥推送与加密（Binance / OKX WS）共用。
  * 启用条件：在配置中填写 openaiApiKey，或设置环境变量 OPENAI_API_KEY（配置优先）。
  */
 const { loadSystemPromptsFromDisk } = require("./app-config");

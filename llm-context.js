@@ -45,7 +45,7 @@ function saveStore() {
 }
 
 /**
- * @param {string} tvSymbol 如 BINANCE:BTCUSDT
+ * @param {string} tvSymbol 如 BINANCE:BTCUSDT、OKX:BTC-USDT
  * @param {string} interval 如 5、60、D
  */
 function conversationKey(tvSymbol, interval) {

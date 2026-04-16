@@ -92,8 +92,8 @@
         <p class="modal-desc">
           配置行情下拉列表中的品种。展示名称可自定义；<strong>TradingView 代码</strong>需与
           <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView</a>
-          中一致（如 <code>BINANCE:BTCUSDT</code>）。<code>BINANCE:</code> 前缀为加密（WS 订阅 K 线）；其余默认走长桥，若无法自动映射美股/港股代码，可在 JSON 中为该条增加
-          <code>longPortSymbol</code>（如 <code>QQQ.US</code>）。<strong>interval</strong> 与图表周期、长桥订阅周期、Binance K 线周期一致。应用只使用<strong>一份</strong>配置文件 <code>config.json</code>（路径见下），首次启动会从安装目录旁模板生成；保存配置即写回该文件。
+          中一致（如 <code>BINANCE:BTCUSDT</code>、<code>OKX:BTC-USDT</code>）。<code>BINANCE:</code> 或 <code>OKX:</code> 前缀为加密（对应交易所 WS 订阅 K 线）；其余默认走长桥，若无法自动映射美股/港股代码，可在 JSON 中为该条增加
+          <code>longPortSymbol</code>（如 <code>QQQ.US</code>）。<strong>interval</strong> 与图表周期、长桥订阅周期、加密 K 线周期一致。应用只使用<strong>一份</strong>配置文件 <code>config.json</code>（路径见下），首次启动会从安装目录旁模板生成；保存配置即写回该文件。
         </p>
         <p class="modal-path" id="config-file-path"></p>
         <div class="config-table-head">
@@ -109,7 +109,7 @@
         </div>
         <div class="config-interval-row">
           <label for="config-interval">K 线周期 interval</label>
-          <select id="config-interval" class="symbol-select config-interval-select" title="与 TradingView、长桥、Binance WS 共用">
+          <select id="config-interval" class="symbol-select config-interval-select" title="与 TradingView、长桥、Binance/OKX WS 共用">
             <option value="1">1 分钟</option>
             <option value="3">3 分钟</option>
             <option value="5">5 分钟</option>
@@ -213,7 +213,7 @@
         </div>
         <div class="config-section-title">系统提示词</div>
         <p class="modal-hint modal-hint-llm">
-          已移至应用目录下独立文件，不再写入 <code>config.json</code>。币圈：<code>prompts/system-crypto.txt</code>；股票/长桥：<code>prompts/system-stocks.txt</code>。分流与行情一致：<code>BINANCE:</code> 前缀或品种行
+          已移至应用目录下独立文件，不再写入 <code>config.json</code>。币圈：<code>prompts/system-crypto.txt</code>；股票/长桥：<code>prompts/system-stocks.txt</code>。分流与行情一致：<code>BINANCE:</code> / <code>OKX:</code> 前缀或品种行
           <code>feed: crypto</code> 为币圈；否则为股票/长桥。修改 txt 后重新打开应用或保存一次配置即可加载最新内容。
         </p>
         <div class="modal-actions">

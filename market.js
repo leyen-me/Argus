@@ -1,11 +1,11 @@
 /**
- * 左侧 TradingView 品种 → 加密(Binance WS) / 长桥(订阅推送) 分流。
+ * 左侧 TradingView 品种 → 加密(Binance / OKX WS) / 长桥(订阅推送) 分流。
  */
 
 function inferFeed(value, explicit) {
   if (explicit === "crypto" || explicit === "longbridge") return explicit;
   const v = String(value || "").trim();
-  if (v.startsWith("BINANCE:")) return "crypto";
+  if (v.startsWith("BINANCE:") || v.startsWith("OKX:")) return "crypto";
   return "longbridge";
 }
 

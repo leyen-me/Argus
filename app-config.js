@@ -72,12 +72,12 @@ function loadSystemPromptsFromDisk() {
 function defaultConfigFallback() {
   return {
     symbols: [
-      { label: "BTC/USDT", value: "BINANCE:BTCUSDT" },
-      { label: "ETH/USDT", value: "BINANCE:ETHUSDT" },
+      { label: "BTC/USDT (OKX)", value: "OKX:BTC-USDT" },
+      { label: "ETH/USDT (OKX)", value: "OKX:ETH-USDT" },
       { label: "SPY", value: "AMEX:SPY" },
       { label: "QQQ", value: "NASDAQ:QQQ" },
     ],
-    defaultSymbol: "BINANCE:BTCUSDT",
+    defaultSymbol: "OKX:BTC-USDT",
     interval: "5",
     openaiBaseUrl: DEFAULT_OPENAI_BASE_URL,
     openaiModel: DEFAULT_OPENAI_MODEL,

@@ -1,11 +1,14 @@
 /**
- * 加密（BINANCE:*）：Binance Spot WebSocket K 线流，k.x === true 时视为该根 K 线收盘，再组装 bar_close（含左侧截图）。
+ * 加密（BINANCE:* / OKX:*）：现货 K 线 WebSocket，仅在「该根 K 已完结」时触发 bar_close（含左侧截图）。
+ * Binance: k.x === true
+ * OKX: data[][8] confirm === "1"
  * @see https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-streams
+ * @see https://www.okx.com/docs-v5/en/#websocket-api-public-channel-candlesticks-channel
  */
 const WebSocket = require("ws");
 const { emitBarClose } = require("./bar-close");
 
-const BINANCE_INTERVAL = {
+const TV_TO_BINANCE_INTERVAL = {
   "1": "1m",
   "3": "3m",
   "5": "5m",
@@ -18,7 +21,22 @@ const BINANCE_INTERVAL = {
   "1D": "1d",
 };
 
-const WS_BASE = "wss://stream.binance.com:9443/ws";
+/** OKX channel 名，如 candle5m、candle1H */
+const TV_TO_OKX_CHANNEL = {
+  "1": "candle1m",
+  "3": "candle3m",
+  "5": "candle5m",
+  "15": "candle15m",
+  "30": "candle30m",
+  "60": "candle1H",
+  "120": "candle2H",
+  "240": "candle4H",
+  D: "candle1D",
+  "1D": "candle1D",
+};
+
+const BINANCE_WS_BASE = "wss://stream.binance.com:9443/ws";
+const OKX_WS_PUBLIC = "wss://ws.okx.com:8443/ws/v5/public";
 
 let ws = null;
 let reconnectTimer = null;
@@ -44,10 +62,43 @@ function binancePairFromTv(tv) {
   return v.slice("BINANCE:".length).toUpperCase();
 }
 
-function streamName(pair, intervalTv) {
+/**
+ * OKX:BTC-USDT 或 OKX:BTCUSDT → BTC-USDT（现货 instId）
+ * @param {string} tv
+ * @returns {string | null}
+ */
+function okxInstIdFromTv(tv) {
+  const v = String(tv || "").trim();
+  if (!v.startsWith("OKX:")) return null;
+  const rest = v.slice("OKX:".length).trim().toUpperCase();
+  if (!rest) return null;
+  if (rest.includes("-")) return rest;
+  const m = /^(.+)(USDT|USDC|DAI|BUSD|EUR|USD|BTC|ETH)$/.exec(rest);
+  if (m) return `${m[1]}-${m[2]}`;
+  return null;
+}
+
+/**
+ * @param {string} tvSymbol
+ * @returns {{ kind: "binance", pair: string } | { kind: "okx", instId: string } | null}
+ */
+function parseCryptoRoute(tvSymbol) {
+  const pair = binancePairFromTv(tvSymbol);
+  if (pair) return { kind: "binance", pair };
+  const instId = okxInstIdFromTv(tvSymbol);
+  if (instId) return { kind: "okx", instId };
+  return null;
+}
+
+function binanceStreamPath(pair, intervalTv) {
   const iv = String(intervalTv || "5").toUpperCase();
-  const bi = BINANCE_INTERVAL[iv] || "5m";
+  const bi = TV_TO_BINANCE_INTERVAL[iv] || "5m";
   return `${pair.toLowerCase()}@kline_${bi}`;
+}
+
+function okxChannelFromInterval(intervalTv) {
+  const iv = String(intervalTv || "5").toUpperCase();
+  return TV_TO_OKX_CHANNEL[iv] || "candle5m";
 }
 
 function candleFromK(k, pair) {
@@ -64,25 +115,45 @@ function candleFromK(k, pair) {
   };
 }
 
+/** OKX push: data 为 [ts,o,h,l,c,vol,volCcy,volCcyQuote,confirm][] */
+function candleFromOkxRow(row, instId) {
+  if (!Array.isArray(row) || row.length < 9) return null;
+  const ts = row[0];
+  const confirm = row[8];
+  if (confirm !== "1") return null;
+  const openTime = Number(ts);
+  return {
+    open: String(row[1]),
+    high: String(row[2]),
+    low: String(row[3]),
+    close: String(row[4]),
+    volume: Number(row[5]),
+    turnover: row[7] != null ? String(row[7]) : null,
+    timestamp: new Date(openTime).toISOString(),
+    barKey: `${instId}:${ts}`,
+  };
+}
+
 function periodDisplayForTv(intervalTv) {
   const iv = String(intervalTv || "5").toUpperCase();
   if (iv === "D" || iv === "1D") return "日线";
   return `${iv}m`;
 }
 
-async function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle) {
+async function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle, source) {
   if (seenBarIds.has(candle.barKey)) return;
   seenBarIds.add(candle.barKey);
   if (seenBarIds.size > SEEN_CAP) seenBarIds.clear();
 
   const periodLabel = `tv:${intervalTv}（${periodDisplayForTv(intervalTv)}）`;
+  const label = source === "okx_ws" ? "OKX" : "Binance";
   send(winGetter, "market-status", {
-    text: `加密 WS · K 收盘 ${tvSymbol} · ${candle.timestamp}`,
+    text: `加密 WS（${label}）· K 收盘 ${tvSymbol} · ${candle.timestamp}`,
   });
 
   try {
     await emitBarClose(winGetter, {
-      source: "binance_ws",
+      source,
       tvSymbol,
       interval: intervalTv,
       periodLabel,
@@ -115,7 +186,7 @@ function scheduleReconnect() {
   }, delay);
 }
 
-function connect() {
+function connectBinance() {
   if (!session) return;
   const { winGetter, tvSymbol, intervalTv } = session;
   const pair = binancePairFromTv(tvSymbol);
@@ -124,8 +195,8 @@ function connect() {
     return;
   }
 
-  const path = streamName(pair, intervalTv);
-  const url = `${WS_BASE}/${path}`;
+  const path = binanceStreamPath(pair, intervalTv);
+  const url = `${BINANCE_WS_BASE}/${path}`;
   clearReconnectTimer();
 
   try {
@@ -141,7 +212,7 @@ function connect() {
     const iv = String(intervalTv || "5").toUpperCase();
     const ivLabel = iv === "D" || iv === "1D" ? "日线" : `${iv}m`;
     send(winGetter, "market-status", {
-      text: `加密 WS 已连接 · ${ivLabel} · ${tvSymbol}`,
+      text: `加密 WS（Binance）已连接 · ${ivLabel} · ${tvSymbol}`,
     });
   });
 
@@ -157,7 +228,7 @@ function connect() {
     if (!k.x) return;
 
     const candle = candleFromK(k, pair);
-    onConfirmedBar(winGetter, tvSymbol, intervalTv, candle).catch((e) => {
+    onConfirmedBar(winGetter, tvSymbol, intervalTv, candle, "binance_ws").catch((e) => {
       console.error("onConfirmedBar", e);
     });
   });
@@ -171,6 +242,97 @@ function connect() {
     if (intentionalClose || !session) return;
     scheduleReconnect();
   });
+}
+
+function connectOkx() {
+  if (!session) return;
+  const { winGetter, tvSymbol, intervalTv } = session;
+  const instId = okxInstIdFromTv(tvSymbol);
+  if (!instId) {
+    send(winGetter, "market-status", { text: "加密：无效 OKX 代码（示例 OKX:BTC-USDT）" });
+    return;
+  }
+
+  const channel = okxChannelFromInterval(intervalTv);
+  clearReconnectTimer();
+
+  try {
+    ws = new WebSocket(OKX_WS_PUBLIC);
+  } catch (e) {
+    console.error("OKX WS create", e);
+    scheduleReconnect();
+    return;
+  }
+
+  ws.on("open", () => {
+    reconnectAttempt = 0;
+    const sub = {
+      op: "subscribe",
+      args: [{ channel, instId }],
+    };
+    try {
+      ws.send(JSON.stringify(sub));
+    } catch (e) {
+      console.error("OKX subscribe send", e);
+    }
+    const iv = String(intervalTv || "5").toUpperCase();
+    const ivLabel = iv === "D" || iv === "1D" ? "日线" : `${iv}m`;
+    send(winGetter, "market-status", {
+      text: `加密 WS（OKX）已连接 · ${ivLabel} · ${tvSymbol}`,
+    });
+  });
+
+  ws.on("message", (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch {
+      return;
+    }
+    if (msg.event === "error" && msg.msg) {
+      console.error("OKX WS error event", msg);
+      send(winGetter, "market-status", { text: `OKX：${msg.msg || msg.code || "error"}` });
+      return;
+    }
+    if (!msg.arg || typeof msg.arg.channel !== "string" || !msg.arg.channel.startsWith("candle")) {
+      return;
+    }
+    if (!Array.isArray(msg.data)) return;
+    for (const row of msg.data) {
+      const candle = candleFromOkxRow(row, instId);
+      if (!candle) continue;
+      onConfirmedBar(winGetter, tvSymbol, intervalTv, candle, "okx_ws").catch((e) => {
+        console.error("onConfirmedBar okx", e);
+      });
+    }
+  });
+
+  ws.on("error", (err) => {
+    console.error("OKX WS error", err);
+  });
+
+  ws.on("close", () => {
+    ws = null;
+    if (intentionalClose || !session) return;
+    scheduleReconnect();
+  });
+}
+
+function connect() {
+  if (!session) return;
+  const { tvSymbol } = session;
+  const route = parseCryptoRoute(tvSymbol);
+  if (!route) {
+    send(session.winGetter, "market-status", {
+      text: "加密：请使用 BINANCE: 或 OKX: 前缀（如 BINANCE:BTCUSDT、OKX:BTC-USDT）",
+    });
+    return;
+  }
+  if (route.kind === "binance") {
+    connectBinance();
+  } else {
+    connectOkx();
+  }
 }
 
 /**
@@ -198,4 +360,4 @@ function stop() {
   }
 }
 
-module.exports = { start, stop, binancePairFromTv };
+module.exports = { start, stop, binancePairFromTv, okxInstIdFromTv };

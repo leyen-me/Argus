@@ -67,12 +67,12 @@ const FALLBACK_SYSTEM_PROMPT_STOCKS =
 /** 与仓库 config.json 一致，供非 Electron 打开页面时兜底 */
 const FALLBACK_APP_CONFIG = {
   symbols: [
-    { label: "BTC/USDT", value: "BINANCE:BTCUSDT" },
-    { label: "ETH/USDT", value: "BINANCE:ETHUSDT" },
+    { label: "BTC/USDT (OKX)", value: "OKX:BTC-USDT" },
+    { label: "ETH/USDT (OKX)", value: "OKX:ETH-USDT" },
     { label: "SPY", value: "AMEX:SPY" },
     { label: "QQQ", value: "NASDAQ:QQQ" },
   ],
-  defaultSymbol: "BINANCE:BTCUSDT",
+  defaultSymbol: "OKX:BTC-USDT",
   interval: "5",
   openaiBaseUrl: "https://api.openai.com/v1",
   openaiModel: "gpt-4o-mini",
@@ -213,7 +213,7 @@ function inferFeedForSymbol(tvSymbol, symEntry) {
   const explicit = symEntry?.feed;
   if (explicit === "crypto" || explicit === "longbridge") return explicit;
   const v = String(tvSymbol || "").trim();
-  if (v.startsWith("BINANCE:")) return "crypto";
+  if (v.startsWith("BINANCE:") || v.startsWith("OKX:")) return "crypto";
   return "longbridge";
 }
 
@@ -290,7 +290,7 @@ async function refreshCurrentSystemPromptPreview() {
     sel?.value?.trim() ||
     cfg.defaultSymbol ||
     cfg.symbols[0]?.value ||
-    "BINANCE:BTCUSDT";
+    "OKX:BTC-USDT";
   updateCurrentSystemPromptPreview(cfg, sym);
 }
 
@@ -448,7 +448,7 @@ function applySymbolSelect(config) {
   const def =
     config.symbols.some((x) => x.value === config.defaultSymbol) && config.defaultSymbol
       ? config.defaultSymbol
-      : config.symbols[0]?.value || "BINANCE:BTCUSDT";
+      : config.symbols[0]?.value || "OKX:BTC-USDT";
   sel.value = def;
 }
 
@@ -508,7 +508,7 @@ function renderConfigRows(symbols) {
     inValue.type = "text";
     inValue.className = "config-in config-in-value";
     inValue.value = sym.value;
-    inValue.placeholder = "BINANCE:BTCUSDT";
+    inValue.placeholder = "OKX:BTC-USDT";
 
     const btn = document.createElement("button");
     btn.type = "button";
@@ -632,7 +632,7 @@ function initConfigCenter() {
     const inValue = document.createElement("input");
     inValue.type = "text";
     inValue.className = "config-in config-in-value";
-    inValue.placeholder = "BINANCE:BTCUSDT";
+    inValue.placeholder = "OKX:BTC-USDT";
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn-row-remove";
@@ -773,7 +773,7 @@ function createTradingViewWidget(symbol, interval) {
    */
   tvWidget = new TradingView.widget({
     autosize: true,
-    symbol: symbol || "BINANCE:BTCUSDT",
+    symbol: symbol || "OKX:BTC-USDT",
     interval: iv,
     timezone: "Asia/Shanghai",
     theme: "dark",
@@ -1064,7 +1064,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const cfg = await loadAppConfig();
   chartInterval = cfg.interval || "5";
   applySymbolSelect(cfg);
-  const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "BINANCE:BTCUSDT";
+  const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTC-USDT";
   createTradingViewWidget(sym, chartInterval);
   const sel = document.getElementById("symbol-select");
   updateCurrentSystemPromptPreview(cfg, sel?.value?.trim() || sym);

@@ -49,6 +49,20 @@ let reconnectAttempt = 0;
 const seenBarIds = new Set();
 const SEEN_CAP = 2000;
 
+/**
+ * 串行化「收盘 → 截图 → LLM」：WS 可能连续投递多条已确认 K（OKX 同一包内多行、或上一条尚未跑完又推下一条），
+ * 若并发 `emitBarClose`，渲染进程里 `latestBarCloseId` 会被覆盖，导致大量流式 delta/end 被丢弃（表现为「多半收不到输出」）。
+ */
+let barCloseChain = Promise.resolve();
+
+function enqueueBarCloseTask(fn) {
+  const next = barCloseChain.then(fn);
+  barCloseChain = next.catch((err) => {
+    console.error("[crypto-scheduler] bar-close task failed:", err);
+  });
+  return next;
+}
+
 function send(winGetter, channel, payload) {
   const w = typeof winGetter === "function" ? winGetter() : null;
   if (w && !w.isDestroyed()) {
@@ -142,29 +156,31 @@ function periodDisplayForTv(intervalTv) {
   return `${iv}m`;
 }
 
-async function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle, source) {
-  if (seenBarIds.has(candle.barKey)) return;
-  seenBarIds.add(candle.barKey);
-  if (seenBarIds.size > SEEN_CAP) seenBarIds.clear();
+function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle, source) {
+  return enqueueBarCloseTask(async () => {
+    if (seenBarIds.has(candle.barKey)) return;
+    seenBarIds.add(candle.barKey);
+    if (seenBarIds.size > SEEN_CAP) seenBarIds.clear();
 
-  const periodLabel = `tv:${intervalTv}（${periodDisplayForTv(intervalTv)}）`;
-  const label = source === "okx_ws" ? "OKX" : "Binance";
-  send(winGetter, "market-status", {
-    text: `加密 WS（${label}）· K 收盘 ${tvSymbol} · ${candle.timestamp}`,
-  });
-
-  try {
-    await emitBarClose(winGetter, {
-      source,
-      tvSymbol,
-      interval: intervalTv,
-      periodLabel,
-      candle,
-      longPortSymbol: null,
+    const periodLabel = `tv:${intervalTv}（${periodDisplayForTv(intervalTv)}）`;
+    const label = source === "okx_ws" ? "OKX" : "Binance";
+    send(winGetter, "market-status", {
+      text: `加密 WS（${label}）· K 收盘 ${tvSymbol} · ${candle.timestamp}`,
     });
-  } catch (e) {
-    send(winGetter, "market-status", { text: `收盘处理失败：${e.message || e}` });
-  }
+
+    try {
+      await emitBarClose(winGetter, {
+        source,
+        tvSymbol,
+        interval: intervalTv,
+        periodLabel,
+        candle,
+        longPortSymbol: null,
+      });
+    } catch (e) {
+      send(winGetter, "market-status", { text: `收盘处理失败：${e.message || e}` });
+    }
+  });
 }
 
 function clearReconnectTimer() {

@@ -1020,10 +1020,9 @@ function bindLlmStream() {
   const { onLlmStreamDelta, onLlmStreamEnd, onLlmStreamError } = window.argus;
   if (typeof onLlmStreamDelta === "function") {
     onLlmStreamDelta(({ barCloseId, full, reasoningFull }) => {
-      if (barCloseId !== latestBarCloseId) return;
       const bubbleAsst = findAssistantBubbleForBar(barCloseId);
       const bubbleReas = findReasoningBubbleForBar(barCloseId);
-      const status = document.getElementById("llm-status");
+      if (!bubbleAsst && !bubbleReas) return;
       if (bubbleReas && reasoningFull != null) {
         bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningFull));
       }
@@ -1031,7 +1030,10 @@ function bindLlmStream() {
         bubbleAsst.textContent = normalizeAssistantDisplayText(full);
         bubbleAsst.classList.remove("llm-bubble--error");
       }
-      if (status) status.textContent = "LLM 输出中…";
+      if (barCloseId === latestBarCloseId) {
+        const status = document.getElementById("llm-status");
+        if (status) status.textContent = "LLM 输出中…";
+      }
       const history = document.getElementById("llm-chat-history");
       if (history) history.scrollTop = history.scrollHeight;
     });
@@ -1039,6 +1041,15 @@ function bindLlmStream() {
   if (typeof onLlmStreamEnd === "function") {
     onLlmStreamEnd(
       ({ barCloseId, analysisText, reasoningText, conversationKey, tradeState, tradeStateEvent }) => {
+      const bubbleAsst = findAssistantBubbleForBar(barCloseId);
+      if (bubbleAsst && analysisText != null) {
+        bubbleAsst.textContent = normalizeAssistantDisplayText(analysisText);
+        bubbleAsst.classList.remove("llm-bubble--error");
+      }
+      const bubbleReas = findReasoningBubbleForBar(barCloseId);
+      if (bubbleReas && reasoningText != null) {
+        bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningText));
+      }
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.analysisText = analysisText;
@@ -1058,10 +1069,6 @@ function bindLlmStream() {
       if (window.argusLastBarClose && tradeStateEvent !== undefined) {
         window.argusLastBarClose.tradeStateEvent = tradeStateEvent;
       }
-      const bubbleReas = findReasoningBubbleForBar(barCloseId);
-      if (bubbleReas && reasoningText != null) {
-        bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningText));
-      }
       const status = document.getElementById("llm-status");
       if (status) status.textContent = "收盘 · LLM 已分析";
     },
@@ -1069,12 +1076,12 @@ function bindLlmStream() {
   }
   if (typeof onLlmStreamError === "function") {
     onLlmStreamError(({ barCloseId, message }) => {
-      if (barCloseId !== latestBarCloseId) return;
       const bubbleAsst = findAssistantBubbleForBar(barCloseId);
       if (bubbleAsst) {
         bubbleAsst.textContent = message || "错误";
         bubbleAsst.classList.add("llm-bubble--error");
       }
+      if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.error = message;
         window.argusLastBarClose.llm.streaming = false;

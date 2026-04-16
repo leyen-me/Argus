@@ -80,6 +80,17 @@ let currentTvLabel = "";
 const seenConfirmedBars = new Set();
 const SEEN_CAP = 2000;
 
+/** 与 crypto-scheduler 相同：避免连续确认 K 并发 `emitBarClose` 导致前端流式事件错乱。 */
+let barCloseChain = Promise.resolve();
+
+function enqueueBarCloseTask(fn) {
+  const next = barCloseChain.then(fn);
+  barCloseChain = next.catch((err) => {
+    console.error("[longbridge-llm] bar-close task failed:", err);
+  });
+  return next;
+}
+
 /** @type {() => import("electron").BrowserWindow | null} */
 let winGetter = () => null;
 
@@ -175,18 +186,20 @@ async function applyForSelectedSymbol(win, opts) {
       send(w, "market-status", { text: `长桥 K 确认 ${sym} · ${candle.timestamp}` });
 
       const displaySym = currentTvLabel || sym;
-      try {
-        await emitBarClose(winGetter, {
-          source: "longbridge",
-          tvSymbol: displaySym,
-          interval: currentIntervalTv,
-          periodLabel: label,
-          candle,
-          longPortSymbol: sym,
-        });
-      } catch (e) {
-        send(w, "market-status", { text: `收盘处理失败：${e.message || e}` });
-      }
+      await enqueueBarCloseTask(async () => {
+        try {
+          await emitBarClose(winGetter, {
+            source: "longbridge",
+            tvSymbol: displaySym,
+            interval: currentIntervalTv,
+            periodLabel: label,
+            candle,
+            longPortSymbol: sym,
+          });
+        } catch (e) {
+          send(w, "market-status", { text: `收盘处理失败：${e.message || e}` });
+        }
+      });
     });
   }
 

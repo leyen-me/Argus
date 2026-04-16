@@ -257,6 +257,33 @@ function buildChatCompletionRequest(userText, options, stream) {
 }
 
 /**
+ * OpenAI 兼容流式 `delta.content`：多为 string，少数网关会发多段数组（与 Chat Completions 非流式 message.content 形态一致）。
+ * @param {unknown} content
+ */
+function deltaContentToString(content) {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    let s = "";
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const p = /** @type {{ type?: string, text?: string }} */ (part);
+      if (p.type === "text" && typeof p.text === "string") s += p.text;
+    }
+    return s;
+  }
+  return "";
+}
+
+/**
+ * 非流式 `message.content`：string 或 parts 数组。
+ * @param {unknown} content
+ */
+function messageContentToString(content) {
+  return deltaContentToString(content);
+}
+
+/**
  * 从流式 chunk 的 delta 中取出**本 chunk** 的推理片段（不跨 chunk 累加）。
  * 同一 chunk 内 OpenRouter 常同时带 `reasoning` 与 `reasoning_details` 的等价文本，只取一种以免「好的好的」式重复。
  * @param {Record<string, unknown>} delta
@@ -329,12 +356,35 @@ async function streamOpenAIChat(messages, options, onEvent) {
       const delta = chunk.choices?.[0]?.delta;
       const d =
         delta && typeof delta === "object" ? /** @type {Record<string, unknown>} */ (delta) : {};
-      const piece = typeof d.content === "string" ? d.content : "";
-      const reasoningPiece = wantReasoning && delta ? appendReasoningFromDelta(d) : "";
-      if (piece) fullText += piece;
-      if (reasoningPiece) fullReasoning = mergeReasoningChunk(fullReasoning, reasoningPiece);
-      if (piece || reasoningPiece) {
-        onEvent({ type: "delta", piece, full: fullText, reasoningFull: fullReasoning });
+      /** 通义等端点可能在未开 enable_thinking 时仍只向 reasoning 通道推流，正文 content 长期为空。 */
+      const rawReasoning = appendReasoningFromDelta(d);
+      const contentPiece = deltaContentToString(d.content);
+
+      if (wantReasoning) {
+        if (contentPiece) fullText += contentPiece;
+        if (rawReasoning) fullReasoning = mergeReasoningChunk(fullReasoning, rawReasoning);
+        if (contentPiece || rawReasoning) {
+          onEvent({
+            type: "delta",
+            piece: contentPiece,
+            full: fullText,
+            reasoningFull: fullReasoning,
+          });
+        }
+      } else {
+        if (contentPiece) {
+          fullText += contentPiece;
+        } else if (rawReasoning) {
+          fullText = mergeReasoningChunk(fullText, rawReasoning);
+        }
+        if (contentPiece || rawReasoning) {
+          onEvent({
+            type: "delta",
+            piece: contentPiece || rawReasoning,
+            full: fullText,
+            reasoningFull: "",
+          });
+        }
       }
     }
   } catch (e) {
@@ -343,11 +393,15 @@ async function streamOpenAIChat(messages, options, onEvent) {
 
   const trimmed = fullText.trim();
   const reasoningTrimmed = fullReasoning.trim();
-  onEvent({ type: "done", full: trimmed, reasoningFull: reasoningTrimmed });
+  onEvent({ type: "done", full: trimmed, reasoningFull: wantReasoning ? reasoningTrimmed : "" });
   if (!trimmed && !reasoningTrimmed) {
     return { ok: false, text: "LLM 返回为空。" };
   }
-  return { ok: true, text: trimmed, reasoningText: reasoningTrimmed };
+  return {
+    ok: true,
+    text: trimmed,
+    reasoningText: wantReasoning ? reasoningTrimmed : "",
+  };
 }
 
 /**
@@ -374,7 +428,8 @@ async function callOpenAIChat(userText, options = {}) {
 
   try {
     const completion = await client.chat.completions.create(built.body, { signal });
-    const text = completion?.choices?.[0]?.message?.content?.trim();
+    const rawMsg = completion?.choices?.[0]?.message?.content;
+    const text = messageContentToString(rawMsg).trim();
     if (!text) {
       return { ok: false, text: "LLM 返回为空。" };
     }

@@ -4,11 +4,14 @@
   "description": "Multimodal fusion analysis — TradingView + LLM",
   "main": "main.js",
   "pnpm": {
-    "onlyBuiltDependencies": ["electron"]
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
   },
   "scripts": {
     "start": "electron .",
-    "dev": "electron ."
+    "dev": "electron .",
+    "test:dashscope": "node tests/dashscope-generation-demo.test.js"
   },
   "devDependencies": {
     "electron": "^34.0.0"
@@ -16,6 +19,7 @@
   "dependencies": {
     "longport": "^3.0.23",
     "nodemailer": "^6.9.16",
+    "openai": "^6.34.0",
     "ws": "^8.20.0"
   }
 }

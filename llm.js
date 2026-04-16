@@ -53,6 +53,11 @@ function isOpenRouterBaseUrl(baseURL) {
   return String(baseURL || "").toLowerCase().includes("openrouter.ai");
 }
 
+/** 阿里云通义兼容模式根 URL（用于显式开关 enable_thinking） */
+function isDashScopeBaseUrl(baseURL) {
+  return String(baseURL || "").toLowerCase().includes("dashscope.aliyuncs.com");
+}
+
 /** @param {unknown} e
  * @param {object | null | undefined} cfg */
 function mapLlmSdkError(e, cfg) {
@@ -232,6 +237,9 @@ function buildChatCompletionRequestFromMessages(messages, options, stream) {
     } else {
       body.enable_thinking = true;
     }
+  } else if (isDashScopeBaseUrl(baseURL)) {
+    /** 关闭界面「深度思考」时向通义显式关思考；否则部分模型仍可能走推理通道。 */
+    body.enable_thinking = false;
   }
 
   return { baseURL, body };
@@ -356,11 +364,10 @@ async function streamOpenAIChat(messages, options, onEvent) {
       const delta = chunk.choices?.[0]?.delta;
       const d =
         delta && typeof delta === "object" ? /** @type {Record<string, unknown>} */ (delta) : {};
-      /** 通义等端点可能在未开 enable_thinking 时仍只向 reasoning 通道推流，正文 content 长期为空。 */
-      const rawReasoning = appendReasoningFromDelta(d);
       const contentPiece = deltaContentToString(d.content);
 
       if (wantReasoning) {
+        const rawReasoning = appendReasoningFromDelta(d);
         if (contentPiece) fullText += contentPiece;
         if (rawReasoning) fullReasoning = mergeReasoningChunk(fullReasoning, rawReasoning);
         if (contentPiece || rawReasoning) {
@@ -372,15 +379,12 @@ async function streamOpenAIChat(messages, options, onEvent) {
           });
         }
       } else {
+        /** 未开深度思考时：正文只认 delta.content，不把 reasoning 通道合并进助手气泡（避免满屏「思考腔」）。 */
         if (contentPiece) {
           fullText += contentPiece;
-        } else if (rawReasoning) {
-          fullText = mergeReasoningChunk(fullText, rawReasoning);
-        }
-        if (contentPiece || rawReasoning) {
           onEvent({
             type: "delta",
-            piece: contentPiece || rawReasoning,
+            piece: contentPiece,
             full: fullText,
             reasoningFull: "",
           });

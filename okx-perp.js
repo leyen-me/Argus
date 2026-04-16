@@ -187,7 +187,9 @@ async function fetchSwapInstrument(instId) {
   const minSz = parseFloat(row.minSz);
   if (!Number.isFinite(ctVal) || ctVal <= 0) throw new Error(`${instId} ctVal 无效`);
   if (!Number.isFinite(lotSz) || lotSz <= 0) throw new Error(`${instId} lotSz 无效`);
-  return { instId: row.instId, ctVal, lotSz, minSz };
+  const tickSz = parseFloat(row.tickSz);
+  if (!Number.isFinite(tickSz) || tickSz <= 0) throw new Error(`${instId} tickSz 无效`);
+  return { instId: row.instId, ctVal, lotSz, minSz, tickSz };
 }
 
 /**
@@ -301,7 +303,7 @@ async function fetchSwapOrderRow(client, instId, ordId) {
  * @param {string} instId
  * @param {string} ordId
  */
-async function waitSwapMarketOrderFilled(client, instId, ordId) {
+async function waitSwapOrderFilled(client, instId, ordId) {
   const terminalBad = new Set(["canceled", "mmp_canceled"]);
   let last = null;
   const maxTry = 45;
@@ -319,13 +321,13 @@ async function waitSwapMarketOrderFilled(client, instId, ordId) {
     if (terminalBad.has(st)) {
       const why = typeof last.cancelSourceReason === "string" ? last.cancelSourceReason : "";
       throw new Error(
-        `OKX 开仓订单未成交即结束：state=${st} accFillSz=${last.accFillSz ?? ""}${why ? ` ${why}` : ""}。`,
+        `OKX 订单未成交即结束：state=${st} accFillSz=${last.accFillSz ?? ""}${why ? ` ${why}` : ""}。`,
       );
     }
     await delay(stepMs);
   }
   throw new Error(
-    `OKX 开仓订单在 ${(maxTry * stepMs) / 1000}s 内未变为已成交：最后 state=${last?.state} accFillSz=${last?.accFillSz ?? ""}。请用网页或 GET /api/v5/trade/order 核对订单状态。`,
+    `OKX 订单在 ${(maxTry * stepMs) / 1000}s 内未变为已成交：最后 state=${last?.state} accFillSz=${last?.accFillSz ?? ""}。请用网页或 GET /api/v5/trade/order 核对订单状态。`,
   );
 }
 
@@ -450,6 +452,60 @@ async function placeSwapMarketPosSideFallback(client, base, attempts) {
   throw last ?? new Error("placeSwapMarketPosSideFallback: empty attempts");
 }
 
+/**
+ * @param {object} p
+ * @param {string} p.instId
+ * @param {string} p.tdMode
+ * @param {string} p.side buy | sell
+ * @param {string} p.sz
+ * @param {string} p.px
+ * @param {boolean} p.reduceOnly
+ * @param {string | undefined} p.posSide
+ * @param {string} p.clOrdId
+ */
+async function placeLimit(client, p) {
+  const bodyObj = {
+    instId: p.instId,
+    tdMode: p.tdMode,
+    side: p.side,
+    ordType: "limit",
+    sz: p.sz,
+    px: p.px,
+    reduceOnly: p.reduceOnly,
+    clOrdId: p.clOrdId,
+  };
+  if (p.posSide === "long" || p.posSide === "short") {
+    bodyObj.posSide = p.posSide;
+  }
+  const json = await client.request("POST", "/api/v5/trade/order", JSON.stringify(bodyObj));
+  assertOkxTradeOrderAccepted(json);
+  return json;
+}
+
+/**
+ * @param {{ instId: string, tdMode: string, side: string, sz: string, reduceOnly: boolean }} base
+ * @param {string} px
+ * @param {Array<"long"|"short"|undefined>} attempts
+ */
+async function placeSwapLimitPosSideFallback(client, base, px, attempts) {
+  let last;
+  for (let i = 0; i < attempts.length; i++) {
+    const ps = attempts[i];
+    try {
+      return await placeLimit(client, {
+        ...base,
+        posSide: ps,
+        px,
+        clOrdId: clOrdIdFrom(crypto.randomUUID(), `l${i}`),
+      });
+    } catch (e) {
+      last = e;
+      if (i === attempts.length - 1 || !isOkx51000PosSide(e)) throw e;
+    }
+  }
+  throw last ?? new Error("placeSwapLimitPosSideFallback: empty attempts");
+}
+
 /** @param {boolean} isLong */
 function posSideAttemptsOpen(isLong) {
   return [undefined, isLong ? "long" : "short"];
@@ -470,6 +526,34 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 按合约 tick 格式化价格字符串（限价单 px）。
+ * @param {number} px
+ * @param {number} tickSz
+ */
+function formatOkxPx(px, tickSz) {
+  if (!Number.isFinite(px) || !Number.isFinite(tickSz) || tickSz <= 0) {
+    throw new Error("formatOkxPx: 无效参数");
+  }
+  const dec = (String(tickSz).split(".")[1] || "").length;
+  const factor = 10 ** dec;
+  const tick = Math.round(tickSz * factor);
+  const p = Math.round((px * factor) / tick) * tick;
+  return (p / factor).toFixed(dec);
+}
+
+/**
+ * 吃单侧限价：买则价高于盘口、卖则价低于盘口（相对 last 偏移），便于尽快成交。
+ * @param {"buy"|"sell"} side
+ * @param {number} last
+ * @param {number} tickSz
+ */
+function aggressiveLimitPxForSide(side, last, tickSz) {
+  const slip = 0.005;
+  const raw = side === "buy" ? last * (1 + slip) : last * (1 - slip);
+  return formatOkxPx(raw, tickSz);
+}
+
 /** @param {unknown} err */
 function isOkx51010AccountMode(err) {
   const m = err instanceof Error ? err.message : String(err);
@@ -483,8 +567,7 @@ const OKX_51010_ACCOUNT_MODE_HINT =
   "【51010】当前交易账户模式不支持该操作。请到 OKX 网页或 App：交易设置 / 账户模式，切换为支持合约与杠杆的模式（如「多币种保证金」「合约模式」等，以界面为准）；模拟盘请在「模拟交易」环境内检查是否已开通合约。也可尝试环境变量 OKX_TD_MODE=isolated。";
 
 /**
- * 集成冒烟：市价开多（最小张数）再全部平仓。用于 `tests/okx-swap-open-close.test.js` 或手动验证。
- * 需该合约无持仓、且账户有足够 USDT 可用保证金（模拟盘用模拟 API Key）。
+ * 冒烟：开多（最小张）。pxType 为 "market" 或 "limit"（限价用略偏吃单侧价以尽快成交）。
  *
  * @param {object} opts
  * @param {string} opts.apiKey
@@ -494,8 +577,9 @@ const OKX_51010_ACCOUNT_MODE_HINT =
  * @param {string} [opts.instId="BTC-USDT-SWAP"]
  * @param {"cross"|"isolated"} [opts.tdMode="isolated"]
  * @param {number} [opts.lever=10]
+ * @param {"market"|"limit"} [opts.pxType="market"]
  */
-async function smokeSwapOpenLongThenClose(opts) {
+async function smokeSwapOpenLong(opts) {
   const {
     apiKey,
     secretKey,
@@ -504,7 +588,10 @@ async function smokeSwapOpenLongThenClose(opts) {
     instId = "BTC-USDT-SWAP",
     tdMode = "isolated",
     lever = 10,
+    pxType: pxTypeRaw,
   } = opts;
+
+  const pxKind = pxTypeRaw === "limit" ? "limit" : "market";
 
   if (!apiKey || !secretKey || !passphrase) {
     throw new Error("缺少 apiKey / secretKey / passphrase");
@@ -529,7 +616,7 @@ async function smokeSwapOpenLongThenClose(opts) {
     throw e;
   }
   if (existing.absPos > 0) {
-    throw new Error(`${instId} 已有持仓，请先手动平仓后再跑冒烟测试`);
+    throw new Error(`${instId} 已有持仓，请先手动平仓后再跑开仓冒烟测试`);
   }
 
   const inst = await fetchSwapInstrument(instId);
@@ -563,84 +650,186 @@ async function smokeSwapOpenLongThenClose(opts) {
     }
   }
 
-  const openBody = await placeSwapMarketPosSideFallback(
-    client,
-    {
-      instId,
-      tdMode: mgn,
-      side: "buy",
-      sz: openSz,
-      reduceOnly: false,
-    },
-    posSideAttemptsOpen(true),
-  );
+  const openBase = {
+    instId,
+    tdMode: mgn,
+    side: "buy",
+    sz: openSz,
+    reduceOnly: false,
+  };
+  const attempts = posSideAttemptsOpen(true);
+
+  let openBody;
+  if (pxKind === "market") {
+    openBody = await placeSwapMarketPosSideFallback(client, openBase, attempts);
+  } else {
+    const last = await fetchTickerLast(instId);
+    const pxStr = aggressiveLimitPxForSide("buy", last, inst.tickSz);
+    openBody = await placeSwapLimitPosSideFallback(client, openBase, pxStr, attempts);
+  }
+
   const openOrdId = openBody.data?.[0]?.ordId ?? "";
   const openClOrdId = openBody.data?.[0]?.clOrdId ?? "";
   if (!openOrdId) {
     throw new Error("OKX 下单未返回 ordId，无法用 GET /trade/order 校验是否成交（请查响应 data[0]）");
   }
 
-  const filledOpen = await waitSwapMarketOrderFilled(client, instId, openOrdId);
-
-  let detail = await fetchSwapPositionDetail(client, instId);
-  const maxPosPoll = 20;
-  const posPollMs = 600;
-  for (let i = 0; i < maxPosPoll && detail.absPos <= 0; i++) {
-    await delay(posPollMs);
-    detail = await fetchSwapPositionDetail(client, instId);
-  }
-
-  /** 模拟盘常见：订单已 filled 且 accFillSz 有效，但 GET /positions 短暂或长期不同步；按成交张数平仓仍合法 */
-  let positionFromOrderFill = false;
-  if (detail.absPos <= 0) {
-    const accFill = parseFloat(String(filledOpen.accFillSz ?? "").trim());
-    if (Number.isFinite(accFill) && accFill > 0) {
-      positionFromOrderFill = true;
-      console.warn(
-        "[Argus/OKX] GET /account/positions 未返回持仓，但开仓订单已成交；将按 accFillSz 继续平仓（多见于模拟盘持仓接口与成交不同步）。",
-      );
-      detail =
-        posMode === "hedge"
-          ? { posNum: accFill, absPos: accFill, posSide: "long" }
-          : { posNum: accFill, absPos: accFill, posSide: "net" };
-    } else {
-      throw new Error(
-        `开仓订单已成交(state=${String(filledOpen.state)}, accFillSz=${filledOpen.accFillSz ?? ""})但 GET /account/positions 仍无持仓张数，且 accFillSz 无法解析。请检查 API 读取权限或账户环境。`,
-      );
-    }
-  }
-
-  const { closeSide } = resolveCloseParams(posMode, detail);
-  const closeSz =
-    positionFromOrderFill && filledOpen.accFillSz != null && String(filledOpen.accFillSz).trim() !== ""
-      ? String(filledOpen.accFillSz).trim()
-      : String(detail.absPos);
-  const closeBody = await placeSwapMarketPosSideFallback(
-    client,
-    {
-      instId,
-      tdMode: mgn,
-      side: closeSide,
-      sz: closeSz,
-      reduceOnly: true,
-    },
-    posSideAttemptsClose(closeSide),
-  );
-  const closeOrdId = closeBody.data?.[0]?.ordId ?? "";
-  const closeClOrdId = closeBody.data?.[0]?.clOrdId ?? "";
+  const filledOpen = await waitSwapOrderFilled(client, instId, openOrdId);
 
   return {
     instId,
     openSz,
     openOrdId,
     openClOrdId,
+    accFillSz: filledOpen.accFillSz != null ? String(filledOpen.accFillSz).trim() : "",
+    pxType: pxKind,
+    simulated: !!simulated,
+    seeOrdersOnPhoneHint: simulated
+      ? "模拟盘：进「模拟交易」后看「历史订单/成交」；市价开平后当前委托常为空。实盘页看不到。"
+      : "实盘：在合约委托或持仓中查看（须与 API Key 所属账户一致）。",
+  };
+}
+
+/**
+ * 冒烟：全平当前合约持仓。模拟盘若 GET /positions 为 0，可传入上一笔开仓返回的 openAccFillSz。
+ *
+ * @param {object} opts
+ * @param {string} opts.apiKey
+ * @param {string} opts.secretKey
+ * @param {string} opts.passphrase
+ * @param {boolean} [opts.simulated=true]
+ * @param {string} [opts.instId="BTC-USDT-SWAP"]
+ * @param {"cross"|"isolated"} [opts.tdMode="isolated"]
+ * @param {"market"|"limit"} [opts.pxType="market"]
+ * @param {string} [opts.openAccFillSz] 与 smokeSwapOpenLong 返回的 accFillSz 一致时用于持仓不同步
+ */
+async function smokeSwapClosePosition(opts) {
+  const {
+    apiKey,
+    secretKey,
+    passphrase,
+    simulated = true,
+    instId = "BTC-USDT-SWAP",
+    tdMode = "isolated",
+    pxType: pxTypeRaw,
+    openAccFillSz,
+  } = opts;
+
+  const pxKind = pxTypeRaw === "limit" ? "limit" : "market";
+
+  if (!apiKey || !secretKey || !passphrase) {
+    throw new Error("缺少 apiKey / secretKey / passphrase");
+  }
+
+  const mgn = tdMode === "isolated" ? "isolated" : "cross";
+  const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
+  if (simulated) {
+    console.warn(
+      "[Argus/OKX] 当前为模拟盘（x-simulated-trading）。市价单通常瞬间成交，「当前委托」里常为 0 条，请到「订单历史/成交记录」里按时间或 ordId 查；主站实盘合约页看不到。",
+    );
+  }
+
+  const posMode = await fetchAccountPosMode(client);
+
+  let detail;
+  try {
+    detail = await fetchSwapPositionDetail(client, instId);
+  } catch (e) {
+    if (isOkx51010AccountMode(e)) {
+      throw new Error(`${e instanceof Error ? e.message : String(e)}\n${OKX_51010_ACCOUNT_MODE_HINT}`);
+    }
+    throw e;
+  }
+
+  let positionFromOrderFill = false;
+  if (detail.absPos <= 0 && openAccFillSz != null && String(openAccFillSz).trim() !== "") {
+    const accFill = parseFloat(String(openAccFillSz).trim());
+    if (Number.isFinite(accFill) && accFill > 0) {
+      positionFromOrderFill = true;
+      console.warn(
+        "[Argus/OKX] GET /account/positions 未返回持仓，使用 openAccFillSz 平仓（多见于模拟盘）。",
+      );
+      detail =
+        posMode === "hedge"
+          ? { posNum: accFill, absPos: accFill, posSide: "long" }
+          : { posNum: accFill, absPos: accFill, posSide: "net" };
+    }
+  }
+
+  if (detail.absPos <= 0) {
+    throw new Error(`${instId} 无持仓，无法平仓；请先运行开仓测试或手动开仓`);
+  }
+
+  const { closeSide } = resolveCloseParams(posMode, detail);
+  const closeSz = String(detail.absPos);
+
+  const closeBase = {
+    instId,
+    tdMode: mgn,
+    side: closeSide,
+    sz: closeSz,
+    reduceOnly: true,
+  };
+  const attemptsClose = posSideAttemptsClose(closeSide);
+
+  let closeBody;
+  if (pxKind === "market") {
+    closeBody = await placeSwapMarketPosSideFallback(client, closeBase, attemptsClose);
+  } else {
+    const inst = await fetchSwapInstrument(instId);
+    const last = await fetchTickerLast(instId);
+    const pxStr = aggressiveLimitPxForSide(closeSide, last, inst.tickSz);
+    closeBody = await placeSwapLimitPosSideFallback(client, closeBase, pxStr, attemptsClose);
+  }
+
+  const closeOrdId = closeBody.data?.[0]?.ordId ?? "";
+  const closeClOrdId = closeBody.data?.[0]?.clOrdId ?? "";
+
+  if (closeOrdId) {
+    await waitSwapOrderFilled(client, instId, closeOrdId);
+  }
+
+  return {
+    instId,
+    closeSz,
     closeOrdId,
     closeClOrdId,
+    pxType: pxKind,
     simulated: !!simulated,
     seeOrdersOnPhoneHint: simulated
       ? "模拟盘：进「模拟交易」后看「历史订单/成交」；市价开平后当前委托常为空。实盘页看不到。"
       : "实盘：在合约委托或持仓中查看（须与 API Key 所属账户一致）。",
     usedAccFillSzForClose: positionFromOrderFill,
+  };
+}
+
+/**
+ * 集成冒烟：开多（最小张）再全平。等价于依次调用 smokeSwapOpenLong 与 smokeSwapClosePosition。
+ *
+ * @param {object} opts
+ * @param {"market"|"limit"} [opts.pxType] 同时作用于开、平（可被 openPxType / closePxType 覆盖）
+ * @param {"market"|"limit"} [opts.openPxType]
+ * @param {"market"|"limit"} [opts.closePxType]
+ */
+async function smokeSwapOpenLongThenClose(opts) {
+  const openPx = opts.openPxType ?? opts.pxType ?? "market";
+  const closePx = opts.closePxType ?? opts.pxType ?? "market";
+  const openR = await smokeSwapOpenLong({ ...opts, pxType: openPx });
+  const closeR = await smokeSwapClosePosition({
+    ...opts,
+    pxType: closePx,
+    openAccFillSz: openR.accFillSz,
+  });
+  return {
+    instId: openR.instId,
+    openSz: openR.openSz,
+    openOrdId: openR.openOrdId,
+    openClOrdId: openR.openClOrdId,
+    closeOrdId: closeR.closeOrdId,
+    closeClOrdId: closeR.closeClOrdId,
+    simulated: openR.simulated,
+    seeOrdersOnPhoneHint: openR.seeOrdersOnPhoneHint,
+    usedAccFillSzForClose: closeR.usedAccFillSzForClose,
   };
 }
 
@@ -834,5 +1023,7 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
 module.exports = {
   tvSymbolToSwapInstId,
   maybeExecuteOkxSwapOrders,
+  smokeSwapOpenLong,
+  smokeSwapClosePosition,
   smokeSwapOpenLongThenClose,
 };

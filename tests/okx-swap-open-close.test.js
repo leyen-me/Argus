@@ -1,5 +1,6 @@
 /**
- * OKX USDT 永续：市价开多（最小张）→ 再市价全平。
+ * OKX USDT 永续集成测试（拆分为：开仓一条、平仓一条）。
+ * 价格类型由环境变量控制：市价 market 或限价 limit（限价使用略偏吃单侧价以尽快成交）。
  *
  * 前置（模拟盘请用模拟站申请的 Key）：
  *   export OKX_API_KEY="..."
@@ -9,10 +10,15 @@
  *
  * 可选：
  *   OKX_SIMULATED      默认 1（模拟盘）；设为 0 则走实盘（极危险，仅当你清楚后果）
- *                      模拟盘下单只在「模拟交易」环境可见：手机 App 请进模拟交易/Demo 看单，实盘合约列表里看不到。
  *   OKX_INST_ID        默认 BTC-USDT-SWAP
  *   OKX_LEVER          默认 10
  *   OKX_TD_MODE        cross | isolated，默认 isolated
+ *   OKX_PX_TYPE        默认 market；同时作为开仓/平仓的默认 pxType（可被下面两项覆盖）
+ *   OKX_OPEN_PX_TYPE   开仓：market | limit
+ *   OKX_CLOSE_PX_TYPE 平仓：market | limit
+ *
+ * 平仓测试依赖先有持仓：请在同一次 `pnpm run test:okx` 中先跑开仓再跑平仓（顺序固定），
+ * 或手动在合约上留仓后再单独跑平仓。模拟盘若持仓接口滞后，平仓会沿用开仓返回的 accFillSz。
  *
  * 若报错「All operations failed」：请看终端里展开后的 [sCode] sMsg。
  * 常见原因：模拟盘 Key 与实盘 Key 混用；API 未开「交易」权限；Key 绑定了 IP 白名单但本机 IP 未加入；
@@ -34,7 +40,7 @@
 
 const assert = require("node:assert");
 const { test } = require("node:test");
-const { smokeSwapOpenLongThenClose } = require("../okx-perp");
+const { smokeSwapOpenLong, smokeSwapClosePosition } = require("../okx-perp");
 
 const apiKey = process.env.OKX_API_KEY?.trim();
 const secretKey = process.env.OKX_SECRET_KEY?.trim();
@@ -43,13 +49,28 @@ const hasKeys = Boolean(apiKey && secretKey && passphrase);
 
 const runner = hasKeys ? test : test.skip;
 
-runner("OKX 永续：开多（最小张）后平仓", async () => {
+/** @param {string} name @param {"market"|"limit"} fallback */
+function envPxType(name, fallback) {
+  const v = process.env[name]?.trim().toLowerCase();
+  if (v === "limit") return "limit";
+  if (v === "market") return "market";
+  return fallback;
+}
+
+const defaultPx = envPxType("OKX_PX_TYPE", "market");
+const openPxType = envPxType("OKX_OPEN_PX_TYPE", defaultPx);
+const closePxType = envPxType("OKX_CLOSE_PX_TYPE", defaultPx);
+
+/** 供「平仓」测试读取：上一次「开仓」测试写入的 accFillSz（模拟盘持仓不同步时用） */
+let lastOpenAccFillSz = "";
+
+runner("OKX 永续：开仓（最小张，市价或限价）", async () => {
   const simulated = process.env.OKX_SIMULATED !== "0" && process.env.OKX_SIMULATED !== "false";
   const instId = process.env.OKX_INST_ID?.trim() || "BTC-USDT-SWAP";
   const lever = Number(process.env.OKX_LEVER);
   const tdMode = process.env.OKX_TD_MODE === "cross" ? "cross" : "isolated";
 
-  const r = await smokeSwapOpenLongThenClose({
+  const r = await smokeSwapOpenLong({
     apiKey,
     secretKey,
     passphrase,
@@ -57,14 +78,41 @@ runner("OKX 永续：开多（最小张）后平仓", async () => {
     instId,
     tdMode,
     lever: Number.isFinite(lever) && lever >= 1 ? lever : 10,
+    pxType: openPxType,
   });
+
+  lastOpenAccFillSz = r.accFillSz || "";
 
   assert.match(r.instId, /-SWAP$/);
   assert.ok(r.openSz && String(r.openSz).length > 0, "应返回开仓张数字符串");
   assert.ok(r.openOrdId || r.openClOrdId, "开仓应有 ordId 或 clOrdId");
-  assert.ok(r.closeOrdId || r.closeClOrdId, "平仓应有 ordId 或 clOrdId");
+  assert.ok(r.pxType === "market" || r.pxType === "limit", "pxType 应为 market 或 limit");
 
-  console.log("[okx-swap-open-close]", JSON.stringify(r, null, 2));
+  console.log("[okx-swap open]", JSON.stringify(r, null, 2));
+});
+
+runner("OKX 永续：平仓（全平，市价或限价）", async () => {
+  const simulated = process.env.OKX_SIMULATED !== "0" && process.env.OKX_SIMULATED !== "false";
+  const instId = process.env.OKX_INST_ID?.trim() || "BTC-USDT-SWAP";
+  const tdMode = process.env.OKX_TD_MODE === "cross" ? "cross" : "isolated";
+
+  const r = await smokeSwapClosePosition({
+    apiKey,
+    secretKey,
+    passphrase,
+    simulated,
+    instId,
+    tdMode,
+    pxType: closePxType,
+    openAccFillSz: lastOpenAccFillSz,
+  });
+
+  assert.match(r.instId, /-SWAP$/);
+  assert.ok(r.closeSz && String(r.closeSz).length > 0, "应返回平仓张数字符串");
+  assert.ok(r.closeOrdId || r.closeClOrdId, "平仓应有 ordId 或 clOrdId");
+  assert.ok(r.pxType === "market" || r.pxType === "limit", "pxType 应为 market 或 limit");
+
+  console.log("[okx-swap close]", JSON.stringify(r, null, 2));
 });
 
 if (!hasKeys) {

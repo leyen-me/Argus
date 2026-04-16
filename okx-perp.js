@@ -35,6 +35,22 @@ function formatOkxErrorBody(json) {
 }
 
 /**
+ * 单笔下单：顶层 code 为 0 时仍可能在 data[0].sCode 返回失败（常见于「All operations failed」类响应）。
+ * @param {object} json
+ */
+function assertOkxTradeOrderAccepted(json) {
+  const row = json?.data?.[0];
+  if (!row || typeof row !== "object") {
+    throw new Error("OKX 下单无返回 data[0]");
+  }
+  const sc = row.sCode != null ? String(row.sCode) : "";
+  if (sc && sc !== "0") {
+    const sm = typeof row.sMsg === "string" ? row.sMsg : "";
+    throw new Error(`OKX 下单失败 [${sc}] ${sm}`.trim());
+  }
+}
+
+/**
  * 与 crypto-scheduler 中 OKX 现货 instId 规则一致（避免 require crypto-scheduler → bar-close 循环依赖）。
  * @param {string} tv
  * @returns {string | null}
@@ -193,6 +209,7 @@ async function fetchAccountPosMode(client) {
     const j = await client.request("GET", "/api/v5/account/config", "");
     const mode = j.data?.[0]?.posMode;
     if (mode === "long_short_mode") return "hedge";
+    if (mode === "net_mode") return "net";
   } catch {
     /* 回退单向持仓 */
   }
@@ -215,6 +232,104 @@ async function fetchUsdtAvailEq(client) {
 }
 
 /**
+ * 持仓接口同时返回 pos / availPos（见 OKX GET /api/v5/account/positions 响应字段说明）。
+ * @param {object} r
+ */
+function swapPositionRowAbsContracts(r) {
+  const p = parseFloat(r.pos);
+  const a = parseFloat(r.availPos);
+  const ap = Number.isFinite(Math.abs(p)) ? Math.abs(p) : 0;
+  const aa = Number.isFinite(Math.abs(a)) ? Math.abs(a) : 0;
+  return Math.max(ap, aa);
+}
+
+/**
+ * @param {object} r
+ */
+function effectiveSwapPosNum(r) {
+  const p = parseFloat(r.pos);
+  if (Number.isFinite(p) && p !== 0) return p;
+  const a = parseFloat(r.availPos);
+  if (!Number.isFinite(a) || a === 0) return 0;
+  const ps = String(r.posSide || "net");
+  if (ps === "short") return -Math.abs(a);
+  return Math.abs(a);
+}
+
+/**
+ * @param {object[]} rows
+ */
+function pickBestSwapPositionRow(rows) {
+  let row = null;
+  let bestAbs = 0;
+  for (const r of rows) {
+    const absPos = swapPositionRowAbsContracts(r);
+    if (Number.isFinite(absPos) && absPos > bestAbs) {
+      bestAbs = absPos;
+      row = r;
+    }
+  }
+  if (!row || bestAbs <= 0) return null;
+  const posNum = effectiveSwapPosNum(row);
+  const absPos = Math.abs(posNum);
+  const posSide = String(row.posSide || "net");
+  return {
+    posNum: Number.isFinite(posNum) ? posNum : 0,
+    absPos: Number.isFinite(absPos) ? absPos : 0,
+    posSide,
+  };
+}
+
+/**
+ * GET /api/v5/trade/order — 用于确认成交（state、accFillSz），见 OKX 文档「Get order」。
+ * @param {ReturnType<createOkxClient>} client
+ * @param {string} instId
+ * @param {string} ordId
+ */
+async function fetchSwapOrderRow(client, instId, ordId) {
+  const j = await client.request(
+    "GET",
+    `/api/v5/trade/order?instId=${encodeURIComponent(instId)}&ordId=${encodeURIComponent(ordId)}`,
+    "",
+  );
+  return j.data?.[0] ?? null;
+}
+
+/**
+ * 下单响应里 sCode=0 只表示「请求处理完成」，是否成交要看订单 state / accFillSz（OKX「Place order」「Get order」说明）。
+ * @param {ReturnType<createOkxClient>} client
+ * @param {string} instId
+ * @param {string} ordId
+ */
+async function waitSwapMarketOrderFilled(client, instId, ordId) {
+  const terminalBad = new Set(["canceled", "mmp_canceled"]);
+  let last = null;
+  const maxTry = 45;
+  const stepMs = 400;
+  for (let i = 0; i < maxTry; i++) {
+    last = await fetchSwapOrderRow(client, instId, ordId);
+    if (!last) {
+      throw new Error(`OKX GET /trade/order 无数据 ordId=${ordId}`);
+    }
+    const st = String(last.state || "");
+    const acc = parseFloat(last.accFillSz || "0");
+    if (st === "filled" || (acc > 0 && (st === "partially_filled" || st === "filled"))) {
+      return last;
+    }
+    if (terminalBad.has(st)) {
+      const why = typeof last.cancelSourceReason === "string" ? last.cancelSourceReason : "";
+      throw new Error(
+        `OKX 开仓订单未成交即结束：state=${st} accFillSz=${last.accFillSz ?? ""}${why ? ` ${why}` : ""}。`,
+      );
+    }
+    await delay(stepMs);
+  }
+  throw new Error(
+    `OKX 开仓订单在 ${(maxTry * stepMs) / 1000}s 内未变为已成交：最后 state=${last?.state} accFillSz=${last?.accFillSz ?? ""}。请用网页或 GET /api/v5/trade/order 核对订单状态。`,
+  );
+}
+
+/**
  * @param {ReturnType<createOkxClient>} client
  * @param {string} instId
  */
@@ -224,16 +339,15 @@ async function fetchSwapPositionDetail(client, instId) {
     `/api/v5/account/positions?instType=SWAP&instId=${encodeURIComponent(instId)}`,
     "",
   );
-  const row = j.data?.[0];
-  if (!row) return { posNum: 0, absPos: 0, posSide: "net" };
-  const posNum = parseFloat(row.pos);
-  const absPos = Math.abs(posNum);
-  const posSide = String(row.posSide || "net");
-  return {
-    posNum: Number.isFinite(posNum) ? posNum : 0,
-    absPos: Number.isFinite(absPos) ? absPos : 0,
-    posSide,
-  };
+  /** 双向持仓时同一 instId 会返回 long/short 两条；取 [0] 可能是空仓腿，误判为无持仓 */
+  let rows = Array.isArray(j.data) ? j.data : [];
+  if (!rows.length) {
+    const jAll = await client.request("GET", "/api/v5/account/positions?instType=SWAP", "");
+    rows = (Array.isArray(jAll.data) ? jAll.data : []).filter((r) => r.instId === instId);
+  }
+  const picked = pickBestSwapPositionRow(rows);
+  if (!picked) return { posNum: 0, absPos: 0, posSide: "net" };
+  return picked;
 }
 
 function floorToLot(sz, lotSz) {
@@ -253,9 +367,10 @@ function resolveCloseParams(posMode, detail) {
     if (ps === "long") return { closeSide: "sell", orderPosSide: "long" };
     if (ps === "short") return { closeSide: "buy", orderPosSide: "short" };
   }
-  if (detail.posNum > 0) return { closeSide: "sell", orderPosSide: "net" };
-  if (detail.posNum < 0) return { closeSide: "buy", orderPosSide: "net" };
-  return { closeSide: "sell", orderPosSide: "net" };
+  /** 单向(net)：下单 API 不传 posSide；由 buy/sell + reduceOnly 表达方向 */
+  if (detail.posNum > 0) return { closeSide: "sell", orderPosSide: null };
+  if (detail.posNum < 0) return { closeSide: "buy", orderPosSide: null };
+  return { closeSide: "sell", orderPosSide: null };
 }
 
 /**
@@ -283,21 +398,66 @@ async function setLeverageSafe(client, p) {
  * @param {string} p.side buy | sell
  * @param {string} p.sz
  * @param {boolean} p.reduceOnly
- * @param {string} p.posSide
+ * @param {string | undefined} p.posSide 双向持仓时为 long|short；单向(net)时不要传（勿传 "net"）
  * @param {string} p.clOrdId
  */
 async function placeMarket(client, p) {
-  const body = JSON.stringify({
+  /** 永续：双向持仓须 posSide=long|short；单向(net) 须省略 posSide，传 "net" 会报 51000 */
+  const bodyObj = {
     instId: p.instId,
     tdMode: p.tdMode,
     side: p.side,
     ordType: "market",
     sz: p.sz,
-    posSide: p.posSide,
     reduceOnly: p.reduceOnly,
     clOrdId: p.clOrdId,
-  });
-  return client.request("POST", "/api/v5/trade/order", body);
+  };
+  if (p.posSide === "long" || p.posSide === "short") {
+    bodyObj.posSide = p.posSide;
+  }
+  const json = await client.request("POST", "/api/v5/trade/order", JSON.stringify(bodyObj));
+  assertOkxTradeOrderAccepted(json);
+  return json;
+}
+
+/** @param {unknown} err */
+function isOkx51000PosSide(err) {
+  const m = err instanceof Error ? err.message : String(err);
+  return m.includes("51000") && m.includes("posSide");
+}
+
+/**
+ * 永续 posSide：net 与 hedge 在接口上互斥，且 account/config 偶发不可靠。
+ * 顺序：先按单向(不传 posSide)，若仅 51000 Parameter posSide 再带 long/short。
+ * @param {{ instId: string, tdMode: string, side: string, sz: string, reduceOnly: boolean }} base
+ * @param {Array<"long"|"short"|undefined>} attempts
+ */
+async function placeSwapMarketPosSideFallback(client, base, attempts) {
+  let last;
+  for (let i = 0; i < attempts.length; i++) {
+    const ps = attempts[i];
+    try {
+      return await placeMarket(client, {
+        ...base,
+        posSide: ps,
+        clOrdId: clOrdIdFrom(crypto.randomUUID(), `r${i}`),
+      });
+    } catch (e) {
+      last = e;
+      if (i === attempts.length - 1 || !isOkx51000PosSide(e)) throw e;
+    }
+  }
+  throw last ?? new Error("placeSwapMarketPosSideFallback: empty attempts");
+}
+
+/** @param {boolean} isLong */
+function posSideAttemptsOpen(isLong) {
+  return [undefined, isLong ? "long" : "short"];
+}
+
+/** @param {"buy"|"sell"} closeSide */
+function posSideAttemptsClose(closeSide) {
+  return closeSide === "sell" ? [undefined, "long"] : [undefined, "short"];
 }
 
 function clOrdIdFrom(barCloseId, tag) {
@@ -352,6 +512,11 @@ async function smokeSwapOpenLongThenClose(opts) {
 
   const mgn = tdMode === "isolated" ? "isolated" : "cross";
   const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
+  if (simulated) {
+    console.warn(
+      "[Argus/OKX] 当前为模拟盘（请求头 x-simulated-trading）。下单在「模拟交易」环境成交，请在 OKX App 内进入模拟交易/Demo 查看委托与持仓；主站实盘合约列表里不会出现。",
+    );
+  }
   const posMode = await fetchAccountPosMode(client);
 
   let existing;
@@ -398,49 +563,50 @@ async function smokeSwapOpenLongThenClose(opts) {
     }
   }
 
-  const hedge = posMode === "hedge";
-  const openPosSide = hedge ? "long" : "net";
-
-  let openBody;
-  try {
-    openBody = await placeMarket(client, {
+  const openBody = await placeSwapMarketPosSideFallback(
+    client,
+    {
       instId,
       tdMode: mgn,
       side: "buy",
       sz: openSz,
       reduceOnly: false,
-      posSide: openPosSide,
-      clOrdId: clOrdIdFrom(crypto.randomUUID(), "op"),
-    });
-  } catch (e) {
-    if (isOkx51010AccountMode(e)) {
-      throw new Error(`${e instanceof Error ? e.message : String(e)}\n${OKX_51010_ACCOUNT_MODE_HINT}`);
-    }
-    throw e;
-  }
+    },
+    posSideAttemptsOpen(true),
+  );
   const openOrdId = openBody.data?.[0]?.ordId ?? "";
   const openClOrdId = openBody.data?.[0]?.clOrdId ?? "";
+  if (!openOrdId) {
+    throw new Error("OKX 下单未返回 ordId，无法用 GET /trade/order 校验是否成交（请查响应 data[0]）");
+  }
 
-  await delay(2000);
+  const filledOpen = await waitSwapMarketOrderFilled(client, instId, openOrdId);
+
   let detail = await fetchSwapPositionDetail(client, instId);
-  if (detail.absPos <= 0) {
-    await delay(2000);
+  const maxPosPoll = 20;
+  const posPollMs = 600;
+  for (let i = 0; i < maxPosPoll && detail.absPos <= 0; i++) {
+    await delay(posPollMs);
     detail = await fetchSwapPositionDetail(client, instId);
   }
   if (detail.absPos <= 0) {
-    throw new Error("开仓后未读到持仓：请检查权限（Trade）、资金、或稍后在网络稳定时重试");
+    throw new Error(
+      `开仓订单已成交(state=${String(filledOpen.state)}, accFillSz=${filledOpen.accFillSz ?? ""})但 GET /account/positions 仍无持仓张数。请检查合约账户与 API「读取」权限；若网页有持仓而接口无，多为环境/子账户不一致。`,
+    );
   }
 
-  const { closeSide, orderPosSide } = resolveCloseParams(posMode, detail);
-  const closeBody = await placeMarket(client, {
-    instId,
-    tdMode: mgn,
-    side: closeSide,
-    sz: String(detail.absPos),
-    reduceOnly: true,
-    posSide: orderPosSide,
-    clOrdId: clOrdIdFrom(crypto.randomUUID(), "cl"),
-  });
+  const { closeSide } = resolveCloseParams(posMode, detail);
+  const closeBody = await placeSwapMarketPosSideFallback(
+    client,
+    {
+      instId,
+      tdMode: mgn,
+      side: closeSide,
+      sz: String(detail.absPos),
+      reduceOnly: true,
+    },
+    posSideAttemptsClose(closeSide),
+  );
   const closeOrdId = closeBody.data?.[0]?.ordId ?? "";
   const closeClOrdId = closeBody.data?.[0]?.clOrdId ?? "";
 
@@ -452,6 +618,9 @@ async function smokeSwapOpenLongThenClose(opts) {
     closeOrdId,
     closeClOrdId,
     simulated: !!simulated,
+    seeOrdersOnPhoneHint: simulated
+      ? "模拟盘：OKX App → 模拟交易（Demo）中查看委托/持仓；实盘页看不到。"
+      : "实盘：在合约委托或持仓中查看（须与 API Key 所属账户一致）。",
   };
 }
 
@@ -518,16 +687,18 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
         sendStatus({ ok: true, message: `${instId} 硬触发：交易所无持仓，跳过平仓` });
         return;
       }
-      const { closeSide, orderPosSide } = resolveCloseParams(posMode, detail);
-      const ord = await placeMarket(client, {
-        instId,
-        tdMode,
-        side: closeSide,
-        sz: String(detail.absPos),
-        reduceOnly: true,
-        posSide: orderPosSide,
-        clOrdId: clOrdIdFrom(barCloseId, "hx"),
-      });
+      const { closeSide } = resolveCloseParams(posMode, detail);
+      const ord = await placeSwapMarketPosSideFallback(
+        client,
+        {
+          instId,
+          tdMode,
+          side: closeSide,
+          sz: String(detail.absPos),
+          reduceOnly: true,
+        },
+        posSideAttemptsClose(closeSide),
+      );
       const oid = ord.data?.[0]?.ordId ?? "";
       sendStatus({
         ok: true,
@@ -544,16 +715,18 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
         sendStatus({ ok: true, message: `${instId} 状态机平仓：交易所无持仓，跳过` });
         return;
       }
-      const { closeSide, orderPosSide } = resolveCloseParams(posMode, detail);
-      const ord = await placeMarket(client, {
-        instId,
-        tdMode,
-        side: closeSide,
-        sz: String(detail.absPos),
-        reduceOnly: true,
-        posSide: orderPosSide,
-        clOrdId: clOrdIdFrom(barCloseId, "ex"),
-      });
+      const { closeSide } = resolveCloseParams(posMode, detail);
+      const ord = await placeSwapMarketPosSideFallback(
+        client,
+        {
+          instId,
+          tdMode,
+          side: closeSide,
+          sz: String(detail.absPos),
+          reduceOnly: true,
+        },
+        posSideAttemptsClose(closeSide),
+      );
       const oid = ord.data?.[0]?.ordId ?? "";
       sendStatus({
         ok: true,
@@ -613,19 +786,19 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
       }
     }
 
-    const hedge = posMode === "hedge";
-    const posSide = hedge ? (isOpenLong ? "long" : "short") : "net";
     const side = isOpenLong ? "buy" : "sell";
 
-    const ord = await placeMarket(client, {
-      instId,
-      tdMode,
-      side,
-      sz: String(sz),
-      reduceOnly: false,
-      posSide,
-      clOrdId: clOrdIdFrom(barCloseId, isOpenLong ? "el" : "es"),
-    });
+    const ord = await placeSwapMarketPosSideFallback(
+      client,
+      {
+        instId,
+        tdMode,
+        side,
+        sz: String(sz),
+        reduceOnly: false,
+      },
+      posSideAttemptsOpen(isOpenLong),
+    );
     const oid = ord.data?.[0]?.ordId ?? "";
     sendStatus({
       ok: true,

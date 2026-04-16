@@ -1,13 +1,15 @@
 /**
  * OKX USDT 永续：市价开多（最小张）→ 再市价全平。
  *
- * 前置（模拟盘请用模拟站申请的 Key，并保持 simulated）：
+ * 前置（模拟盘请用模拟站申请的 Key）：
  *   export OKX_API_KEY="..."
  *   export OKX_SECRET_KEY="..."
  *   export OKX_PASSPHRASE="..."
+ *   只配这三项即可；未设置 OKX_SIMULATED 时默认为模拟盘请求（与模拟 Key 一致）。不要用模拟 Key 却设 OKX_SIMULATED=0。
  *
  * 可选：
- *   OKX_SIMULATED      默认 1；设为 0 则走实盘（极危险，仅当你清楚后果）
+ *   OKX_SIMULATED      默认 1（模拟盘）；设为 0 则走实盘（极危险，仅当你清楚后果）
+ *                      模拟盘下单只在「模拟交易」环境可见：手机 App 请进模拟交易/Demo 看单，实盘合约列表里看不到。
  *   OKX_INST_ID        默认 BTC-USDT-SWAP
  *   OKX_LEVER          默认 10
  *   OKX_TD_MODE        cross | isolated，默认 cross
@@ -15,6 +17,8 @@
  * 若报错「All operations failed」：请看终端里展开后的 [sCode] sMsg。
  * 常见原因：模拟盘 Key 与实盘 Key 混用；API 未开「交易」权限；Key 绑定了 IP 白名单但本机 IP 未加入；
  * Passphrase 与创建 Key 时不一致；模拟盘请勿设 OKX_SIMULATED=0。
+ *
+ * [51000] Parameter posSide error：代码会先「不传 posSide」再试 long/short；若仍失败请核对账户持仓模式。
  *
  * [51010] You can't complete this request under your current account mode：
  * 表示当前 OKX「交易账户模式」不支持合约/设杠杆（常见于仅现货）。请到 OKX 网页/App 将账户切换为支持合约的模式；

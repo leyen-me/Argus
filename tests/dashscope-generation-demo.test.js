@@ -29,7 +29,7 @@ const DEFAULT_BASE =
 
 const MODEL = process.env.DASHSCOPE_MODEL || "qwen3.5-plus";
 
-const enableThinking = false
+const enableThinking = false;
 
 /**
  * 与 llm.js 的 appendReasoningFromDelta 一致：兼容 reasoning_details / reasoning / reasoning_content。
@@ -44,7 +44,8 @@ function appendReasoningFromDelta(delta) {
       if (!d || typeof d !== "object") continue;
       const t = d.type;
       if (t === "reasoning.text" && typeof d.text === "string") s += d.text;
-      else if (t === "reasoning.summary" && typeof d.summary === "string") s += d.summary;
+      else if (t === "reasoning.summary" && typeof d.summary === "string")
+        s += d.summary;
     }
     if (s) return s;
   }
@@ -85,9 +86,7 @@ async function demoChatCompletionStream() {
       { role: "user", content: "用一句话说明什么是 K 线。" },
     ],
   };
-  if (enableThinking) {
-    req.extra_body={"enable_thinking": enableThinking}
-  }
+  req.enable_thinking = enableThinking;
 
   const stream = await client.chat.completions.create(req);
 
@@ -103,7 +102,9 @@ async function demoChatCompletionStream() {
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta;
     const d =
-      delta && typeof delta === "object" ? /** @type {Record<string, unknown>} */ (delta) : {};
+      delta && typeof delta === "object"
+        ? /** @type {Record<string, unknown>} */ (delta)
+        : {};
 
     const reasoningPiece = appendReasoningFromDelta(d);
     if (reasoningPiece) {

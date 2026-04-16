@@ -249,7 +249,7 @@ async function emitBarClose(winGetter, ctx) {
 
   if (!llm.enabled) {
     llm.skippedReason =
-      "未调用 LLM：需设置 ARGUS_ENABLE_LLM=1，并在配置中心填写 API Key（或环境变量 OPENAI_API_KEY）。";
+      "未调用 LLM：请在配置中心填写 API Key（或环境变量 OPENAI_API_KEY）。";
     win.webContents.send("market-bar-close", payloadBase);
     return;
   }

@@ -11,6 +11,9 @@ importers:
       longport:
         specifier: ^3.0.23
         version: 3.0.23
+      nodemailer:
+        specifier: ^6.9.16
+        version: 6.10.1
       ws:
         specifier: ^8.20.0
         version: 8.20.0
@@ -193,6 +196,12 @@ packages:
     cpu: [x64]
     os: [darwin]
 
+  longport-linux-arm64-gnu@3.0.23:
+    resolution: {integrity: sha512-BwfMZshIl5ADfMitaLswYmuca04B2Cq5FLbOoUJB48kZPE0CHOIN15AOJH6p+J2j0EIllmBUEuc08VsHd7RC0w==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+
   longport-linux-x64-gnu@3.0.23:
     resolution: {integrity: sha512-aGcv29C5AnoWZeOAbPIf4ZLp3Vb74fXCsqWErzfDQ4uJcYBLoiKoMW1DhWKHyOQmF4HWqRtNdspLkcSW8ukJFw==}
     engines: {node: '>= 10'}
@@ -227,6 +236,10 @@ packages:
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
+
+  nodemailer@6.10.1:
+    resolution: {integrity: sha512-Z+iLaBGVaSjbIzQ4pX6XV41HrooLsQ10ZWPUehGmuantvzWoDVBnmsdUcOIDM1t+yPor5pDhVlDESgOMEGxhHA==}
+    engines: {node: '>=6.0.0'}
 
   normalize-url@6.1.0:
     resolution: {integrity: sha512-DlL+XwOy3NxAQ8xuC0okPgK46iuVNAK01YN7RueYBqqFeGsBjV9XmCAzAdgt+667bCl5kPh9EqKKDwnaPG1I7A==}
@@ -531,6 +544,9 @@ snapshots:
   longport-darwin-x64@3.0.23:
     optional: true
 
+  longport-linux-arm64-gnu@3.0.23:
+    optional: true
+
   longport-linux-x64-gnu@3.0.23:
     optional: true
 
@@ -541,6 +557,7 @@ snapshots:
     optionalDependencies:
       longport-darwin-arm64: 3.0.23
       longport-darwin-x64: 3.0.23
+      longport-linux-arm64-gnu: 3.0.23
       longport-linux-x64-gnu: 3.0.23
       longport-win32-x64-msvc: 3.0.23
 
@@ -556,6 +573,8 @@ snapshots:
   mimic-response@3.1.0: {}
 
   ms@2.1.3: {}
+
+  nodemailer@6.10.1: {}
 
   normalize-url@6.1.0: {}
 

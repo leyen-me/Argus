@@ -1,6 +1,6 @@
 /**
  * OpenAI 兼容 Chat Completions，供长桥推送与加密（Binance WS）共用。
- * 启用条件：ARGUS_ENABLE_LLM=1，且 API Key 来自配置 openaiApiKey 或环境变量 OPENAI_API_KEY（配置优先）。
+ * 启用条件：在配置中填写 openaiApiKey，或设置环境变量 OPENAI_API_KEY（配置优先）。
  */
 const { loadSystemPromptsFromDisk } = require("./app-config");
 function resolveOpenAiApiKey(cfg) {
@@ -11,7 +11,7 @@ function resolveOpenAiApiKey(cfg) {
 
 /** @param {object} [cfg] loadAppConfig() 结果 */
 function isLlmEnabled(cfg) {
-  return process.env.ARGUS_ENABLE_LLM === "1" && !!resolveOpenAiApiKey(cfg);
+  return !!resolveOpenAiApiKey(cfg);
 }
 
 /**

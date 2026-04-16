@@ -89,7 +89,7 @@ ipcMain.handle("market:set-context", async (_event, tvSymbol) => {
 ipcMain.handle("llm-request-analysis", async (_event, payload) => {
   return {
     ok: true,
-    message: "K 线收盘后会推送 market-bar-close（含 textForLlm 与截图）；启用 LLM 需 ARGUS_ENABLE_LLM=1。",
+    message: "K 线收盘后会推送 market-bar-close（含 textForLlm 与截图）；填写 API Key 后即可调用 LLM。",
     received: payload ?? null,
   };
 });

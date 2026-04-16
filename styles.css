@@ -183,8 +183,16 @@ body {
 }
 
 .panel-badge--usage {
-  min-width: 88px;
+  min-width: 44px;
   color: #79c0ff;
+}
+
+.panel-badge--status {
+  min-width: 56px;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel-badge--usage.panel-badge--usage-warn {

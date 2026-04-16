@@ -877,9 +877,62 @@ function formatBarClosePreview(payload) {
   return JSON.stringify(safe, null, 2);
 }
 
+/**
+ * 右侧「状态」徽章用短标签（约 2～4 字），完整句子由元素 title 展示。
+ * @param {string} full
+ * @returns {string}
+ */
+function shortLlmStatusLabel(full) {
+  const t = String(full ?? "").trim();
+  if (!t) return "就绪";
+
+  /** @type {readonly (readonly [(s: string) => boolean, string])[]} */
+  const rules = [
+    [(s) => s.includes("LLM 输出中"), "分析中"],
+    [(s) => s.includes("收盘（截图异常）"), "截图异常"],
+    [(s) => s.includes("收盘 · LLM 已分析"), "已分析"],
+    [(s) => s.includes("收盘 · LLM 失败"), "分析失败"],
+    [(s) => s.includes("K 线收盘已采集"), "已采集"],
+    [(s) => s.startsWith("加密 WS（") && s.includes("· K 收盘"), "WS收盘"],
+    [(s) => s.startsWith("收盘处理失败"), "处理失败"],
+    [(s) => s.includes("WS 断开") && s.includes("重连"), "WS重连"],
+    [(s) => s.includes("无效 BINANCE"), "代码无效"],
+    [(s) => s.includes("加密 WS（") && s.includes("已连接"), "WS已连"],
+    [(s) => s.includes("无效 OKX"), "代码无效"],
+    [(s) => s.startsWith("OKX："), "OKX异常"],
+    [(s) => s.includes("请使用 BINANCE:") || (s.includes("BINANCE:") && s.includes("前缀")), "前缀无效"],
+    [(s) => s.includes("未选择可订阅"), "未订阅"],
+    [(s) => s.startsWith("长桥凭证无效"), "凭证无效"],
+    [(s) => s.startsWith("长桥推送错误"), "推送异常"],
+    [(s) => s.includes("跳过开盘前"), "跳过K"],
+    [(s) => s.startsWith("长桥 K 确认"), "K确认"],
+    [(s) => s.startsWith("长桥：已订阅"), "已订阅"],
+    [(s) => s.startsWith("长桥订阅失败"), "订阅失败"],
+    [(s) => s.startsWith("长桥：无法映射"), "映射失败"],
+    [(s) => s.includes("已恢复界面为内置默认"), "已恢复"],
+    [(s) => s === "配置已恢复默认", "已恢复"],
+    [(s) => s.includes("恢复默认配置失败"), "恢复失败"],
+    [(s) => s === "请至少填写一行品种", "缺品种"],
+    [(s) => s === "保存配置失败", "保存失败"],
+    [(s) => s === "就绪", "就绪"],
+  ];
+
+  for (const [pred, label] of rules) {
+    if (pred(t)) return label;
+  }
+  if (t.length <= 6) return t;
+  return `${t.slice(0, 5)}…`;
+}
+
+/**
+ * @param {string} text 完整状态句（主进程或本页逻辑原文）
+ */
 function setLlmStatus(text) {
   const el = document.getElementById("llm-status");
-  if (el) el.textContent = text;
+  if (!el) return;
+  const full = String(text ?? "").trim() || "就绪";
+  el.textContent = shortLlmStatusLabel(full);
+  el.title = full;
 }
 
 /**
@@ -890,7 +943,7 @@ function updateContextUsage(usage) {
   if (!el) return;
   el.classList.remove("panel-badge--usage-warn", "panel-badge--usage-danger");
   if (!usage || typeof usage.percent !== "number" || typeof usage.estimatedPromptTokens !== "number") {
-    el.textContent = "上下文 —";
+    el.textContent = "—";
     el.title =
       "启用 LLM 后，每次收盘请求会显示估算输入占比。默认按 200K 上下文窗口；可用环境变量 ARGUS_CONTEXT_WINDOW_TOKENS 覆盖。含图时为粗估。";
     return;
@@ -898,7 +951,7 @@ function updateContextUsage(usage) {
   const pct = usage.percent;
   const est = usage.estimatedPromptTokens;
   const cap = usage.contextWindowTokens ?? 200_000;
-  el.textContent = `上下文 ${pct}%`;
+  el.textContent = `${pct}%`;
   el.title = `估算输入约 ${est.toLocaleString("zh-CN")} tokens，窗口 ${cap.toLocaleString("zh-CN")}（约 ${pct}%）。含图为粗估，与服务商实际计费可能略有差异。`;
   if (pct >= 80) el.classList.add("panel-badge--usage-danger");
   else if (pct >= 50) el.classList.add("panel-badge--usage-warn");
@@ -968,8 +1021,6 @@ function bindMarketBarClose() {
     return;
   }
   window.argus.onMarketBarClose((payload) => {
-    const status = document.getElementById("llm-status");
-
     latestBarCloseId = payload?.barCloseId ?? null;
     window.argusLastBarClose = payload;
     if (payload?.chartImage?.dataUrl) {
@@ -999,18 +1050,16 @@ function bindMarketBarClose() {
     if (payload?.usage) {
       updateContextUsage(payload.usage);
     }
-    if (status) {
-      if (payload?.chartCaptureError) {
-        status.textContent = "收盘（截图异常）";
-      } else if (llm?.enabled && llm.streaming) {
-        status.textContent = "LLM 输出中…";
-      } else if (llm?.enabled && llm.analysisText) {
-        status.textContent = "收盘 · LLM 已分析";
-      } else if (llm?.enabled && llm.error) {
-        status.textContent = "收盘 · LLM 失败";
-      } else {
-        status.textContent = "K 线收盘已采集";
-      }
+    if (payload?.chartCaptureError) {
+      setLlmStatus("收盘（截图异常）");
+    } else if (llm?.enabled && llm.streaming) {
+      setLlmStatus("LLM 输出中…");
+    } else if (llm?.enabled && llm.analysisText) {
+      setLlmStatus("收盘 · LLM 已分析");
+    } else if (llm?.enabled && llm.error) {
+      setLlmStatus("收盘 · LLM 失败");
+    } else {
+      setLlmStatus("K 线收盘已采集");
     }
   });
 }
@@ -1031,8 +1080,7 @@ function bindLlmStream() {
         bubbleAsst.classList.remove("llm-bubble--error");
       }
       if (barCloseId === latestBarCloseId) {
-        const status = document.getElementById("llm-status");
-        if (status) status.textContent = "LLM 输出中…";
+        setLlmStatus("LLM 输出中…");
       }
       const history = document.getElementById("llm-chat-history");
       if (history) history.scrollTop = history.scrollHeight;
@@ -1069,8 +1117,7 @@ function bindLlmStream() {
       if (window.argusLastBarClose && tradeStateEvent !== undefined) {
         window.argusLastBarClose.tradeStateEvent = tradeStateEvent;
       }
-      const status = document.getElementById("llm-status");
-      if (status) status.textContent = "收盘 · LLM 已分析";
+      setLlmStatus("收盘 · LLM 已分析");
     },
     );
   }
@@ -1087,8 +1134,7 @@ function bindLlmStream() {
         window.argusLastBarClose.llm.streaming = false;
         window.argusLastBarClose.llm.analysisText = null;
       }
-      const status = document.getElementById("llm-status");
-      if (status) status.textContent = "收盘 · LLM 失败";
+      setLlmStatus("收盘 · LLM 失败");
     });
   }
 }

@@ -15,7 +15,6 @@
       <header class="titlebar">
         <span class="titlebar-traffic-guard" aria-hidden="true"></span>
         <span class="titlebar-title">Argus</span>
-        <span class="titlebar-hint">左侧 TradingView · 右侧 LLM 分析</span>
         <div class="titlebar-actions">
           <button
             type="button"
@@ -52,8 +51,8 @@
                 class="panel-badge panel-badge--usage"
                 id="llm-context-usage"
                 title="启用 LLM 后，每次收盘请求会显示估算输入占比。默认按 200K 上下文窗口；可用环境变量 ARGUS_CONTEXT_WINDOW_TOKENS 覆盖。含图时为粗估。"
-                >上下文 —</span>
-              <span class="panel-badge" id="llm-status">就绪</span>
+                >—</span>
+              <span class="panel-badge panel-badge--status" id="llm-status" title="">就绪</span>
             </div>
           </div>
           <div

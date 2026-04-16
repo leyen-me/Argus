@@ -260,8 +260,9 @@ function effectiveSwapPosNum(r) {
 
 /**
  * @param {object[]} rows
+ * @returns {{ detail: { posNum: number, absPos: number, posSide: string }, row: object | null }}
  */
-function pickBestSwapPositionRow(rows) {
+function pickBestSwapPositionRowData(rows) {
   let row = null;
   let bestAbs = 0;
   for (const r of rows) {
@@ -271,15 +272,115 @@ function pickBestSwapPositionRow(rows) {
       row = r;
     }
   }
-  if (!row || bestAbs <= 0) return null;
+  if (!row || bestAbs <= 0) {
+    return { detail: { posNum: 0, absPos: 0, posSide: "net" }, row: null };
+  }
   const posNum = effectiveSwapPosNum(row);
   const absPos = Math.abs(posNum);
   const posSide = String(row.posSide || "net");
   return {
-    posNum: Number.isFinite(posNum) ? posNum : 0,
-    absPos: Number.isFinite(absPos) ? absPos : 0,
-    posSide,
+    detail: {
+      posNum: Number.isFinite(posNum) ? posNum : 0,
+      absPos: Number.isFinite(absPos) ? absPos : 0,
+      posSide,
+    },
+    row,
   };
+}
+
+/**
+ * @param {object} row
+ * @returns {object | null}
+ */
+function serializeSwapPositionRow(row) {
+  if (!row || typeof row !== "object") return null;
+  /** @param {string} k */
+  const pick = (k) => {
+    const v = row[k];
+    if (v == null) return undefined;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
+    return String(v);
+  };
+  return {
+    instId: pick("instId"),
+    posSide: pick("posSide"),
+    pos: pick("pos"),
+    availPos: pick("availPos"),
+    avgPx: pick("avgPx"),
+    markPx: pick("markPx"),
+    last: pick("last"),
+    upl: pick("upl"),
+    uplRatio: pick("uplRatio"),
+    lever: pick("lever"),
+    margin: pick("margin"),
+    mgnMode: pick("mgnMode"),
+    notionalUsd: pick("notionalUsd"),
+    liqPx: pick("liqPx"),
+    ccy: pick("ccy"),
+  };
+}
+
+/**
+ * @param {ReturnType<createOkxClient>} client
+ * @param {string} instId
+ */
+async function fetchSwapPositionRows(client, instId) {
+  const j = await client.request(
+    "GET",
+    `/api/v5/account/positions?instType=SWAP&instId=${encodeURIComponent(instId)}`,
+    "",
+  );
+  let rows = Array.isArray(j.data) ? j.data : [];
+  if (!rows.length) {
+    const jAll = await client.request("GET", "/api/v5/account/positions?instType=SWAP", "");
+    rows = (Array.isArray(jAll.data) ? jAll.data : []).filter((r) => r.instId === instId);
+  }
+  return rows;
+}
+
+/**
+ * @param {ReturnType<createOkxClient>} client
+ * @param {string} instId
+ */
+async function fetchSwapPositionSnapshot(client, instId) {
+  const rows = await fetchSwapPositionRows(client, instId);
+  const { detail, row } = pickBestSwapPositionRowData(rows);
+  return {
+    instId,
+    hasPosition: detail.absPos > 0,
+    posSide: detail.posSide,
+    posNum: detail.posNum,
+    absContracts: detail.absPos,
+    fields: row ? serializeSwapPositionRow(row) : null,
+  };
+}
+
+/**
+ * 主进程 / IPC：按当前配置拉取某图表品种对应永续持仓（供界面展示）。
+ * @param {object} cfg
+ * @param {string} tvSymbol
+ */
+async function getOkxSwapPositionSnapshot(cfg, tvSymbol) {
+  if (!cfg || cfg.okxSwapTradingEnabled !== true) {
+    return { ok: true, skipped: true, reason: "okx_swap_disabled" };
+  }
+  if (inferFeed(tvSymbol) !== "crypto" || !String(tvSymbol || "").startsWith("OKX:")) {
+    return { ok: true, skipped: true, reason: "not_okx_chart" };
+  }
+  const instId = tvSymbolToSwapInstId(tvSymbol);
+  if (!instId) {
+    return { ok: false, message: "无效 OKX 品种代码" };
+  }
+  const apiKey = typeof cfg.okxApiKey === "string" ? cfg.okxApiKey.trim() : "";
+  const secretKey = typeof cfg.okxSecretKey === "string" ? cfg.okxSecretKey.trim() : "";
+  const passphrase = typeof cfg.okxPassphrase === "string" ? cfg.okxPassphrase.trim() : "";
+  if (!apiKey || !secretKey || !passphrase) {
+    return { ok: false, message: "OKX API 未配置完整" };
+  }
+  const simulated = cfg.okxSimulated !== false;
+  const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
+  const snapshot = await fetchSwapPositionSnapshot(client, instId);
+  return { ok: true, simulated, ...snapshot };
 }
 
 /**
@@ -336,20 +437,8 @@ async function waitSwapOrderFilled(client, instId, ordId) {
  * @param {string} instId
  */
 async function fetchSwapPositionDetail(client, instId) {
-  const j = await client.request(
-    "GET",
-    `/api/v5/account/positions?instType=SWAP&instId=${encodeURIComponent(instId)}`,
-    "",
-  );
-  /** 双向持仓时同一 instId 会返回 long/short 两条；取 [0] 可能是空仓腿，误判为无持仓 */
-  let rows = Array.isArray(j.data) ? j.data : [];
-  if (!rows.length) {
-    const jAll = await client.request("GET", "/api/v5/account/positions?instType=SWAP", "");
-    rows = (Array.isArray(jAll.data) ? jAll.data : []).filter((r) => r.instId === instId);
-  }
-  const picked = pickBestSwapPositionRow(rows);
-  if (!picked) return { posNum: 0, absPos: 0, posSide: "net" };
-  return picked;
+  const rows = await fetchSwapPositionRows(client, instId);
+  return pickBestSwapPositionRowData(rows).detail;
 }
 
 function floorToLot(sz, lotSz) {
@@ -869,6 +958,16 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
 
   const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
 
+  const sendStatusWithPosition = async (payload) => {
+    try {
+      const position = await fetchSwapPositionSnapshot(client, instId);
+      sendStatus({ ...payload, position, instId, tvSymbol, simulated });
+    } catch (err) {
+      console.warn("[Argus] OKX 持仓快照:", err instanceof Error ? err.message : err);
+      sendStatus({ ...payload, instId, tvSymbol, simulated });
+    }
+  };
+
   const isOpenLong = transition === "LOOKING_LONG->HOLDING_LONG";
   const isOpenShort = transition === "LOOKING_SHORT->HOLDING_SHORT";
   const isExitCooldown =
@@ -881,7 +980,7 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
     if (isHard) {
       const detail = await fetchSwapPositionDetail(client, instId);
       if (detail.absPos <= 0) {
-        sendStatus({ ok: true, message: `${instId} 硬触发：交易所无持仓，跳过平仓` });
+        await sendStatusWithPosition({ ok: true, message: `${instId} 硬触发：交易所无持仓，跳过平仓` });
         return;
       }
       const { closeSide } = resolveCloseParams(posMode, detail);
@@ -897,7 +996,7 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
         posSideAttemptsClose(closeSide),
       );
       const oid = ord.data?.[0]?.ordId ?? "";
-      sendStatus({
+      await sendStatusWithPosition({
         ok: true,
         message: `OKX 平仓（${simulated ? "模拟" : "实盘"}）${instId} ordId=${oid}`,
       });
@@ -909,7 +1008,7 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
       if (side !== "LONG" && side !== "SHORT") return;
       const detail = await fetchSwapPositionDetail(client, instId);
       if (detail.absPos <= 0) {
-        sendStatus({ ok: true, message: `${instId} 状态机平仓：交易所无持仓，跳过` });
+        await sendStatusWithPosition({ ok: true, message: `${instId} 状态机平仓：交易所无持仓，跳过` });
         return;
       }
       const { closeSide } = resolveCloseParams(posMode, detail);
@@ -925,7 +1024,7 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
         posSideAttemptsClose(closeSide),
       );
       const oid = ord.data?.[0]?.ordId ?? "";
-      sendStatus({
+      await sendStatusWithPosition({
         ok: true,
         message: `OKX 平仓（${simulated ? "模拟" : "实盘"}）${instId} ${side} ordId=${oid}`,
       });
@@ -936,7 +1035,7 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
 
     const existing = await fetchSwapPositionDetail(client, instId);
     if (existing.absPos > 0) {
-      sendStatus({ ok: false, message: `${instId} 已有永续持仓，跳过开仓` });
+      await sendStatusWithPosition({ ok: false, message: `${instId} 已有永续持仓，跳过开仓` });
       return;
     }
 
@@ -997,20 +1096,21 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
       posSideAttemptsOpen(isOpenLong),
     );
     const oid = ord.data?.[0]?.ordId ?? "";
-    sendStatus({
+    await sendStatusWithPosition({
       ok: true,
       message: `OKX 开仓（${simulated ? "模拟" : "实盘"}）${instId} ${isOpenLong ? "多" : "空"} sz=${sz} ordId=${oid}`,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[Argus] OKX 永续:", msg);
-    sendStatus({ ok: false, message: msg });
+    void sendStatusWithPosition({ ok: false, message: msg });
   }
 }
 
 module.exports = {
   tvSymbolToSwapInstId,
   maybeExecuteOkxSwapOrders,
+  getOkxSwapPositionSnapshot,
   smokeSwapOpenLong,
   smokeSwapClosePosition,
   smokeSwapOpenLongThenClose,

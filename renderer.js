@@ -789,6 +789,7 @@ function initConfigCenter() {
       );
       closeModal();
       refreshTradeStateBarFromCache();
+      void refreshOkxPositionBar();
       return;
     }
     try {
@@ -819,6 +820,7 @@ function initConfigCenter() {
       void refreshCurrentSystemPromptPreview();
       closeModal();
       refreshTradeStateBarFromCache();
+      void refreshOkxPositionBar();
     } catch (err) {
       console.error(err);
       setLlmStatus("保存配置失败");
@@ -910,6 +912,7 @@ function initSymbolSelect() {
     }
     void refreshCurrentSystemPromptPreview();
     refreshTradeStateBarFromCache();
+    void refreshOkxPositionBar();
   });
 }
 
@@ -1214,13 +1217,117 @@ function bindMarketStatus() {
   });
 }
 
+/**
+ * @param {object | null} r `getOkxSwapPosition` 返回
+ */
+function formatOkxPositionLine(r) {
+  if (!r) return "—";
+  if (r.skipped && r.reason === "not_okx_chart") return "";
+  if (r.skipped && r.reason === "okx_swap_disabled") {
+    return "未启用 OKX 永续下单；在配置中开启后可显示交易所持仓。";
+  }
+  if (r.ok === false) return r.message || "查询失败";
+  const sim = r.simulated !== false ? "模拟" : "实盘";
+  const id = r.instId || "";
+  const f = r.fields;
+  if (!r.hasPosition || !f) {
+    return `${sim} · ${id} · 当前无持仓`;
+  }
+  const dir = r.posNum > 0 ? "多" : r.posNum < 0 ? "空" : "—";
+  const contracts = f.pos != null ? String(f.pos) : String(r.absContracts ?? "");
+  const upl = f.upl != null && f.upl !== "" ? ` · 未实现盈亏 ${f.upl}` : "";
+  const avg = f.avgPx != null && f.avgPx !== "" ? ` · 开仓均价 ${f.avgPx}` : "";
+  const mark = f.markPx != null && f.markPx !== "" ? ` · 标记 ${f.markPx}` : "";
+  const lev = f.lever != null && f.lever !== "" ? ` · ${f.lever}x` : "";
+  return `${sim} · ${f.instId || id} · ${dir} ${contracts} 张${lev}${avg}${mark}${upl}`;
+}
+
+async function refreshOkxPositionBar() {
+  const bar = document.getElementById("okx-position-bar");
+  const textEl = document.getElementById("okx-position-text");
+  const sel = document.getElementById("symbol-select");
+  if (!bar || !textEl || !sel) return;
+  const sym = sel.value?.trim() || "";
+  if (!sym.startsWith("OKX:")) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  if (!window.argus || typeof window.argus.getOkxSwapPosition !== "function") {
+    textEl.textContent = "—";
+    textEl.removeAttribute("title");
+    return;
+  }
+  textEl.textContent = "查询中…";
+  try {
+    const r = await window.argus.getOkxSwapPosition(sym);
+    const line = formatOkxPositionLine(r);
+    textEl.textContent = line && line.length > 0 ? line : "—";
+    if (r?.fields) {
+      textEl.title = JSON.stringify(r.fields, null, 2);
+    } else {
+      textEl.title = textEl.textContent;
+    }
+  } catch (e) {
+    textEl.textContent = e instanceof Error ? e.message : String(e);
+    textEl.removeAttribute("title");
+  }
+}
+
+/**
+ * @param {{ position?: object, tvSymbol?: string, simulated?: boolean }} payload
+ */
+function applyOkxPositionFromPayload(payload) {
+  const bar = document.getElementById("okx-position-bar");
+  const textEl = document.getElementById("okx-position-text");
+  const sel = document.getElementById("symbol-select");
+  if (!bar || !textEl || !payload?.position) return;
+  const cur = sel?.value?.trim() || "";
+  if (payload.tvSymbol && cur && cur !== payload.tvSymbol) {
+    void refreshOkxPositionBar();
+    return;
+  }
+  if (!cur.startsWith("OKX:")) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  const r = {
+    ok: true,
+    simulated: payload.simulated !== false,
+    ...payload.position,
+  };
+  const line = formatOkxPositionLine(r);
+  textEl.textContent = line && line.length > 0 ? line : "—";
+  if (payload.position.fields) {
+    textEl.title = JSON.stringify(payload.position.fields, null, 2);
+  } else {
+    textEl.title = textEl.textContent;
+  }
+}
+
+function initOkxPositionBar() {
+  const btn = document.getElementById("okx-position-refresh");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      void refreshOkxPositionBar();
+    });
+  }
+}
+
 function bindOkxSwapStatus() {
   if (typeof window.argus === "undefined" || typeof window.argus.onOkxSwapStatus !== "function") {
     return;
   }
   window.argus.onOkxSwapStatus((payload) => {
-    if (!payload?.message) return;
-    setLlmStatus(payload.ok ? `OKX：${payload.message}` : `OKX 错误：${payload.message}`);
+    if (payload?.message) {
+      setLlmStatus(payload.ok ? `OKX：${payload.message}` : `OKX 错误：${payload.message}`);
+    }
+    if (payload?.position) {
+      applyOkxPositionFromPayload(payload);
+    } else {
+      void refreshOkxPositionBar();
+    }
   });
 }
 
@@ -1245,5 +1352,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindLlmStream();
   bindMarketStatus();
   bindOkxSwapStatus();
+  initOkxPositionBar();
   refreshTradeStateBarFromCache();
+  void refreshOkxPositionBar();
 });

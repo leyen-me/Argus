@@ -65,6 +65,22 @@
             <span class="llm-trade-state-label">状态机</span>
             <span class="llm-trade-state-text" id="llm-trade-state-text">—</span>
           </div>
+          <div
+            class="okx-position-bar"
+            id="okx-position-bar"
+            hidden
+            role="status"
+            aria-live="polite"
+            title="来自 OKX GET /api/v5/account/positions（当前图表对应永续）；模拟盘请在模拟交易环境内查看。"
+          >
+            <span class="okx-position-label">OKX 持仓</span>
+            <div class="okx-position-body-wrap">
+              <span class="okx-position-text" id="okx-position-text">—</span>
+            </div>
+            <button type="button" class="okx-position-refresh" id="okx-position-refresh" title="重新查询">
+              刷新
+            </button>
+          </div>
           <div class="llm-body">
             <div
               class="llm-current-system"

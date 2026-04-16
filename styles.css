@@ -233,6 +233,54 @@ body {
   word-break: break-word;
 }
 
+.okx-position-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #21262d;
+  background: #0f1419;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #c9d1d9;
+}
+
+.okx-position-label {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #58a6ff;
+}
+
+.okx-position-body-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.okx-position-text {
+  display: block;
+  word-break: break-word;
+}
+
+.okx-position-refresh {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #c9d1d9;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.okx-position-refresh:hover {
+  background: #30363d;
+}
+
 .llm-body {
   display: flex;
   flex-direction: column;

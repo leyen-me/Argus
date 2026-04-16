@@ -13,6 +13,7 @@ const {
 } = require("./app-config");
 const { wipeConversationStore } = require("./llm-context");
 const { wipeTradingStateStore } = require("./trading-state");
+const { getOkxSwapPositionSnapshot } = require("./okx-perp");
 
 /**
  * 左侧当前品种：加密走 Binance / OKX WS K 线；美股/港股走长桥订阅（切换时先停另一侧）。
@@ -79,6 +80,10 @@ ipcMain.handle("config:reset", async () => {
 
 ipcMain.handle("market:set-context", async (_event, tvSymbol) => {
   await routeMarket(loadAppConfig(), tvSymbol);
+});
+
+ipcMain.handle("okx:swap-position", async (_event, tvSymbol) => {
+  return getOkxSwapPositionSnapshot(loadAppConfig(), tvSymbol);
 });
 
 ipcMain.handle("llm-request-analysis", async (_event, payload) => {

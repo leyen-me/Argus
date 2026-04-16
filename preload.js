@@ -44,4 +44,5 @@ contextBridge.exposeInMainWorld("argus", {
   resetConfig: () => ipcRenderer.invoke("config:reset"),
   getConfigPath: () => ipcRenderer.invoke("config:path"),
   openDevTools: () => ipcRenderer.invoke("devtools:open"),
+  getOkxSwapPosition: (tvSymbol) => ipcRenderer.invoke("okx:swap-position", tvSymbol),
 });

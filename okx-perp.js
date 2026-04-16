@@ -567,7 +567,7 @@ const OKX_51010_ACCOUNT_MODE_HINT =
   "【51010】当前交易账户模式不支持该操作。请到 OKX 网页或 App：交易设置 / 账户模式，切换为支持合约与杠杆的模式（如「多币种保证金」「合约模式」等，以界面为准）；模拟盘请在「模拟交易」环境内检查是否已开通合约。也可尝试环境变量 OKX_TD_MODE=isolated。";
 
 /**
- * 冒烟：开多（最小张）。pxType 为 "market" 或 "limit"（限价用略偏吃单侧价以尽快成交）。
+ * 冒烟：开多（最小张）。开仓固定为市价，避免限价挂单残留等副作用；opts.pxType 若传入会被忽略。
  *
  * @param {object} opts
  * @param {string} opts.apiKey
@@ -577,7 +577,6 @@ const OKX_51010_ACCOUNT_MODE_HINT =
  * @param {string} [opts.instId="BTC-USDT-SWAP"]
  * @param {"cross"|"isolated"} [opts.tdMode="isolated"]
  * @param {number} [opts.lever=10]
- * @param {"market"|"limit"} [opts.pxType="market"]
  */
 async function smokeSwapOpenLong(opts) {
   const {
@@ -588,10 +587,7 @@ async function smokeSwapOpenLong(opts) {
     instId = "BTC-USDT-SWAP",
     tdMode = "isolated",
     lever = 10,
-    pxType: pxTypeRaw,
   } = opts;
-
-  const pxKind = pxTypeRaw === "limit" ? "limit" : "market";
 
   if (!apiKey || !secretKey || !passphrase) {
     throw new Error("缺少 apiKey / secretKey / passphrase");
@@ -659,14 +655,7 @@ async function smokeSwapOpenLong(opts) {
   };
   const attempts = posSideAttemptsOpen(true);
 
-  let openBody;
-  if (pxKind === "market") {
-    openBody = await placeSwapMarketPosSideFallback(client, openBase, attempts);
-  } else {
-    const last = await fetchTickerLast(instId);
-    const pxStr = aggressiveLimitPxForSide("buy", last, inst.tickSz);
-    openBody = await placeSwapLimitPosSideFallback(client, openBase, pxStr, attempts);
-  }
+  const openBody = await placeSwapMarketPosSideFallback(client, openBase, attempts);
 
   const openOrdId = openBody.data?.[0]?.ordId ?? "";
   const openClOrdId = openBody.data?.[0]?.clOrdId ?? "";
@@ -682,7 +671,7 @@ async function smokeSwapOpenLong(opts) {
     openOrdId,
     openClOrdId,
     accFillSz: filledOpen.accFillSz != null ? String(filledOpen.accFillSz).trim() : "",
-    pxType: pxKind,
+    pxType: "market",
     simulated: !!simulated,
     seeOrdersOnPhoneHint: simulated
       ? "模拟盘：进「模拟交易」后看「历史订单/成交」；市价开平后当前委托常为空。实盘页看不到。"
@@ -805,16 +794,15 @@ async function smokeSwapClosePosition(opts) {
 
 /**
  * 集成冒烟：开多（最小张）再全平。等价于依次调用 smokeSwapOpenLong 与 smokeSwapClosePosition。
+ * 开仓始终市价；平仓价格类型由 pxType / closePxType 决定。
  *
  * @param {object} opts
- * @param {"market"|"limit"} [opts.pxType] 同时作用于开、平（可被 openPxType / closePxType 覆盖）
- * @param {"market"|"limit"} [opts.openPxType]
+ * @param {"market"|"limit"} [opts.pxType] 仅作用于平仓（可被 closePxType 覆盖）
  * @param {"market"|"limit"} [opts.closePxType]
  */
 async function smokeSwapOpenLongThenClose(opts) {
-  const openPx = opts.openPxType ?? opts.pxType ?? "market";
   const closePx = opts.closePxType ?? opts.pxType ?? "market";
-  const openR = await smokeSwapOpenLong({ ...opts, pxType: openPx });
+  const openR = await smokeSwapOpenLong(opts);
   const closeR = await smokeSwapClosePosition({
     ...opts,
     pxType: closePx,

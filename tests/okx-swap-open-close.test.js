@@ -1,6 +1,6 @@
 /**
  * OKX USDT 永续集成测试（拆分为：开仓一条、平仓一条）。
- * 价格类型由环境变量控制：市价 market 或限价 limit（限价使用略偏吃单侧价以尽快成交）。
+ * 开仓固定市价；平仓价格类型由环境变量控制：市价 market 或限价 limit（限价使用略偏吃单侧价以尽快成交）。
  *
  * 前置（模拟盘请用模拟站申请的 Key）：
  *   export OKX_API_KEY="..."
@@ -13,8 +13,7 @@
  *   OKX_INST_ID        默认 BTC-USDT-SWAP
  *   OKX_LEVER          默认 10
  *   OKX_TD_MODE        cross | isolated，默认 isolated
- *   OKX_PX_TYPE        默认 market；同时作为开仓/平仓的默认 pxType（可被下面两项覆盖）
- *   OKX_OPEN_PX_TYPE   开仓：market | limit
+ *   OKX_PX_TYPE        默认 market；作为平仓默认 pxType（可被 OKX_CLOSE_PX_TYPE 覆盖）
  *   OKX_CLOSE_PX_TYPE 平仓：market | limit
  *
  * 平仓测试依赖先有持仓：请在同一次 `pnpm run test:okx` 中先跑开仓再跑平仓（顺序固定），
@@ -58,13 +57,12 @@ function envPxType(name, fallback) {
 }
 
 const defaultPx = envPxType("OKX_PX_TYPE", "market");
-const openPxType = envPxType("OKX_OPEN_PX_TYPE", defaultPx);
 const closePxType = envPxType("OKX_CLOSE_PX_TYPE", defaultPx);
 
 /** 供「平仓」测试读取：上一次「开仓」测试写入的 accFillSz（模拟盘持仓不同步时用） */
 let lastOpenAccFillSz = "";
 
-runner("OKX 永续：开仓（最小张，市价或限价）", async () => {
+runner("OKX 永续：开仓（最小张，市价）", async () => {
   const simulated = process.env.OKX_SIMULATED !== "0" && process.env.OKX_SIMULATED !== "false";
   const instId = process.env.OKX_INST_ID?.trim() || "BTC-USDT-SWAP";
   const lever = Number(process.env.OKX_LEVER);
@@ -78,7 +76,6 @@ runner("OKX 永续：开仓（最小张，市价或限价）", async () => {
     instId,
     tdMode,
     lever: Number.isFinite(lever) && lever >= 1 ? lever : 10,
-    pxType: openPxType,
   });
 
   lastOpenAccFillSz = r.accFillSz || "";
@@ -86,7 +83,7 @@ runner("OKX 永续：开仓（最小张，市价或限价）", async () => {
   assert.match(r.instId, /-SWAP$/);
   assert.ok(r.openSz && String(r.openSz).length > 0, "应返回开仓张数字符串");
   assert.ok(r.openOrdId || r.openClOrdId, "开仓应有 ordId 或 clOrdId");
-  assert.ok(r.pxType === "market" || r.pxType === "limit", "pxType 应为 market 或 limit");
+  assert.strictEqual(r.pxType, "market", "开仓固定市价");
 
   console.log("[okx-swap open]", JSON.stringify(r, null, 2));
 });

@@ -12,9 +12,12 @@
  * 可选：
  *   DASHSCOPE_MODEL          默认 qwen-plus
  *   DASHSCOPE_COMPAT_BASE_URL  默认北京地域兼容端点；新加坡等国际域见阿里云文档
+ *   DASHSCOPE_ENABLE_THINKING  设为 0 / false 可关闭深度思考（默认开启，需模型支持，如 qwen3-max 等）
  *
  * 运行：
  *   pnpm run test:dashscope
+ *
+ * 本示例为流式输出（stream: true）：同时打印「思考」与「正文」（与 llm.js 中 reasoning 解析方式一致）。
  */
 
 const assert = require("node:assert");
@@ -26,7 +29,44 @@ const DEFAULT_BASE =
 
 const MODEL = process.env.DASHSCOPE_MODEL || "qwen3.5-plus";
 
-async function demoChatCompletion() {
+const enableThinking = false
+
+/**
+ * 与 llm.js 的 appendReasoningFromDelta 一致：兼容 reasoning_details / reasoning / reasoning_content。
+ * @param {Record<string, unknown>} delta
+ */
+function appendReasoningFromDelta(delta) {
+  if (!delta || typeof delta !== "object") return "";
+  const details = delta.reasoning_details;
+  if (Array.isArray(details) && details.length > 0) {
+    let s = "";
+    for (const d of details) {
+      if (!d || typeof d !== "object") continue;
+      const t = d.type;
+      if (t === "reasoning.text" && typeof d.text === "string") s += d.text;
+      else if (t === "reasoning.summary" && typeof d.summary === "string") s += d.summary;
+    }
+    if (s) return s;
+  }
+  const r = delta.reasoning ?? delta.reasoning_content;
+  if (typeof r === "string" && r) return r;
+  return "";
+}
+
+/**
+ * @param {string} prev
+ * @param {string} piece
+ */
+function mergeReasoningChunk(prev, piece) {
+  const p = String(piece || "");
+  if (!p) return prev;
+  const base = String(prev || "");
+  if (!base) return p;
+  if (p.startsWith(base) && p.length >= base.length) return p;
+  return base + p;
+}
+
+async function demoChatCompletionStream() {
   const apiKey = (process.env.DASHSCOPE_API_KEY || "").trim();
   assert.ok(apiKey, "请设置环境变量 DASHSCOPE_API_KEY");
 
@@ -35,27 +75,66 @@ async function demoChatCompletion() {
     baseURL: DEFAULT_BASE,
   });
 
-  const completion = await client.chat.completions.create({
+  /** @type {Record<string, unknown>} */
+  const req = {
     model: MODEL,
     temperature: 0.3,
+    stream: true,
     messages: [
       { role: "system", content: "你是简洁助手，用一两句话回答。" },
       { role: "user", content: "用一句话说明什么是 K 线。" },
     ],
-  });
+  };
+  if (enableThinking) {
+    req.extra_body={"enable_thinking": enableThinking}
+  }
 
-  const text = (completion.choices[0]?.message?.content || "").trim();
-  assert.ok(text.length > 0, "模型返回为空，请检查模型名、地域端点与账号权限");
+  const stream = await client.chat.completions.create(req);
 
   console.log("[dashscope-demo] baseURL:", DEFAULT_BASE);
   console.log("[dashscope-demo] model:", MODEL);
-  console.log("[dashscope-demo] reply:\n", text);
-  if (completion.usage) {
-    console.log("[dashscope-demo] usage:", JSON.stringify(completion.usage));
+  console.log("[dashscope-demo] enable_thinking:", enableThinking);
+
+  let headerThinking = false;
+  let headerReply = false;
+  let full = "";
+  let fullReasoning = "";
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta;
+    const d =
+      delta && typeof delta === "object" ? /** @type {Record<string, unknown>} */ (delta) : {};
+
+    const reasoningPiece = appendReasoningFromDelta(d);
+    if (reasoningPiece) {
+      fullReasoning = mergeReasoningChunk(fullReasoning, reasoningPiece);
+      if (!headerThinking) {
+        process.stdout.write("[dashscope-demo] thinking (stream):\n");
+        headerThinking = true;
+      }
+      process.stdout.write(reasoningPiece);
+    }
+
+    const piece = typeof d.content === "string" ? d.content : "";
+    if (piece) {
+      full += piece;
+      if (!headerReply) {
+        if (headerThinking) process.stdout.write("\n");
+        process.stdout.write("[dashscope-demo] reply (stream):\n");
+        headerReply = true;
+      }
+      process.stdout.write(piece);
+    }
   }
+
+  process.stdout.write("\n");
+  assert.ok(
+    full.trim().length > 0 || fullReasoning.trim().length > 0,
+    "模型返回为空，请检查模型是否支持思考、模型名与地域端点",
+  );
 }
 
-demoChatCompletion().catch((err) => {
+demoChatCompletionStream().catch((err) => {
   console.error("[dashscope-demo] failed:", err.message || err);
   process.exitCode = 1;
 });

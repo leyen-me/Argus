@@ -26,5 +26,5 @@
   "okxPassphrase": "",
   "okxSwapLeverage": 10,
   "okxSwapMarginFraction": 0.25,
-  "okxTdMode": "cross"
+  "okxTdMode": "isolated"
 }

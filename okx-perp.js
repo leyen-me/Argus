@@ -492,7 +492,7 @@ const OKX_51010_ACCOUNT_MODE_HINT =
  * @param {string} opts.passphrase
  * @param {boolean} [opts.simulated=true]
  * @param {string} [opts.instId="BTC-USDT-SWAP"]
- * @param {"cross"|"isolated"} [opts.tdMode="cross"]
+ * @param {"cross"|"isolated"} [opts.tdMode="isolated"]
  * @param {number} [opts.lever=10]
  */
 async function smokeSwapOpenLongThenClose(opts) {
@@ -502,7 +502,7 @@ async function smokeSwapOpenLongThenClose(opts) {
     passphrase,
     simulated = true,
     instId = "BTC-USDT-SWAP",
-    tdMode = "cross",
+    tdMode = "isolated",
     lever = 10,
   } = opts;
 
@@ -682,7 +682,7 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
   }
 
   const simulated = cfg.okxSimulated !== false;
-  const tdMode = cfg.okxTdMode === "isolated" ? "isolated" : "cross";
+  const tdMode = cfg.okxTdMode === "cross" ? "cross" : "isolated";
   let lever = Number(cfg.okxSwapLeverage);
   if (!Number.isFinite(lever) || lever < 1) lever = 10;
   lever = Math.min(125, Math.max(1, Math.floor(lever)));

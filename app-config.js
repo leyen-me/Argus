@@ -108,7 +108,7 @@ function defaultConfigFallback() {
     okxSwapLeverage: 10,
     /** 使用账户 USDT 可用权益的比例作为单笔保证金（默认 0.25 = 25%） */
     okxSwapMarginFraction: 0.25,
-    okxTdMode: "cross",
+    okxTdMode: "isolated",
   };
 }
 

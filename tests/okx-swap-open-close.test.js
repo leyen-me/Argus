@@ -12,7 +12,7 @@
  *                      模拟盘下单只在「模拟交易」环境可见：手机 App 请进模拟交易/Demo 看单，实盘合约列表里看不到。
  *   OKX_INST_ID        默认 BTC-USDT-SWAP
  *   OKX_LEVER          默认 10
- *   OKX_TD_MODE        cross | isolated，默认 cross
+ *   OKX_TD_MODE        cross | isolated，默认 isolated
  *
  * 若报错「All operations failed」：请看终端里展开后的 [sCode] sMsg。
  * 常见原因：模拟盘 Key 与实盘 Key 混用；API 未开「交易」权限；Key 绑定了 IP 白名单但本机 IP 未加入；
@@ -23,7 +23,7 @@
  * [51010] You can't complete this request under your current account mode：
  * 表示当前 OKX「交易账户模式」不支持合约/设杠杆（常见于仅现货）。请到 OKX 网页/App 将账户切换为支持合约的模式；
  * 冒烟测试里若仅 set-leverage 报 51010 会自动跳过设杠杆再下单。若下单仍 51010，必须先改账户模式。
- * 也可尝试：OKX_TD_MODE=isolated pnpm run test:okx
+ * 也可尝试：OKX_TD_MODE=cross pnpm run test:okx（若逐仓下仍 51010）
  *
  * 运行：
  *   pnpm run test:okx
@@ -47,7 +47,7 @@ runner("OKX 永续：开多（最小张）后平仓", async () => {
   const simulated = process.env.OKX_SIMULATED !== "0" && process.env.OKX_SIMULATED !== "false";
   const instId = process.env.OKX_INST_ID?.trim() || "BTC-USDT-SWAP";
   const lever = Number(process.env.OKX_LEVER);
-  const tdMode = process.env.OKX_TD_MODE === "isolated" ? "isolated" : "cross";
+  const tdMode = process.env.OKX_TD_MODE === "cross" ? "cross" : "isolated";
 
   const r = await smokeSwapOpenLongThenClose({
     apiKey,

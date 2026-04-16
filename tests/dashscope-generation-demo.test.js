@@ -10,9 +10,15 @@
  *   export DASHSCOPE_API_KEY="sk-..."
  *
  * 可选：
- *   DASHSCOPE_MODEL          默认 qwen-plus
+ *   DASHSCOPE_MODEL          默认纯文本用 qwen3.5-plus；若带图未指定则默认 qwen-vl-plus（以控制台实际可用名为准）
  *   DASHSCOPE_COMPAT_BASE_URL  默认北京地域兼容端点；新加坡等国际域见阿里云文档
  *   DASHSCOPE_ENABLE_THINKING  设为 0 / false 可关闭深度思考（默认开启，需模型支持，如 qwen3-max 等）
+ *
+ * 图片（不需要公网 URL，与 llm.js 相同：用 Data URL 内联 base64）：
+ *   - 本地文件： DASHSCOPE_IMAGE_PATH=/path/to/a.png
+ *   - 仅 base64： DASHSCOPE_IMAGE_BASE64=<标准 base64，可带 data:image/...;base64, 前缀>
+ *   - 配图时的用户文字： DASHSCOPE_USER_TEXT="请描述这张图"
+ *   说明：接口里写的是 image_url.url，但值可以是 data:image/png;base64,xxxx，并非 HTTP 图床链接。
  *
  * 运行：
  *   pnpm run test:dashscope
@@ -21,15 +27,66 @@
  */
 
 const assert = require("node:assert");
+const fs = require("node:fs");
+const path = require("node:path");
 const OpenAI = require("openai");
 
 const DEFAULT_BASE =
   process.env.DASHSCOPE_COMPAT_BASE_URL ||
   "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
-const MODEL = process.env.DASHSCOPE_MODEL || "qwen3.5-plus";
 
-const enableThinking = false;
+const hasImageInput = true
+const DASHSCOPE_IMAGE_PATH = "/Users/apple/Desktop/project/argus/tests/image.png"
+const DASHSCOPE_IMAGE_BASE64 = ""
+
+const MODEL = "qwen3.5-plus"
+const enableThinking = false
+
+/**
+ * 本地文件或 base64 → OpenAI 兼容多模态 content（data URL，无需图床）。
+ * @returns {string | Array<{ type: string, text?: string, image_url?: { url: string } }>}
+ */
+function buildUserContent() {
+  const userText =
+    (process.env.DASHSCOPE_USER_TEXT && String(process.env.DASHSCOPE_USER_TEXT).trim()) ||
+    (hasImageInput ? "请简要描述这张图片。" : "当前（最后一根）是涨还是跌");
+
+  const rawPath = DASHSCOPE_IMAGE_PATH;
+  const rawB64 = DASHSCOPE_IMAGE_BASE64;
+
+  let b64 = "";
+  let mime = "image/png";
+
+  if (rawPath && String(rawPath).trim()) {
+    const abs = path.resolve(String(rawPath).trim());
+    b64 = fs.readFileSync(abs).toString("base64");
+    const ext = path.extname(abs).toLowerCase();
+    if (ext === ".jpg" || ext === ".jpeg") mime = "image/jpeg";
+    else if (ext === ".webp") mime = "image/webp";
+    else if (ext === ".gif") mime = "image/gif";
+    else if (ext === ".png") mime = "image/png";
+  } else if (rawB64 && String(rawB64).trim()) {
+    let s = String(rawB64).trim();
+    const dataIdx = s.indexOf("base64,");
+    if (s.startsWith("data:") && dataIdx >= 0) {
+      const semi = s.indexOf(";");
+      if (semi > 5) mime = s.slice(5, semi);
+      s = s.slice(dataIdx + 7);
+    }
+    b64 = s.replace(/\s/g, "");
+  }
+
+  if (!b64) return userText;
+
+  return [
+    { type: "text", text: userText },
+    {
+      type: "image_url",
+      image_url: { url: `data:${mime};base64,${b64}` },
+    },
+  ];
+}
 
 /**
  * 与 llm.js 的 appendReasoningFromDelta 一致：兼容 reasoning_details / reasoning / reasoning_content。
@@ -44,8 +101,7 @@ function appendReasoningFromDelta(delta) {
       if (!d || typeof d !== "object") continue;
       const t = d.type;
       if (t === "reasoning.text" && typeof d.text === "string") s += d.text;
-      else if (t === "reasoning.summary" && typeof d.summary === "string")
-        s += d.summary;
+      else if (t === "reasoning.summary" && typeof d.summary === "string") s += d.summary;
     }
     if (s) return s;
   }
@@ -83,15 +139,18 @@ async function demoChatCompletionStream() {
     stream: true,
     messages: [
       { role: "system", content: "你是简洁助手，用一两句话回答。" },
-      { role: "user", content: "用一句话说明什么是 K 线。" },
+      { role: "user", content: buildUserContent() },
     ],
   };
-  req.enable_thinking = enableThinking;
+  if (enableThinking) {
+    req.enable_thinking = true;
+  }
 
   const stream = await client.chat.completions.create(req);
 
   console.log("[dashscope-demo] baseURL:", DEFAULT_BASE);
   console.log("[dashscope-demo] model:", MODEL);
+  console.log("[dashscope-demo] has_image:", hasImageInput);
   console.log("[dashscope-demo] enable_thinking:", enableThinking);
 
   let headerThinking = false;
@@ -102,9 +161,7 @@ async function demoChatCompletionStream() {
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta;
     const d =
-      delta && typeof delta === "object"
-        ? /** @type {Record<string, unknown>} */ (delta)
-        : {};
+      delta && typeof delta === "object" ? /** @type {Record<string, unknown>} */ (delta) : {};
 
     const reasoningPiece = appendReasoningFromDelta(d);
     if (reasoningPiece) {

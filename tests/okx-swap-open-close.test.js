@@ -16,6 +16,11 @@
  * 常见原因：模拟盘 Key 与实盘 Key 混用；API 未开「交易」权限；Key 绑定了 IP 白名单但本机 IP 未加入；
  * Passphrase 与创建 Key 时不一致；模拟盘请勿设 OKX_SIMULATED=0。
  *
+ * [51010] You can't complete this request under your current account mode：
+ * 表示当前 OKX「交易账户模式」不支持合约/设杠杆（常见于仅现货）。请到 OKX 网页/App 将账户切换为支持合约的模式；
+ * 冒烟测试里若仅 set-leverage 报 51010 会自动跳过设杠杆再下单。若下单仍 51010，必须先改账户模式。
+ * 也可尝试：OKX_TD_MODE=isolated pnpm run test:okx
+ *
  * 运行：
  *   pnpm run test:okx
  *   或：node --test tests/okx-swap-open-close.test.js

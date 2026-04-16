@@ -310,6 +310,18 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** @param {unknown} err */
+function isOkx51010AccountMode(err) {
+  const m = err instanceof Error ? err.message : String(err);
+  return m.includes("51010") || m.includes("current account mode");
+}
+
+/**
+ * OKX 51010：当前账户模式不允许该请求（常见于仅现货、或需在网页/APP 切换为多币种保证金等支持合约的模式）。
+ */
+const OKX_51010_ACCOUNT_MODE_HINT =
+  "【51010】当前交易账户模式不支持该操作。请到 OKX 网页或 App：交易设置 / 账户模式，切换为支持合约与杠杆的模式（如「多币种保证金」「合约模式」等，以界面为准）；模拟盘请在「模拟交易」环境内检查是否已开通合约。也可尝试环境变量 OKX_TD_MODE=isolated。";
+
 /**
  * 集成冒烟：市价开多（最小张数）再全部平仓。用于 `tests/okx-swap-open-close.test.js` 或手动验证。
  * 需该合约无持仓、且账户有足够 USDT 可用保证金（模拟盘用模拟 API Key）。
@@ -342,7 +354,15 @@ async function smokeSwapOpenLongThenClose(opts) {
   const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
   const posMode = await fetchAccountPosMode(client);
 
-  const existing = await fetchSwapPositionDetail(client, instId);
+  let existing;
+  try {
+    existing = await fetchSwapPositionDetail(client, instId);
+  } catch (e) {
+    if (isOkx51010AccountMode(e)) {
+      throw new Error(`${e instanceof Error ? e.message : String(e)}\n${OKX_51010_ACCOUNT_MODE_HINT}`);
+    }
+    throw e;
+  }
   if (existing.absPos > 0) {
     throw new Error(`${instId} 已有持仓，请先手动平仓后再跑冒烟测试`);
   }
@@ -351,34 +371,53 @@ async function smokeSwapOpenLongThenClose(opts) {
   const openSz = String(inst.minSz);
   const levStr = String(Math.min(125, Math.max(1, Math.floor(Number(lever) || 10))));
 
-  if (posMode === "hedge") {
-    await setLeverageSafe(client, {
-      instId,
-      mgnMode: mgn,
-      lever: levStr,
-      posSide: "long",
-    });
-  } else {
-    await setLeverageSafe(client, {
-      instId,
-      mgnMode: mgn,
-      lever: levStr,
-      posSide: "net",
-    });
+  try {
+    if (posMode === "hedge") {
+      await setLeverageSafe(client, {
+        instId,
+        mgnMode: mgn,
+        lever: levStr,
+        posSide: "long",
+      });
+    } else {
+      await setLeverageSafe(client, {
+        instId,
+        mgnMode: mgn,
+        lever: levStr,
+        posSide: "net",
+      });
+    }
+  } catch (e) {
+    if (isOkx51010AccountMode(e)) {
+      console.warn(
+        "[Argus] OKX set-leverage 返回 51010，已跳过设杠杆并继续尝试下单（使用账户当前杠杆）。",
+        OKX_51010_ACCOUNT_MODE_HINT,
+      );
+    } else {
+      throw e;
+    }
   }
 
   const hedge = posMode === "hedge";
   const openPosSide = hedge ? "long" : "net";
 
-  const openBody = await placeMarket(client, {
-    instId,
-    tdMode: mgn,
-    side: "buy",
-    sz: openSz,
-    reduceOnly: false,
-    posSide: openPosSide,
-    clOrdId: clOrdIdFrom(crypto.randomUUID(), "op"),
-  });
+  let openBody;
+  try {
+    openBody = await placeMarket(client, {
+      instId,
+      tdMode: mgn,
+      side: "buy",
+      sz: openSz,
+      reduceOnly: false,
+      posSide: openPosSide,
+      clOrdId: clOrdIdFrom(crypto.randomUUID(), "op"),
+    });
+  } catch (e) {
+    if (isOkx51010AccountMode(e)) {
+      throw new Error(`${e instanceof Error ? e.message : String(e)}\n${OKX_51010_ACCOUNT_MODE_HINT}`);
+    }
+    throw e;
+  }
   const openOrdId = openBody.data?.[0]?.ordId ?? "";
   const openClOrdId = openBody.data?.[0]?.clOrdId ?? "";
 
@@ -547,20 +586,31 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
     }
 
     const levStr = String(lever);
-    if (posMode === "hedge") {
-      await setLeverageSafe(client, {
-        instId,
-        mgnMode: tdMode,
-        lever: levStr,
-        posSide: isOpenLong ? "long" : "short",
-      });
-    } else {
-      await setLeverageSafe(client, {
-        instId,
-        mgnMode: tdMode,
-        lever: levStr,
-        posSide: "net",
-      });
+    try {
+      if (posMode === "hedge") {
+        await setLeverageSafe(client, {
+          instId,
+          mgnMode: tdMode,
+          lever: levStr,
+          posSide: isOpenLong ? "long" : "short",
+        });
+      } else {
+        await setLeverageSafe(client, {
+          instId,
+          mgnMode: tdMode,
+          lever: levStr,
+          posSide: "net",
+        });
+      }
+    } catch (e) {
+      if (isOkx51010AccountMode(e)) {
+        console.warn(
+          "[Argus] OKX set-leverage 51010，跳过设杠杆并继续下单。",
+          OKX_51010_ACCOUNT_MODE_HINT,
+        );
+      } else {
+        throw e;
+      }
     }
 
     const hedge = posMode === "hedge";

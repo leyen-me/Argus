@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Multimodal fusion analysis — TradingView + LLM",
   "main": "main.js",
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron"]
+  },
   "scripts": {
     "start": "electron .",
     "dev": "electron ."

@@ -87,6 +87,14 @@ const FALLBACK_APP_CONFIG = {
   smtpUser: "",
   smtpPass: "",
   notifyEmailTo: "",
+  okxSwapTradingEnabled: false,
+  okxSimulated: true,
+  okxApiKey: "",
+  okxSecretKey: "",
+  okxPassphrase: "",
+  okxSwapLeverage: 10,
+  okxSwapMarginFraction: 0.25,
+  okxTdMode: "cross",
 };
 
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
@@ -603,6 +611,22 @@ function initConfigCenter() {
     if (smtpUserEl) smtpUserEl.value = cfg.smtpUser ?? FALLBACK_APP_CONFIG.smtpUser;
     if (smtpPassEl) smtpPassEl.value = cfg.smtpPass ?? FALLBACK_APP_CONFIG.smtpPass;
     if (notifyToEl) notifyToEl.value = cfg.notifyEmailTo ?? FALLBACK_APP_CONFIG.notifyEmailTo;
+    const okxEn = document.getElementById("config-okx-swap-enabled");
+    const okxSim = document.getElementById("config-okx-simulated");
+    if (okxEn) okxEn.checked = cfg.okxSwapTradingEnabled === true;
+    if (okxSim) okxSim.checked = cfg.okxSimulated !== false;
+    const okxAk = document.getElementById("config-okx-api-key");
+    const okxSk = document.getElementById("config-okx-secret-key");
+    const okxPh = document.getElementById("config-okx-passphrase");
+    if (okxAk) okxAk.value = cfg.okxApiKey ?? FALLBACK_APP_CONFIG.okxApiKey;
+    if (okxSk) okxSk.value = cfg.okxSecretKey ?? FALLBACK_APP_CONFIG.okxSecretKey;
+    if (okxPh) okxPh.value = cfg.okxPassphrase ?? FALLBACK_APP_CONFIG.okxPassphrase;
+    const okxLev = document.getElementById("config-okx-leverage");
+    const okxMf = document.getElementById("config-okx-margin-fraction");
+    if (okxLev) okxLev.value = String(cfg.okxSwapLeverage ?? FALLBACK_APP_CONFIG.okxSwapLeverage);
+    if (okxMf) okxMf.value = String(cfg.okxSwapMarginFraction ?? FALLBACK_APP_CONFIG.okxSwapMarginFraction);
+    const okxTd = document.getElementById("config-okx-td-mode");
+    if (okxTd) okxTd.value = cfg.okxTdMode === "isolated" ? "isolated" : "cross";
   };
 
   const closeModal = () => {
@@ -716,6 +740,25 @@ function initConfigCenter() {
     const smtpUser = smtpUserEl?.value?.trim() ?? "";
     const smtpPass = smtpPassEl?.value?.trim() ?? "";
     const notifyEmailTo = notifyToEl?.value?.trim() ?? "";
+    const okxEn = document.getElementById("config-okx-swap-enabled");
+    const okxSim = document.getElementById("config-okx-simulated");
+    const okxAk = document.getElementById("config-okx-api-key");
+    const okxSk = document.getElementById("config-okx-secret-key");
+    const okxPh = document.getElementById("config-okx-passphrase");
+    const okxLev = document.getElementById("config-okx-leverage");
+    const okxMf = document.getElementById("config-okx-margin-fraction");
+    const okxTd = document.getElementById("config-okx-td-mode");
+    const okxSwapTradingEnabled = okxEn?.checked === true;
+    const okxSimulated = okxSim?.checked !== false;
+    const okxApiKey = okxAk?.value?.trim() ?? "";
+    const okxSecretKey = okxSk?.value?.trim() ?? "";
+    const okxPassphrase = okxPh?.value?.trim() ?? "";
+    const okxSwapLeverage = Math.min(125, Math.max(1, Math.floor(Number(okxLev?.value) || 10)));
+    const okxSwapMarginFraction = Math.min(
+      1,
+      Math.max(0.01, Number(okxMf?.value) || 0.25),
+    );
+    const okxTdMode = okxTd?.value === "isolated" ? "isolated" : "cross";
 
     if (!window.argus || typeof window.argus.saveConfig !== "function") {
       applySymbolSelect({ symbols, defaultSymbol });
@@ -733,6 +776,14 @@ function initConfigCenter() {
           smtpUser,
           smtpPass,
           notifyEmailTo,
+          okxSwapTradingEnabled,
+          okxSimulated,
+          okxApiKey,
+          okxSecretKey,
+          okxPassphrase,
+          okxSwapLeverage,
+          okxSwapMarginFraction,
+          okxTdMode,
         },
         selAfter?.value?.trim() || defaultSymbol,
       );
@@ -753,6 +804,14 @@ function initConfigCenter() {
         smtpUser,
         smtpPass,
         notifyEmailTo,
+        okxSwapTradingEnabled,
+        okxSimulated,
+        okxApiKey,
+        okxSecretKey,
+        okxPassphrase,
+        okxSwapLeverage,
+        okxSwapMarginFraction,
+        okxTdMode,
       });
       applySymbolSelect(saved);
       chartInterval = saved.interval || interval;
@@ -1155,6 +1214,16 @@ function bindMarketStatus() {
   });
 }
 
+function bindOkxSwapStatus() {
+  if (typeof window.argus === "undefined" || typeof window.argus.onOkxSwapStatus !== "function") {
+    return;
+  }
+  window.argus.onOkxSwapStatus((payload) => {
+    if (!payload?.message) return;
+    setLlmStatus(payload.ok ? `OKX：${payload.message}` : `OKX 错误：${payload.message}`);
+  });
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   const cfg = await loadAppConfig();
   chartInterval = cfg.interval || "5";
@@ -1175,5 +1244,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   bindMarketBarClose();
   bindLlmStream();
   bindMarketStatus();
+  bindOkxSwapStatus();
   refreshTradeStateBarFromCache();
 });

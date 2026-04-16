@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld("argus", {
       callback(payload);
     });
   },
+  onOkxSwapStatus: (callback) => {
+    ipcRenderer.on("okx-swap-status", (_event, payload) => {
+      callback(payload);
+    });
+  },
   setMarketContext: (tvSymbol) => ipcRenderer.invoke("market:set-context", tvSymbol),
   requestAnalysis: (payload) => ipcRenderer.invoke("llm-request-analysis", payload),
   getConfig: () => ipcRenderer.invoke("config:get"),

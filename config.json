@@ -18,5 +18,13 @@
   "smtpSecure": true,
   "smtpUser": "",
   "smtpPass": "",
-  "notifyEmailTo": ""
+  "notifyEmailTo": "",
+  "okxSwapTradingEnabled": false,
+  "okxSimulated": true,
+  "okxApiKey": "",
+  "okxSecretKey": "",
+  "okxPassphrase": "",
+  "okxSwapLeverage": 10,
+  "okxSwapMarginFraction": 0.25,
+  "okxTdMode": "cross"
 }

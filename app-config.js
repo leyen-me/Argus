@@ -99,6 +99,16 @@ function defaultConfigFallback() {
     smtpPass: "",
     /** 留空则发到发件邮箱本号 */
     notifyEmailTo: "",
+    /** OKX USDT 永续：需显式开启；默认模拟盘（x-simulated-trading + 模拟站密钥） */
+    okxSwapTradingEnabled: false,
+    okxSimulated: true,
+    okxApiKey: "",
+    okxSecretKey: "",
+    okxPassphrase: "",
+    okxSwapLeverage: 10,
+    /** 使用账户 USDT 可用权益的比例作为单笔保证金（默认 0.25 = 25%） */
+    okxSwapMarginFraction: 0.25,
+    okxTdMode: "cross",
   };
 }
 
@@ -270,6 +280,32 @@ function normalizeConfig(raw) {
   const notifyEmailTo =
     typeof raw.notifyEmailTo === "string" ? raw.notifyEmailTo.trim() : base.notifyEmailTo;
 
+  let okxSwapTradingEnabled = base.okxSwapTradingEnabled;
+  if (raw.okxSwapTradingEnabled === true) okxSwapTradingEnabled = true;
+  else if (raw.okxSwapTradingEnabled === false) okxSwapTradingEnabled = false;
+
+  let okxSimulated = base.okxSimulated;
+  if (raw.okxSimulated === true) okxSimulated = true;
+  else if (raw.okxSimulated === false) okxSimulated = false;
+
+  const okxApiKey = typeof raw.okxApiKey === "string" ? raw.okxApiKey.trim() : base.okxApiKey;
+  const okxSecretKey =
+    typeof raw.okxSecretKey === "string" ? raw.okxSecretKey.trim() : base.okxSecretKey;
+  const okxPassphrase =
+    typeof raw.okxPassphrase === "string" ? raw.okxPassphrase.trim() : base.okxPassphrase;
+
+  let okxSwapLeverage = base.okxSwapLeverage;
+  const ol = Number(raw.okxSwapLeverage);
+  if (Number.isFinite(ol) && ol >= 1) okxSwapLeverage = Math.min(125, Math.floor(ol));
+
+  let okxSwapMarginFraction = base.okxSwapMarginFraction;
+  const omf = Number(raw.okxSwapMarginFraction);
+  if (Number.isFinite(omf) && omf > 0) okxSwapMarginFraction = Math.min(1, omf);
+
+  let okxTdMode = base.okxTdMode;
+  if (raw.okxTdMode === "isolated") okxTdMode = "isolated";
+  else if (raw.okxTdMode === "cross") okxTdMode = "cross";
+
   return {
     symbols,
     defaultSymbol,
@@ -288,6 +324,14 @@ function normalizeConfig(raw) {
     smtpUser,
     smtpPass,
     notifyEmailTo,
+    okxSwapTradingEnabled,
+    okxSimulated,
+    okxApiKey,
+    okxSecretKey,
+    okxPassphrase,
+    okxSwapLeverage,
+    okxSwapMarginFraction,
+    okxTdMode,
   };
 }
 

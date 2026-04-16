@@ -23,6 +23,7 @@ const {
   applyTradingDecision,
 } = require("./trading-state");
 const { notifyTradePositionIfNeeded } = require("./trade-notify-email");
+const { maybeExecuteOkxSwapOrders } = require("./okx-perp");
 
 function coerceFiniteNumber(value) {
   const n = Number(value);
@@ -265,6 +266,14 @@ async function emitBarClose(winGetter, ctx) {
         nextState: stateSync.tradeState,
         hardExit: stateSync.hardExit,
       }).catch((err) => console.error("[Argus] 仓位通知邮件失败:", err));
+      void maybeExecuteOkxSwapOrders(cfg, {
+        win,
+        tvSymbol: ctx.tvSymbol,
+        transition: "HARD_EXIT",
+        tradeStateBefore: null,
+        hardExit: stateSync.hardExit,
+        barCloseId,
+      }).catch((err) => console.error("[Argus] OKX 永续下单异常:", err));
     }
     return;
   }
@@ -335,6 +344,14 @@ async function emitBarClose(winGetter, ctx) {
           reasoning: parsedDecision.decision?.reasoning || "",
           hardExit: null,
         }).catch((err) => console.error("[Argus] 仓位通知邮件失败:", err));
+        void maybeExecuteOkxSwapOrders(cfg, {
+          win,
+          tvSymbol: ctx.tvSymbol,
+          transition: stateResult.transition,
+          tradeStateBefore,
+          hardExit: null,
+          barCloseId,
+        }).catch((err) => console.error("[Argus] OKX 永续下单异常:", err));
       }
       if (!stateResult.applied && stateResult.ignoredReason) {
         llm.skippedReason = `状态机未转移：${stateResult.ignoredReason}`;

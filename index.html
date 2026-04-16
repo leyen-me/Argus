@@ -60,7 +60,7 @@
             id="llm-trade-state-bar"
             role="status"
             aria-live="polite"
-            title="由应用维护的交易状态（模拟），不会连接交易所真实下单。"
+            title="由应用维护的交易状态；未启用 OKX 永续下单时仅为纪律模拟。"
           >
             <span class="llm-trade-state-label">状态机</span>
             <span class="llm-trade-state-text" id="llm-trade-state-text">—</span>
@@ -209,6 +209,84 @@
             spellcheck="false"
             autocomplete="off"
           />
+        </div>
+        <div class="config-section-title">OKX USDT 永续（状态机联动）</div>
+        <p class="modal-hint modal-hint-llm">
+          仅在 <code>OKX:*</code> 加密品种上生效：状态机从观望进入持仓、平仓进冷静期、或止损/止盈硬触发时，向 OKX 下对应永续合约市价单。
+          合约代码由 <code>OKX:BTCUSDT</code> 映射为 <code>BTC-USDT-SWAP</code>。默认使用账户 USDT 可用权益的 <strong>25%</strong> 作为保证金，名义约 = 保证金 × 杠杆。
+          模拟盘请使用 OKX 模拟交易页的 API 密钥，并保持「模拟交易」勾选；实盘请取消模拟并填写正式密钥。<strong>默认关闭下单</strong>，避免误操作。
+        </p>
+        <div class="config-interval-row config-checkbox-row">
+          <label for="config-okx-swap-enabled" class="config-checkbox-label">启用 OKX 永续下单</label>
+          <input type="checkbox" id="config-okx-swap-enabled" title="okxSwapTradingEnabled" />
+        </div>
+        <div class="config-interval-row config-checkbox-row">
+          <label for="config-okx-simulated" class="config-checkbox-label">模拟交易（x-simulated-trading）</label>
+          <input type="checkbox" id="config-okx-simulated" title="okxSimulated" />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-okx-api-key">API Key</label>
+          <input
+            type="password"
+            id="config-okx-api-key"
+            class="config-in config-openai-input"
+            placeholder="OKX API Key"
+            spellcheck="false"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-okx-secret-key">Secret</label>
+          <input
+            type="password"
+            id="config-okx-secret-key"
+            class="config-in config-openai-input"
+            placeholder="OKX Secret Key"
+            spellcheck="false"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-okx-passphrase">Passphrase</label>
+          <input
+            type="password"
+            id="config-okx-passphrase"
+            class="config-in config-openai-input"
+            placeholder="创建 API 时设置的口令"
+            spellcheck="false"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-okx-leverage">杠杆倍数</label>
+          <input
+            type="number"
+            id="config-okx-leverage"
+            class="config-in config-openai-input"
+            min="1"
+            max="125"
+            step="1"
+            title="okxSwapLeverage"
+          />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-okx-margin-fraction">保证金占权益比例</label>
+          <input
+            type="number"
+            id="config-okx-margin-fraction"
+            class="config-in config-openai-input"
+            min="0.01"
+            max="1"
+            step="0.01"
+            title="okxSwapMarginFraction，默认 0.25"
+          />
+        </div>
+        <div class="config-interval-row">
+          <label for="config-okx-td-mode">保证金模式</label>
+          <select id="config-okx-td-mode" class="symbol-select config-interval-select" title="okxTdMode">
+            <option value="cross">全仓 cross</option>
+            <option value="isolated">逐仓 isolated</option>
+          </select>
         </div>
         <div class="config-section-title">系统提示词</div>
         <p class="modal-hint modal-hint-llm">

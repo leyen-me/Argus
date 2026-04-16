@@ -514,7 +514,7 @@ async function smokeSwapOpenLongThenClose(opts) {
   const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
   if (simulated) {
     console.warn(
-      "[Argus/OKX] 当前为模拟盘（请求头 x-simulated-trading）。下单在「模拟交易」环境成交，请在 OKX App 内进入模拟交易/Demo 查看委托与持仓；主站实盘合约列表里不会出现。",
+      "[Argus/OKX] 当前为模拟盘（x-simulated-trading）。市价单通常瞬间成交，「当前委托」里常为 0 条，请到「订单历史/成交记录」里按时间或 ordId 查；主站实盘合约页看不到。",
     );
   }
   const posMode = await fetchAccountPosMode(client);
@@ -589,20 +589,39 @@ async function smokeSwapOpenLongThenClose(opts) {
     await delay(posPollMs);
     detail = await fetchSwapPositionDetail(client, instId);
   }
+
+  /** 模拟盘常见：订单已 filled 且 accFillSz 有效，但 GET /positions 短暂或长期不同步；按成交张数平仓仍合法 */
+  let positionFromOrderFill = false;
   if (detail.absPos <= 0) {
-    throw new Error(
-      `开仓订单已成交(state=${String(filledOpen.state)}, accFillSz=${filledOpen.accFillSz ?? ""})但 GET /account/positions 仍无持仓张数。请检查合约账户与 API「读取」权限；若网页有持仓而接口无，多为环境/子账户不一致。`,
-    );
+    const accFill = parseFloat(String(filledOpen.accFillSz ?? "").trim());
+    if (Number.isFinite(accFill) && accFill > 0) {
+      positionFromOrderFill = true;
+      console.warn(
+        "[Argus/OKX] GET /account/positions 未返回持仓，但开仓订单已成交；将按 accFillSz 继续平仓（多见于模拟盘持仓接口与成交不同步）。",
+      );
+      detail =
+        posMode === "hedge"
+          ? { posNum: accFill, absPos: accFill, posSide: "long" }
+          : { posNum: accFill, absPos: accFill, posSide: "net" };
+    } else {
+      throw new Error(
+        `开仓订单已成交(state=${String(filledOpen.state)}, accFillSz=${filledOpen.accFillSz ?? ""})但 GET /account/positions 仍无持仓张数，且 accFillSz 无法解析。请检查 API 读取权限或账户环境。`,
+      );
+    }
   }
 
   const { closeSide } = resolveCloseParams(posMode, detail);
+  const closeSz =
+    positionFromOrderFill && filledOpen.accFillSz != null && String(filledOpen.accFillSz).trim() !== ""
+      ? String(filledOpen.accFillSz).trim()
+      : String(detail.absPos);
   const closeBody = await placeSwapMarketPosSideFallback(
     client,
     {
       instId,
       tdMode: mgn,
       side: closeSide,
-      sz: String(detail.absPos),
+      sz: closeSz,
       reduceOnly: true,
     },
     posSideAttemptsClose(closeSide),
@@ -619,8 +638,9 @@ async function smokeSwapOpenLongThenClose(opts) {
     closeClOrdId,
     simulated: !!simulated,
     seeOrdersOnPhoneHint: simulated
-      ? "模拟盘：OKX App → 模拟交易（Demo）中查看委托/持仓；实盘页看不到。"
+      ? "模拟盘：进「模拟交易」后看「历史订单/成交」；市价开平后当前委托常为空。实盘页看不到。"
       : "实盘：在合约委托或持仓中查看（须与 API Key 所属账户一致）。",
+    usedAccFillSzForClose: positionFromOrderFill,
   };
 }
 

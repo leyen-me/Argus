@@ -5,7 +5,6 @@ const crypto = require("crypto");
 const { ipcMain } = require("electron");
 const { loadAppConfig } = require("./app-config");
 const { conversationKey, getHistoryMessages, appendSuccessfulTurn } = require("./llm-context");
-const { inferFeed } = require("./market");
 const {
   isLlmEnabled,
   buildUserPrompt,
@@ -193,12 +192,11 @@ function requestChartCapture(webContents, timeoutMs = 18000) {
 /**
  * @param {() => import("electron").BrowserWindow | null} winGetter
  * @param {{
- *   source: "longbridge" | "binance_ws" | "okx_ws",
+ *   source: "binance_ws" | "okx_ws",
  *   tvSymbol: string,
  *   interval: string,
  *   periodLabel: string,
  *   candle: object,
- *   longPortSymbol?: string | null,
  * }} ctx
  */
 async function emitBarClose(winGetter, ctx) {
@@ -237,7 +235,6 @@ async function emitBarClose(winGetter, ctx) {
     source: ctx.source,
     tvSymbol: ctx.tvSymbol,
     interval: ctx.interval,
-    longPortSymbol: ctx.longPortSymbol ?? null,
     candle: ctx.candle,
     capturedAt: new Date().toISOString(),
     chartImage,
@@ -278,9 +275,7 @@ async function emitBarClose(winGetter, ctx) {
     return;
   }
 
-  const symEntry = cfg.symbols.find((s) => s.value === ctx.tvSymbol);
-  const feed = inferFeed(ctx.tvSymbol, symEntry?.feed);
-  const systemPrompt = resolveSystemPrompt(cfg, feed);
+  const systemPrompt = resolveSystemPrompt(cfg);
   const history = getHistoryMessages(convKey);
   const llmUserText = buildStateAwareUserText(textForLlm, stateSync.tradeState);
   const currentUserContent = buildMultimodalUserContent(

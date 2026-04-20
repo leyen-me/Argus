@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      longport:
-        specifier: ^3.0.23
-        version: 3.0.23
       nodemailer:
         specifier: ^6.9.16
         version: 6.10.1
@@ -186,40 +183,6 @@ packages:
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
-
-  longport-darwin-arm64@3.0.23:
-    resolution: {integrity: sha512-Jw26+XL7nvmxJ0qvoMyVw15ls4kNEolZYn8HqGrqnmKUUcivX4k3sSgjIZ1X3aE01nL+w2uSH9QEESLjLtq7QQ==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [darwin]
-
-  longport-darwin-x64@3.0.23:
-    resolution: {integrity: sha512-5d02Yfnm64vcz9IQcinLOGg/hZkTSvz2ugLvlA0rbJe3NLdPyXrWWhF4lUcoA5m1fg357EM96veNPcxMI1RLZw==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [darwin]
-
-  longport-linux-arm64-gnu@3.0.23:
-    resolution: {integrity: sha512-BwfMZshIl5ADfMitaLswYmuca04B2Cq5FLbOoUJB48kZPE0CHOIN15AOJH6p+J2j0EIllmBUEuc08VsHd7RC0w==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-
-  longport-linux-x64-gnu@3.0.23:
-    resolution: {integrity: sha512-aGcv29C5AnoWZeOAbPIf4ZLp3Vb74fXCsqWErzfDQ4uJcYBLoiKoMW1DhWKHyOQmF4HWqRtNdspLkcSW8ukJFw==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-
-  longport-win32-x64-msvc@3.0.23:
-    resolution: {integrity: sha512-Ew2Aar0aikFJ5NncS/AGs/O8Nu6CyN/1sTyIlU3LHSPu/7aUuCiZSaQAN34934PUbkg5mnioE2BPtEbMueT8dQ==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [win32]
-
-  longport@3.0.23:
-    resolution: {integrity: sha512-kvBnasMEiVKCiM11YtQpYe2gVYJzxb9tnvCbhPWI5J4FHPFW/J+SPOnohtgK6+MZHhCAN7jQdHaPsYOFZdOI9w==}
-    engines: {node: '>= 10'}
 
   lowercase-keys@2.0.0:
     resolution: {integrity: sha512-tqNXrS78oMOE73NMxK4EMLQsQowWf8jKooH9g7xPavRT706R6bkQJ6DY2Te7QukaZsulxa30wQ7bk0pm4XiHmA==}
@@ -552,29 +515,6 @@ snapshots:
   keyv@4.5.4:
     dependencies:
       json-buffer: 3.0.1
-
-  longport-darwin-arm64@3.0.23:
-    optional: true
-
-  longport-darwin-x64@3.0.23:
-    optional: true
-
-  longport-linux-arm64-gnu@3.0.23:
-    optional: true
-
-  longport-linux-x64-gnu@3.0.23:
-    optional: true
-
-  longport-win32-x64-msvc@3.0.23:
-    optional: true
-
-  longport@3.0.23:
-    optionalDependencies:
-      longport-darwin-arm64: 3.0.23
-      longport-darwin-x64: 3.0.23
-      longport-linux-arm64-gnu: 3.0.23
-      longport-linux-x64-gnu: 3.0.23
-      longport-win32-x64-msvc: 3.0.23
 
   lowercase-keys@2.0.0: {}
 

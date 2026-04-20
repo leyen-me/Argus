@@ -6,13 +6,12 @@ const path = require("path");
  * 应用配置仅此一份：用户数据目录下的 `config.json`（与仓库内同名模板在首次启动时用于生成该文件）。
  * 旧版 `argus-config.json` 会在首次迁移到 `config.json` 后删除。
  *
- * 系统提示词不在配置文件中维护，见仓库 `prompts/` 下 `system-crypto.txt`、`system-stocks.txt`。
+ * 系统提示词不在配置文件中维护，见仓库 `prompts/` 下 `system-crypto.txt`。
  */
 const BUNDLED_CONFIG = path.join(__dirname, "config.json");
 const LEGACY_USER_CONFIG_NAME = "argus-config.json";
 
 const PROMPT_CRYPTO_FILE = path.join(__dirname, "prompts", "system-crypto.txt");
-const PROMPT_STOCKS_FILE = path.join(__dirname, "prompts", "system-stocks.txt");
 
 const ALLOWED_INTERVAL = new Set(["1", "3", "5", "15", "30", "60", "120", "240", "D", "1D"]);
 
@@ -28,14 +27,6 @@ const MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "若信号一般、位置不佳、盈亏比不清晰或只是震荡中部，优先 WAIT / HOLD / CANCEL_LOOKING。" +
   "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
 
-const MIN_FALLBACK_SYSTEM_PROMPT_STOCKS =
-  "你是资深证券与权益市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
-  "先判断趋势、震荡或过渡，再分析本根收盘 K 线在当前位置是延续、测试、拒绝、突破、失败突破还是噪音。" +
-  "重点看价格行为本身，不机械复述原始 OHLCV；所有结论都基于概率，没有足够 edge 时优先保守。" +
-  "你必须严格服从状态机：只能从 allowed_intents 中选择一个 intent；若当前为 HOLDING_*，禁止重复开仓；若当前为 LOOKING_*，只有确认成立才允许 ENTER_*。" +
-  "若处于盘前、盘后、开盘初段异常波动或流动性不足时段，必须降低信心并体现谨慎；若只是区间中部噪音，优先 WAIT / HOLD / CANCEL_LOOKING。" +
-  "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
-
 function normalizeSystemPromptField(raw, fallback) {
   if (typeof raw !== "string") return fallback;
   const t = raw.trim();
@@ -44,11 +35,10 @@ function normalizeSystemPromptField(raw, fallback) {
 
 /**
  * 从应用目录 `prompts/` 读取系统提示词；每次调用重新读盘，便于修改文件后在下一次 `loadAppConfig` 生效。
- * @returns {{ systemPromptCrypto: string, systemPromptStocks: string }}
+ * @returns {{ systemPromptCrypto: string }}
  */
 function loadSystemPromptsFromDisk() {
   let cryptoRaw = "";
-  let stocksRaw = "";
   try {
     if (fs.existsSync(PROMPT_CRYPTO_FILE)) {
       cryptoRaw = fs.readFileSync(PROMPT_CRYPTO_FILE, "utf8");
@@ -56,16 +46,8 @@ function loadSystemPromptsFromDisk() {
   } catch {
     cryptoRaw = "";
   }
-  try {
-    if (fs.existsSync(PROMPT_STOCKS_FILE)) {
-      stocksRaw = fs.readFileSync(PROMPT_STOCKS_FILE, "utf8");
-    }
-  } catch {
-    stocksRaw = "";
-  }
   return {
     systemPromptCrypto: normalizeSystemPromptField(cryptoRaw, MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO),
-    systemPromptStocks: normalizeSystemPromptField(stocksRaw, MIN_FALLBACK_SYSTEM_PROMPT_STOCKS),
   };
 }
 
@@ -74,8 +56,6 @@ function defaultConfigFallback() {
     symbols: [
       { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
       { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
-      { label: "SPY", value: "AMEX:SPY" },
-      { label: "QQQ", value: "NASDAQ:QQQ" },
     ],
     defaultSymbol: "OKX:BTCUSDT",
     interval: "5",
@@ -118,7 +98,7 @@ function defaultConfigFallback() {
  */
 function stripSystemPromptsForPersistence(cfg) {
   if (!cfg || typeof cfg !== "object") return cfg;
-  const { systemPromptCrypto: _c, systemPromptStocks: _s, ...rest } = cfg;
+  const { systemPromptCrypto: _c, ...rest } = cfg;
   return rest;
 }
 
@@ -219,10 +199,7 @@ function normalizeConfig(raw) {
         label: s.label.trim(),
         value: s.value.trim(),
       };
-      if (s.feed === "crypto" || s.feed === "longbridge") row.feed = s.feed;
-      if (typeof s.longPortSymbol === "string" && s.longPortSymbol.trim()) {
-        row.longPortSymbol = s.longPortSymbol.trim();
-      }
+      if (s.feed === "crypto") row.feed = s.feed;
       return row;
     })
     .filter((s) => s.label && s.value);
@@ -252,7 +229,7 @@ function normalizeConfig(raw) {
   const openaiApiKey =
     typeof raw.openaiApiKey === "string" ? raw.openaiApiKey.trim() : base.openaiApiKey;
 
-  const { systemPromptCrypto, systemPromptStocks } = loadSystemPromptsFromDisk();
+  const { systemPromptCrypto } = loadSystemPromptsFromDisk();
 
   let llmRequestTimeoutMs = base.llmRequestTimeoutMs;
   const tt = Number(raw.llmRequestTimeoutMs);
@@ -314,7 +291,6 @@ function normalizeConfig(raw) {
     openaiModel,
     openaiApiKey,
     systemPromptCrypto,
-    systemPromptStocks,
     llmRequestTimeoutMs,
     llmReasoningEnabled,
     tradeNotifyEmailEnabled,
@@ -358,5 +334,4 @@ module.exports = {
   loadSystemPromptsFromDisk,
   stripSystemPromptsForPersistence,
   MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO,
-  MIN_FALLBACK_SYSTEM_PROMPT_STOCKS,
 };

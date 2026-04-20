@@ -1,9 +1,8 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const fs = require("fs");
 const path = require("path");
-const longbridge = require("./longbridge-llm");
 const cryptoSched = require("./crypto-scheduler");
-const { inferFeed, resolveLongPortSymbol } = require("./market");
+const { inferFeed } = require("./market");
 const {
   loadAppConfig,
   normalizeConfig,
@@ -16,7 +15,7 @@ const { wipeTradingStateStore } = require("./trading-state");
 const { getOkxSwapPositionSnapshot } = require("./okx-perp");
 
 /**
- * 左侧当前品种：加密走 Binance / OKX WS K 线；美股/港股走长桥订阅（切换时先停另一侧）。
+ * 左侧当前品种：仅加密（Binance / OKX WS K 线）。
  */
 async function routeMarket(cfg, tvSymbol) {
   const interval = cfg.interval || "5";
@@ -25,27 +24,16 @@ async function routeMarket(cfg, tvSymbol) {
   const feed = inferFeed(sym, entry?.feed);
 
   if (feed === "crypto") {
-    await longbridge.teardownSubscriptions();
     cryptoSched.start(() => mainWindow, sym, interval);
     return;
   }
 
   cryptoSched.stop();
-  const lp = resolveLongPortSymbol(entry, sym);
-  if (!lp) {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send("market-status", {
-        text: `长桥：无法映射 ${sym}，请在配置中为该品种填写 longPortSymbol`,
-      });
-    }
-    await longbridge.teardownSubscriptions();
-    return;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("market-status", {
+      text: `当前仅支持 BINANCE: / OKX: 前缀的加密品种，无法为 ${sym} 订阅行情。请在配置中改为加密代码或切换到加密品种。`,
+    });
   }
-  await longbridge.applyForSelectedSymbol(mainWindow, {
-    symbol: lp,
-    intervalTv: interval,
-    tvSymbol: sym,
-  });
 }
 
 ipcMain.handle("config:get", () => loadAppConfig());
@@ -127,7 +115,6 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  longbridge.setMainWindowGetter(() => mainWindow);
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

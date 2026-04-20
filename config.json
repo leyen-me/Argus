@@ -1,9 +1,7 @@
 {
   "symbols": [
     { "label": "BTC/USDT (OKX)", "value": "OKX:BTCUSDT" },
-    { "label": "ETH/USDT (OKX)", "value": "OKX:ETHUSDT" },
-    { "label": "SPY", "value": "AMEX:SPY" },
-    { "label": "QQQ", "value": "NASDAQ:QQQ" }
+    { "label": "ETH/USDT (OKX)", "value": "OKX:ETHUSDT" }
   ],
   "defaultSymbol": "OKX:BTCUSDT",
   "interval": "5",

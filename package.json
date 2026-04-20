@@ -18,7 +18,6 @@
     "electron": "^34.0.0"
   },
   "dependencies": {
-    "longport": "^3.0.23",
     "nodemailer": "^6.9.16",
     "openai": "^6.34.0",
     "ws": "^8.20.0"

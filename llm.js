@@ -1,5 +1,5 @@
 /**
- * OpenAI 兼容 Chat Completions（官方 `openai` Node SDK + 任意兼容端点），供长桥推送与加密（Binance / OKX WS）共用。
+ * OpenAI 兼容 Chat Completions（官方 `openai` Node SDK + 任意兼容端点），供加密（Binance / OKX WS）K 线收盘分析共用。
  * 启用条件：在配置中填写 openaiApiKey，或设置环境变量 OPENAI_API_KEY（配置优先）。
  */
 const { OpenAI, APIError, APIUserAbortError } = require("openai");
@@ -16,13 +16,11 @@ function isLlmEnabled(cfg) {
 }
 
 /**
- * @param {object | null | undefined} cfg loadAppConfig() 结果（须含 systemPromptCrypto / systemPromptStocks，来自 prompts/*.txt）
- * @param {"crypto" | "longbridge"} feed 与 market.inferFeed 一致：币圈 crypto，股票等走 longbridge
+ * @param {object | null | undefined} cfg loadAppConfig() 结果（须含 systemPromptCrypto，来自 prompts/system-crypto.txt）
  */
-function resolveSystemPrompt(cfg, feed) {
+function resolveSystemPrompt(cfg) {
   const p = cfg || loadSystemPromptsFromDisk();
-  if (feed === "crypto") return p.systemPromptCrypto;
-  return p.systemPromptStocks;
+  return p.systemPromptCrypto;
 }
 
 /** 与界面默认展示的「上下文窗口」一致（可用环境变量 ARGUS_CONTEXT_WINDOW_TOKENS 覆盖） */
@@ -255,8 +253,7 @@ function buildChatCompletionRequest(userText, options, stream) {
     options.mimeType,
   );
   const cfg = options.appConfig;
-  const feed = options.feed === "longbridge" ? "longbridge" : "crypto";
-  const systemContent = cfg ? resolveSystemPrompt(cfg, feed) : "";
+  const systemContent = cfg ? resolveSystemPrompt(cfg) : "";
   const messages = [
     { role: "system", content: systemContent },
     { role: "user", content: userContent },

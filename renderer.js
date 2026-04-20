@@ -47,7 +47,7 @@ async function captureTradingViewPng() {
 
 /**
  * 与 app-config 中 `MIN_FALLBACK_*` 一致：仅当非 Electron 打开页面时用于界面预览兜底。
- * 正式内容由应用目录 `prompts/system-crypto.txt`、`prompts/system-stocks.txt` 提供。
+ * 正式内容由应用目录 `prompts/system-crypto.txt` 提供。
  */
 const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
@@ -56,21 +56,12 @@ const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你必须严格服从状态机：只能从 allowed_intents 中选择一个 intent；若当前为 HOLDING_*，禁止重复开仓；若当前为 LOOKING_*，只有确认成立才允许 ENTER_*。" +
   "若信号一般、位置不佳、盈亏比不清晰或只是震荡中部，优先 WAIT / HOLD / CANCEL_LOOKING。" +
   "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
-const FALLBACK_SYSTEM_PROMPT_STOCKS =
-  "你是资深证券与权益市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
-  "先判断趋势、震荡或过渡，再分析本根收盘 K 线在当前位置是延续、测试、拒绝、突破、失败突破还是噪音。" +
-  "重点看价格行为本身，不机械复述原始 OHLCV；所有结论都基于概率，没有足够 edge 时优先保守。" +
-  "你必须严格服从状态机：只能从 allowed_intents 中选择一个 intent；若当前为 HOLDING_*，禁止重复开仓；若当前为 LOOKING_*，只有确认成立才允许 ENTER_*。" +
-  "若处于盘前、盘后、开盘初段异常波动或流动性不足时段，必须降低信心并体现谨慎；若只是区间中部噪音，优先 WAIT / HOLD / CANCEL_LOOKING。" +
-  "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
 
 /** 与仓库 config.json 一致，供非 Electron 打开页面时兜底 */
 const FALLBACK_APP_CONFIG = {
   symbols: [
     { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
     { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
-    { label: "SPY", value: "AMEX:SPY" },
-    { label: "QQQ", value: "NASDAQ:QQQ" },
   ],
   defaultSymbol: "OKX:BTCUSDT",
   interval: "5",
@@ -78,7 +69,6 @@ const FALLBACK_APP_CONFIG = {
   openaiModel: "gpt-4o-mini",
   openaiApiKey: "",
   systemPromptCrypto: FALLBACK_SYSTEM_PROMPT_CRYPTO,
-  systemPromptStocks: FALLBACK_SYSTEM_PROMPT_STOCKS,
   llmReasoningEnabled: false,
   tradeNotifyEmailEnabled: false,
   smtpHost: "smtp.qq.com",
@@ -220,30 +210,24 @@ let latestBarCloseId = null;
 const LLM_HISTORY_MAX_ROUNDS = 40;
 
 /**
- * 与 `market.inferFeed` 一致：界面侧按当前品种解析将使用哪条系统提示词。
+ * 与 `market.inferFeed` 一致：是否为可订阅的加密品种。
  * @param {string} tvSymbol
  * @param {{ feed?: string } | undefined} symEntry 配置中该品种行
+ * @returns {"crypto" | null}
  */
 function inferFeedForSymbol(tvSymbol, symEntry) {
-  const explicit = symEntry?.feed;
-  if (explicit === "crypto" || explicit === "longbridge") return explicit;
+  if (symEntry?.feed === "crypto") return "crypto";
   const v = String(tvSymbol || "").trim();
   if (v.startsWith("BINANCE:") || v.startsWith("OKX:")) return "crypto";
-  return "longbridge";
+  return null;
 }
 
 /**
  * @param {object} cfg `loadAppConfig()` 结果
- * @param {string} tvSymbol
  */
-function resolveSystemPromptForUi(cfg, tvSymbol) {
+function resolveSystemPromptForUi(cfg) {
   const c = cfg || FALLBACK_APP_CONFIG;
-  const symEntry = c.symbols?.find((s) => s.value === tvSymbol);
-  const feed = inferFeedForSymbol(tvSymbol, symEntry);
-  if (feed === "crypto") {
-    return c.systemPromptCrypto ?? FALLBACK_APP_CONFIG.systemPromptCrypto;
-  }
-  return c.systemPromptStocks ?? FALLBACK_APP_CONFIG.systemPromptStocks;
+  return c.systemPromptCrypto ?? FALLBACK_APP_CONFIG.systemPromptCrypto;
 }
 
 /**
@@ -281,11 +265,12 @@ function updateCurrentSystemPromptPreview(cfg, tvSymbol) {
   const c = cfg || FALLBACK_APP_CONFIG;
   const symEntry = c.symbols?.find((s) => s.value === tvSymbol);
   const feed = inferFeedForSymbol(tvSymbol, symEntry);
-  const routeLabel = feed === "crypto" ? "币圈（7×24）" : "股票 / 长桥";
+  const routeLabel =
+    feed === "crypto" ? "加密（Binance / OKX WS）" : "非加密（无行情订阅，请改用 BINANCE:/OKX: 前缀）";
   const meta = document.createElement("div");
   meta.className = "llm-current-system-meta";
   meta.textContent = `当前图表：${sym} · 路由：${routeLabel}`;
-  const text = String(resolveSystemPromptForUi(c, tvSymbol) || "").trim();
+  const text = String(resolveSystemPromptForUi(c) || "").trim();
   const row = buildSystemPromptRow(text);
   root.appendChild(meta);
   if (row) {
@@ -970,14 +955,7 @@ function shortLlmStatusLabel(full) {
     [(s) => s.includes("无效 OKX"), "代码无效"],
     [(s) => s.startsWith("OKX："), "OKX异常"],
     [(s) => s.includes("请使用 BINANCE:") || (s.includes("BINANCE:") && s.includes("前缀")), "前缀无效"],
-    [(s) => s.includes("未选择可订阅"), "未订阅"],
-    [(s) => s.startsWith("长桥凭证无效"), "凭证无效"],
-    [(s) => s.startsWith("长桥推送错误"), "推送异常"],
-    [(s) => s.includes("跳过开盘前"), "跳过K"],
-    [(s) => s.startsWith("长桥 K 确认"), "K确认"],
-    [(s) => s.startsWith("长桥：已订阅"), "已订阅"],
-    [(s) => s.startsWith("长桥订阅失败"), "订阅失败"],
-    [(s) => s.startsWith("长桥：无法映射"), "映射失败"],
+    [(s) => s.includes("当前仅支持") && s.includes("加密品种"), "无行情"],
     [(s) => s.includes("已恢复界面为内置默认"), "已恢复"],
     [(s) => s === "配置已恢复默认", "已恢复"],
     [(s) => s.includes("恢复默认配置失败"), "恢复失败"],

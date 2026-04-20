@@ -175,7 +175,6 @@ function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle, source) {
         interval: intervalTv,
         periodLabel,
         candle,
-        longPortSymbol: null,
       });
     } catch (e) {
       send(winGetter, "market-status", { text: `收盘处理失败：${e.message || e}` });

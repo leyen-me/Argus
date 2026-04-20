@@ -4,6 +4,7 @@
     { "label": "ETH/USDT (OKX)", "value": "OKX:ETHUSDT" }
   ],
   "defaultSymbol": "OKX:BTCUSDT",
+  "promptStrategy": "default",
   "interval": "5",
   "openaiBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "openaiModel": "qwen3.5-plus",

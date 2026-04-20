@@ -47,7 +47,7 @@ async function captureTradingViewPng() {
 
 /**
  * 与 app-config 中 `MIN_FALLBACK_*` 一致：仅当非 Electron 打开页面时用于界面预览兜底。
- * 正式内容由应用目录 `prompts/system-crypto.txt` 提供。
+ * 正式内容由应用目录 `prompts/<策略>/system-crypto.txt` 提供（策略在配置中心选择）。
  */
 const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
@@ -64,6 +64,8 @@ const FALLBACK_APP_CONFIG = {
     { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
   ],
   defaultSymbol: "OKX:BTCUSDT",
+  promptStrategy: "default",
+  promptStrategies: ["default"],
   interval: "5",
   openaiBaseUrl: "https://api.openai.com/v1",
   openaiModel: "gpt-4o-mini",
@@ -269,7 +271,8 @@ function updateCurrentSystemPromptPreview(cfg, tvSymbol) {
     feed === "crypto" ? "加密（Binance / OKX WS）" : "非加密（无行情订阅，请改用 BINANCE:/OKX: 前缀）";
   const meta = document.createElement("div");
   meta.className = "llm-current-system-meta";
-  meta.textContent = `当前图表：${sym} · 路由：${routeLabel}`;
+  const strat = String(c.promptStrategy || "default").trim() || "default";
+  meta.textContent = `当前图表：${sym} · 策略：${strat} · 路由：${routeLabel}`;
   const text = String(resolveSystemPromptForUi(c) || "").trim();
   const row = buildSystemPromptRow(text);
   root.appendChild(meta);
@@ -612,6 +615,27 @@ function initConfigCenter() {
     if (okxMf) okxMf.value = String(cfg.okxSwapMarginFraction ?? FALLBACK_APP_CONFIG.okxSwapMarginFraction);
     const okxTd = document.getElementById("config-okx-td-mode");
     if (okxTd) okxTd.value = cfg.okxTdMode === "isolated" ? "isolated" : "cross";
+    const stratSel = document.getElementById("config-prompt-strategy");
+    if (stratSel) {
+      const list =
+        Array.isArray(cfg.promptStrategies) && cfg.promptStrategies.length > 0
+          ? cfg.promptStrategies
+          : [cfg.promptStrategy || "default"];
+      stratSel.replaceChildren();
+      for (const name of list) {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        stratSel.appendChild(opt);
+      }
+      const cur =
+        cfg.promptStrategy && list.includes(cfg.promptStrategy)
+          ? cfg.promptStrategy
+          : list.includes("default")
+            ? "default"
+            : list[0];
+      stratSel.value = cur;
+    }
   };
 
   const closeModal = () => {
@@ -744,6 +768,8 @@ function initConfigCenter() {
       Math.max(0.01, Number(okxMf?.value) || 0.25),
     );
     const okxTdMode = okxTd?.value === "isolated" ? "isolated" : "cross";
+    const stratEl = document.getElementById("config-prompt-strategy");
+    const promptStrategy = stratEl?.value?.trim() || "default";
 
     if (!window.argus || typeof window.argus.saveConfig !== "function") {
       applySymbolSelect({ symbols, defaultSymbol });
@@ -756,6 +782,7 @@ function initConfigCenter() {
           symbols,
           defaultSymbol,
           interval,
+          promptStrategy,
           llmReasoningEnabled,
           tradeNotifyEmailEnabled,
           smtpUser,
@@ -782,6 +809,7 @@ function initConfigCenter() {
         symbols,
         defaultSymbol,
         interval,
+        promptStrategy,
         openaiBaseUrl,
         openaiModel,
         openaiApiKey,

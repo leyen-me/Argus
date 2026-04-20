@@ -16,7 +16,7 @@ function isLlmEnabled(cfg) {
 }
 
 /**
- * @param {object | null | undefined} cfg loadAppConfig() 结果（须含 systemPromptCrypto，来自 prompts/system-crypto.txt）
+ * @param {object | null | undefined} cfg loadAppConfig() 结果（须含 systemPromptCrypto，来自 prompts/策略目录/system-crypto.txt）
  */
 function resolveSystemPrompt(cfg) {
   const p = cfg || loadSystemPromptsFromDisk();

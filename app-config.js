@@ -6,19 +6,21 @@ const path = require("path");
  * 应用配置仅此一份：用户数据目录下的 `config.json`（与仓库内同名模板在首次启动时用于生成该文件）。
  * 旧版 `argus-config.json` 会在首次迁移到 `config.json` 后删除。
  *
- * 系统提示词不在配置文件中维护，见仓库 `prompts/` 下 `system-crypto.txt`。
+ * 系统提示词按策略分目录：`prompts/<策略名>/system-crypto.txt`；当前策略 ID 写在 `config.json` 的 `promptStrategy`。
  */
 const BUNDLED_CONFIG = path.join(__dirname, "config.json");
 const LEGACY_USER_CONFIG_NAME = "argus-config.json";
 
-const PROMPT_CRYPTO_FILE = path.join(__dirname, "prompts", "system-crypto.txt");
+const PROMPTS_DIR = path.join(__dirname, "prompts");
+const STRATEGY_PROMPT_BASENAME = "system-crypto.txt";
+const DEFAULT_PROMPT_STRATEGY = "default";
 
 const ALLOWED_INTERVAL = new Set(["1", "3", "5", "15", "30", "60", "120", "240", "D", "1D"]);
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 
-/** 仅当 `prompts/*.txt` 缺失或为空时的极简兜底（与 renderer 非 Electron 兜底语义一致） */
+/** 仅当策略文件缺失或为空时的极简兜底（与 renderer 非 Electron 兜底语义一致） */
 const MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
   "先判断趋势、震荡或过渡，再分析本根收盘 K 线在当前位置是延续、测试、拒绝、突破、失败突破还是噪音。" +
@@ -34,14 +36,61 @@ function normalizeSystemPromptField(raw, fallback) {
 }
 
 /**
- * 从应用目录 `prompts/` 读取系统提示词；每次调用重新读盘，便于修改文件后在下一次 `loadAppConfig` 生效。
+ * 枚举 `prompts/<目录>/system-crypto.txt` 存在的子目录名（每种策略一个文件夹）。
+ * @returns {string[]}
+ */
+function listPromptStrategies() {
+  const out = [];
+  try {
+    if (!fs.existsSync(PROMPTS_DIR)) return [DEFAULT_PROMPT_STRATEGY];
+    const entries = fs.readdirSync(PROMPTS_DIR, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const name = e.name;
+      if (name.startsWith(".")) continue;
+      const f = path.join(PROMPTS_DIR, name, STRATEGY_PROMPT_BASENAME);
+      if (fs.existsSync(f)) out.push(name);
+    }
+  } catch {
+    return [DEFAULT_PROMPT_STRATEGY];
+  }
+  out.sort((a, b) => {
+    if (a === DEFAULT_PROMPT_STRATEGY) return -1;
+    if (b === DEFAULT_PROMPT_STRATEGY) return 1;
+    return a.localeCompare(b);
+  });
+  return out.length ? out : [DEFAULT_PROMPT_STRATEGY];
+}
+
+/**
+ * @param {string | undefined} preferred 首选策略文件夹名
+ * @returns {string}
+ */
+function resolvePromptStrategyId(preferred) {
+  const available = listPromptStrategies();
+  const want =
+    typeof preferred === "string" && preferred.trim() ? preferred.trim() : DEFAULT_PROMPT_STRATEGY;
+  if (available.includes(want)) return want;
+  /** 未填写、或 ID 无效 / 已删目录时：回到 default（「默认提示词」固定对应 prompts/default） */
+  if (want === DEFAULT_PROMPT_STRATEGY || preferred == null || preferred === "") {
+    return DEFAULT_PROMPT_STRATEGY;
+  }
+  if (available.includes(DEFAULT_PROMPT_STRATEGY)) return DEFAULT_PROMPT_STRATEGY;
+  return available[0] || DEFAULT_PROMPT_STRATEGY;
+}
+
+/**
+ * 从 `prompts/<strategy>/system-crypto.txt` 读取；每次 `loadAppConfig` 重新读盘。
+ * @param {string} [strategyId]
  * @returns {{ systemPromptCrypto: string }}
  */
-function loadSystemPromptsFromDisk() {
+function loadSystemPromptsFromDisk(strategyId) {
+  const id = resolvePromptStrategyId(strategyId);
   let cryptoRaw = "";
   try {
-    if (fs.existsSync(PROMPT_CRYPTO_FILE)) {
-      cryptoRaw = fs.readFileSync(PROMPT_CRYPTO_FILE, "utf8");
+    const f = path.join(PROMPTS_DIR, id, STRATEGY_PROMPT_BASENAME);
+    if (fs.existsSync(f)) {
+      cryptoRaw = fs.readFileSync(f, "utf8");
     }
   } catch {
     cryptoRaw = "";
@@ -52,6 +101,7 @@ function loadSystemPromptsFromDisk() {
 }
 
 function defaultConfigFallback() {
+  const promptStrategy = resolvePromptStrategyId(DEFAULT_PROMPT_STRATEGY);
   return {
     symbols: [
       { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
@@ -62,7 +112,8 @@ function defaultConfigFallback() {
     openaiBaseUrl: DEFAULT_OPENAI_BASE_URL,
     openaiModel: DEFAULT_OPENAI_MODEL,
     openaiApiKey: "",
-    ...loadSystemPromptsFromDisk(),
+    promptStrategy,
+    ...loadSystemPromptsFromDisk(promptStrategy),
     /** 单次调用 LLM 的超时（毫秒），含流式读完全程 */
     llmRequestTimeoutMs: 300_000,
     /**
@@ -93,7 +144,7 @@ function defaultConfigFallback() {
 }
 
 /**
- * 写入 `config.json` 时不包含系统提示词（提示词仅来自仓库 `prompts/*.txt`）。
+ * 写入 `config.json` 时不包含完整系统提示词正文（正文仅来自 `prompts/<策略>/system-crypto.txt`），但保留 `promptStrategy`。
  * @param {object} cfg `normalizeConfig` 返回值
  */
 function stripSystemPromptsForPersistence(cfg) {
@@ -229,7 +280,12 @@ function normalizeConfig(raw) {
   const openaiApiKey =
     typeof raw.openaiApiKey === "string" ? raw.openaiApiKey.trim() : base.openaiApiKey;
 
-  const { systemPromptCrypto } = loadSystemPromptsFromDisk();
+  const promptStrategy = resolvePromptStrategyId(
+    typeof raw.promptStrategy === "string" && raw.promptStrategy.trim()
+      ? raw.promptStrategy.trim()
+      : base.promptStrategy,
+  );
+  const { systemPromptCrypto } = loadSystemPromptsFromDisk(promptStrategy);
 
   let llmRequestTimeoutMs = base.llmRequestTimeoutMs;
   const tt = Number(raw.llmRequestTimeoutMs);
@@ -290,6 +346,8 @@ function normalizeConfig(raw) {
     openaiBaseUrl,
     openaiModel,
     openaiApiKey,
+    promptStrategy,
+    promptStrategies: listPromptStrategies(),
     systemPromptCrypto,
     llmRequestTimeoutMs,
     llmReasoningEnabled,
@@ -332,6 +390,8 @@ module.exports = {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
   loadSystemPromptsFromDisk,
+  listPromptStrategies,
+  resolvePromptStrategyId,
   stripSystemPromptsForPersistence,
   MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO,
 };

@@ -303,9 +303,18 @@
             <option value="cross">全仓 cross</option>
           </select>
         </div>
-        <div class="config-section-title">系统提示词</div>
+        <div class="config-section-title">系统提示词（策略）</div>
+        <div class="config-interval-row">
+          <label for="config-prompt-strategy">当前策略</label>
+          <select
+            id="config-prompt-strategy"
+            class="symbol-select config-interval-select"
+            title="每种策略对应 prompts 下的一个子文件夹"
+          ></select>
+        </div>
         <p class="modal-hint modal-hint-llm">
-          已移至应用目录下独立文件，不再写入 <code>config.json</code>。文件路径：<code>prompts/system-crypto.txt</code>（加密分析）。与行情一致：仅 <code>BINANCE:</code> / <code>OKX:</code> 或品种行 <code>feed: crypto</code>。修改 txt 后重新打开应用或保存一次配置即可加载最新内容。
+          每种策略对应应用目录 <code>prompts/&lt;策略文件夹&gt;/system-crypto.txt</code>；在下方选择要使用的策略，保存后写入 <code>config.json</code> 的
+          <code>promptStrategy</code>。与行情一致：仅 <code>BINANCE:</code> / <code>OKX:</code> 或品种行 <code>feed: crypto</code>。修改 txt 后保存配置或重新打开应用即可加载最新内容。
         </p>
         <div class="modal-actions">
           <button

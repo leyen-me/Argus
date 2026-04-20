@@ -526,12 +526,12 @@ function updateLlmRoundAfterAgentFinished(barCloseId, outcome) {
   if (!root) return;
   root.dataset.detailLocked = "0";
   const card = root.querySelector(".llm-round-card");
-  if (card instanceof HTMLElement) {
-    card.classList.remove("llm-round-card--locked");
-    card.setAttribute("aria-disabled", "false");
-  }
+  if (card instanceof HTMLElement) card.classList.remove("llm-round-card--locked");
   const btn = root.querySelector(".llm-round-detail-btn");
-  if (btn instanceof HTMLButtonElement) btn.disabled = false;
+  if (btn instanceof HTMLButtonElement) {
+    btn.disabled = false;
+    btn.setAttribute("aria-label", "在弹窗中查看多轮对话与工具明细");
+  }
   const hint = root.querySelector(".llm-round-detail-hint");
   if (hint) hint.textContent = "点击查看多轮对话与工具明细";
   const statusWrap = root.querySelector(".llm-round-status-wrap");
@@ -787,13 +787,6 @@ function buildLlmRoundElement(payload) {
   const card = document.createElement("div");
   card.className = "llm-round-card";
   if (locked) card.classList.add("llm-round-card--locked");
-  card.setAttribute("role", "button");
-  card.tabIndex = 0;
-  card.setAttribute("aria-disabled", locked ? "true" : "false");
-  card.setAttribute(
-    "aria-label",
-    locked ? "Agent 决策进行中，请稍后再查看明细" : "查看本轮 Agent 多轮对话明细",
-  );
 
   const inner = document.createElement("div");
   inner.className = "llm-round-card-inner";
@@ -901,6 +894,10 @@ function buildLlmRoundElement(payload) {
   detailBtn.className = "llm-round-detail-btn";
   detailBtn.textContent = "查看明细";
   detailBtn.disabled = locked;
+  detailBtn.setAttribute(
+    "aria-label",
+    locked ? "决策完成后可查看多轮对话明细" : "在弹窗中查看多轮对话与工具明细",
+  );
   actions.append(hint, detailBtn);
   card.appendChild(inner);
   card.appendChild(actions);
@@ -911,15 +908,9 @@ function buildLlmRoundElement(payload) {
   };
   card.addEventListener("click", (e) => {
     const t = /** @type {HTMLElement | null} */ (e.target);
+    if (t?.closest?.(".llm-round-detail-btn")) return;
     if (t?.closest?.(".llm-round-card-thumb") || t?.closest?.(".llm-round-thumb--load")) return;
     openIfUnlocked();
-  });
-  card.addEventListener("keydown", (e) => {
-    if (round.dataset.detailLocked === "1") return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      openIfUnlocked();
-    }
   });
   detailBtn.addEventListener("click", (e) => {
     e.stopPropagation();

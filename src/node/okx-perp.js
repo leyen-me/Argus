@@ -920,6 +920,304 @@ async function smokeSwapOpenLongThenClose(opts) {
  * @param {object | null} args.hardExit
  * @param {string} args.barCloseId
  */
+/**
+ * 当前挂单（普通委托，不含历史）。
+ * @param {ReturnType<createOkxClient>} client
+ * @param {string} instId
+ */
+async function fetchSwapPendingOrders(client, instId) {
+  const j = await client.request(
+    "GET",
+    `/api/v5/trade/orders-pending?instType=SWAP&instId=${encodeURIComponent(instId)}`,
+    "",
+  );
+  return Array.isArray(j.data) ? j.data : [];
+}
+
+/**
+ * @param {object} row
+ */
+function serializePendingSwapOrder(row) {
+  if (!row || typeof row !== "object") return null;
+  /** @param {string} k */
+  const pick = (k) => {
+    const v = row[k];
+    if (v == null) return undefined;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
+    return String(v);
+  };
+  return {
+    ordId: pick("ordId"),
+    clOrdId: pick("clOrdId"),
+    side: pick("side"),
+    posSide: pick("posSide"),
+    ordType: pick("ordType"),
+    state: pick("state"),
+    px: pick("px"),
+    sz: pick("sz"),
+    accFillSz: pick("accFillSz"),
+    reduceOnly: pick("reduceOnly"),
+    lever: pick("lever"),
+    tdMode: pick("tdMode"),
+    cTime: pick("cTime"),
+    tpTriggerPx: pick("tpTriggerPx"),
+    slTriggerPx: pick("slTriggerPx"),
+    tpOrdPx: pick("tpOrdPx"),
+    slOrdPx: pick("slOrdPx"),
+  };
+}
+
+/**
+ * @param {ReturnType<createOkxClient>} client
+ * @param {string} instId
+ * @param {string} ordId
+ */
+async function cancelSwapOrder(client, instId, ordId) {
+  const body = JSON.stringify({ instId, ordId: String(ordId) });
+  const json = await client.request("POST", "/api/v5/trade/cancel-order", body);
+  assertOkxTradeOrderAccepted(json);
+  return json;
+}
+
+/**
+ * @param {ReturnType<createOkxClient>} client
+ * @param {{ instId: string, ordId: string, newPx?: string | number, newSz?: string | number }} p
+ */
+async function amendSwapOrder(client, p) {
+  const bodyObj = { instId: p.instId, ordId: String(p.ordId) };
+  if (p.newPx != null && String(p.newPx).trim() !== "") bodyObj.newPx = String(p.newPx);
+  if (p.newSz != null && String(p.newSz).trim() !== "") bodyObj.newSz = String(p.newSz);
+  const json = await client.request("POST", "/api/v5/trade/amend-order", JSON.stringify(bodyObj));
+  assertOkxTradeOrderAccepted(json);
+  return json;
+}
+
+/**
+ * K 线收盘：拉取交易所持仓 + 挂单摘要，供 Agent 用户消息注入。
+ * @param {object} cfg
+ * @param {string} tvSymbol
+ */
+async function getOkxExchangeContextForBar(cfg, tvSymbol) {
+  if (!cfg || cfg.okxSwapTradingEnabled !== true) {
+    return { ok: true, enabled: false, reason: "okx_swap_disabled" };
+  }
+  if (inferFeed(tvSymbol) !== "crypto") {
+    return { ok: true, enabled: false, reason: "not_crypto_chart" };
+  }
+  const instId = tvSymbolToSwapInstId(tvSymbol);
+  if (!instId) {
+    return { ok: false, enabled: false, message: "无效 OKX 品种代码" };
+  }
+  const apiKey = typeof cfg.okxApiKey === "string" ? cfg.okxApiKey.trim() : "";
+  const secretKey = typeof cfg.okxSecretKey === "string" ? cfg.okxSecretKey.trim() : "";
+  const passphrase = typeof cfg.okxPassphrase === "string" ? cfg.okxPassphrase.trim() : "";
+  if (!apiKey || !secretKey || !passphrase) {
+    return { ok: false, enabled: true, message: "OKX API 未配置完整" };
+  }
+  const simulated = cfg.okxSimulated !== false;
+  try {
+    const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
+    const position = await fetchSwapPositionSnapshot(client, instId);
+    const rawPending = await fetchSwapPendingOrders(client, instId);
+    const pending_orders = rawPending.map(serializePendingSwapOrder).filter(Boolean);
+    return {
+      ok: true,
+      enabled: true,
+      simulated,
+      instId,
+      position,
+      pending_orders,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, enabled: true, message: msg };
+  }
+}
+
+/**
+ * Agent：市价/限价开仓（与 maybeExecuteOkxSwapOrders 同源 sizing）。
+ * @param {object} cfg
+ * @param {{ tvSymbol: string, side: "long"|"short", orderType: "market"|"limit", limitPrice?: number, barCloseId: string }} args
+ */
+async function executeAgentPerpOpen(cfg, args) {
+  const { tvSymbol, side, orderType, limitPrice, barCloseId } = args;
+  const isLong = side === "long";
+  if (!cfg || cfg.okxSwapTradingEnabled !== true) {
+    return { ok: false, skipped: true, message: "OKX 永续未启用" };
+  }
+  if (inferFeed(tvSymbol) !== "crypto") {
+    return { ok: false, message: "非加密图表，跳过 OKX" };
+  }
+  const instId = tvSymbolToSwapInstId(tvSymbol);
+  if (!instId) return { ok: false, message: "无效 OKX 品种" };
+
+  const apiKey = typeof cfg.okxApiKey === "string" ? cfg.okxApiKey.trim() : "";
+  const secretKey = typeof cfg.okxSecretKey === "string" ? cfg.okxSecretKey.trim() : "";
+  const passphrase = typeof cfg.okxPassphrase === "string" ? cfg.okxPassphrase.trim() : "";
+  if (!apiKey || !secretKey || !passphrase) {
+    return { ok: false, message: "OKX API 未配置完整" };
+  }
+
+  const simulated = cfg.okxSimulated !== false;
+  const tdMode = cfg.okxTdMode === "cross" ? "cross" : "isolated";
+  let lever = Number(cfg.okxSwapLeverage);
+  if (!Number.isFinite(lever) || lever < 1) lever = 10;
+  lever = Math.min(125, Math.max(1, Math.floor(lever)));
+  let marginFrac = Number(cfg.okxSwapMarginFraction);
+  if (!Number.isFinite(marginFrac) || marginFrac <= 0) marginFrac = 0.25;
+  marginFrac = Math.min(1, Math.max(0.01, marginFrac));
+
+  const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
+  const posMode = await fetchAccountPosMode(client);
+  const existing = await fetchSwapPositionDetail(client, instId);
+  if (existing.absPos > 0) {
+    return { ok: false, message: `${instId} 已有持仓，拒绝重复开仓` };
+  }
+
+  const avail = await fetchUsdtAvailEq(client);
+  if (avail <= 0) return { ok: false, message: "USDT 可用权益为 0" };
+
+  const margin = avail * marginFrac;
+  const notional = margin * lever;
+  const inst = await fetchSwapInstrument(instId);
+  const px = await fetchTickerLast(instId);
+  let sz = notional / (inst.ctVal * px);
+  sz = floorToLot(sz, inst.lotSz);
+  if (sz < inst.minSz) {
+    return {
+      ok: false,
+      message: `计算张数 ${sz} 低于最小下单 ${inst.minSz}`,
+    };
+  }
+
+  const levStr = String(lever);
+  try {
+    if (posMode === "hedge") {
+      await setLeverageSafe(client, {
+        instId,
+        mgnMode: tdMode,
+        lever: levStr,
+        posSide: isLong ? "long" : "short",
+      });
+    } else {
+      await setLeverageSafe(client, {
+        instId,
+        mgnMode: tdMode,
+        lever: levStr,
+        posSide: "net",
+      });
+    }
+  } catch (e) {
+    if (!isOkx51010AccountMode(e)) throw e;
+  }
+
+  const tradeSide = isLong ? "buy" : "sell";
+  const openBase = {
+    instId,
+    tdMode,
+    side: tradeSide,
+    sz: String(sz),
+    reduceOnly: false,
+  };
+  const attempts = posSideAttemptsOpen(isLong);
+  let ord;
+  if (orderType === "limit") {
+    const lp = Number(limitPrice);
+    if (!Number.isFinite(lp) || lp <= 0) {
+      return { ok: false, message: "限价开仓需要有效 limit_price" };
+    }
+    const pxStr = formatOkxPx(lp, inst.tickSz);
+    ord = await placeSwapLimitPosSideFallback(client, openBase, pxStr, attempts);
+  } else {
+    ord = await placeSwapMarketPosSideFallback(client, openBase, attempts);
+  }
+
+  const ordId = ord.data?.[0]?.ordId ?? "";
+  let filled = null;
+  if (orderType === "market" && ordId) {
+    try {
+      filled = await waitSwapOrderFilled(client, instId, ordId);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e), ordId };
+    }
+  }
+
+  const snap = await fetchSwapPositionSnapshot(client, instId);
+  const avgPx = snap.fields?.avgPx != null ? parseFloat(String(snap.fields.avgPx)) : null;
+  return {
+    ok: true,
+    ordId,
+    instId,
+    sz: String(sz),
+    orderType: orderType || "market",
+    accFillSz: filled?.accFillSz != null ? String(filled.accFillSz) : "",
+    avgPx: Number.isFinite(avgPx) ? avgPx : null,
+    position: snap,
+  };
+}
+
+/**
+ * Agent：市价/限价全平。
+ * @param {object} cfg
+ * @param {{ tvSymbol: string, orderType: "market"|"limit", limitPrice?: number }} args
+ */
+async function executeAgentPerpClose(cfg, args) {
+  const { tvSymbol, orderType, limitPrice } = args;
+  if (!cfg || cfg.okxSwapTradingEnabled !== true) {
+    return { ok: false, skipped: true, message: "OKX 永续未启用" };
+  }
+  const instId = tvSymbolToSwapInstId(tvSymbol);
+  if (!instId) return { ok: false, message: "无效 OKX 品种" };
+
+  const apiKey = typeof cfg.okxApiKey === "string" ? cfg.okxApiKey.trim() : "";
+  const secretKey = typeof cfg.okxSecretKey === "string" ? cfg.okxSecretKey.trim() : "";
+  const passphrase = typeof cfg.okxPassphrase === "string" ? cfg.okxPassphrase.trim() : "";
+  if (!apiKey || !secretKey || !passphrase) {
+    return { ok: false, message: "OKX API 未配置完整" };
+  }
+
+  const simulated = cfg.okxSimulated !== false;
+  const tdMode = cfg.okxTdMode === "cross" ? "cross" : "isolated";
+  const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
+  const posMode = await fetchAccountPosMode(client);
+  const detail = await fetchSwapPositionDetail(client, instId);
+  if (detail.absPos <= 0) {
+    return { ok: false, message: `${instId} 无持仓可平` };
+  }
+
+  const { closeSide } = resolveCloseParams(posMode, detail);
+  const closeBase = {
+    instId,
+    tdMode,
+    side: closeSide,
+    sz: String(detail.absPos),
+    reduceOnly: true,
+  };
+  const attemptsClose = posSideAttemptsClose(closeSide);
+  let closeBody;
+  if (orderType === "limit") {
+    const lp = Number(limitPrice);
+    if (!Number.isFinite(lp) || lp <= 0) {
+      return { ok: false, message: "限价平仓需要有效 limit_price" };
+    }
+    const inst = await fetchSwapInstrument(instId);
+    const pxStr = formatOkxPx(lp, inst.tickSz);
+    closeBody = await placeSwapLimitPosSideFallback(client, closeBase, pxStr, attemptsClose);
+  } else {
+    closeBody = await placeSwapMarketPosSideFallback(client, closeBase, attemptsClose);
+  }
+
+  const ordId = closeBody.data?.[0]?.ordId ?? "";
+  if (ordId && orderType !== "limit") {
+    try {
+      await waitSwapOrderFilled(client, instId, ordId);
+    } catch {
+      /* 平仓市价失败时仍返回 ordId */
+    }
+  }
+  return { ok: true, ordId, instId, closeSz: String(detail.absPos), orderType: orderType || "market" };
+}
+
 async function maybeExecuteOkxSwapOrders(cfg, args) {
   const { win, tvSymbol, transition, tradeStateBefore, hardExit, barCloseId } = args;
 
@@ -1109,6 +1407,14 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
 
 module.exports = {
   tvSymbolToSwapInstId,
+  createOkxClient,
+  fetchSwapPendingOrders,
+  serializePendingSwapOrder,
+  cancelSwapOrder,
+  amendSwapOrder,
+  getOkxExchangeContextForBar,
+  executeAgentPerpOpen,
+  executeAgentPerpClose,
   maybeExecuteOkxSwapOrders,
   getOkxSwapPositionSnapshot,
   smokeSwapOpenLong,

@@ -8,7 +8,7 @@ const { conversationKey, getHistoryMessages, appendSuccessfulTurn } = require(".
 const {
   isLlmEnabled,
   buildUserPrompt,
-  streamOpenAIChat,
+  runTradingAgentTurn,
   buildMultimodalUserContent,
   buildUserTextForHistory,
   resolveSystemPrompt,
@@ -16,120 +16,15 @@ const {
   estimatePromptTokensFromMessages,
   keepOnlyLastUserImageInMessages,
 } = require("./llm");
-const {
-  getAllowedIntentsForState,
-  syncTradingStateBeforeLlm,
-  applyTradingDecision,
-} = require("./trading-state");
+const { syncTradingStateBeforeLlm, getTradingState } = require("./trading-state");
 const { notifyTradePositionIfNeeded } = require("./trade-notify-email");
-const { maybeExecuteOkxSwapOrders } = require("./okx-perp");
+const { maybeExecuteOkxSwapOrders, getOkxExchangeContextForBar } = require("./okx-perp");
+const { TRADING_AGENT_TOOLS } = require("./trading-agent-tools");
+const { createTradingToolExecutor } = require("./trading-agent-executor");
 
-function coerceFiniteNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function tryParseJsonObject(rawText) {
-  const text = String(rawText || "").trim();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    /* ignore */
-  }
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) {
-    try {
-      return JSON.parse(fenced[1].trim());
-    } catch {
-      /* ignore */
-    }
-  }
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    try {
-      return JSON.parse(text.slice(start, end + 1));
-    } catch {
-      /* ignore */
-    }
-  }
-  return null;
-}
-
-function mapLegacyActionToIntent(currentState, action, confidence) {
-  const act = String(action || "").trim().toUpperCase();
-  const conf = Number.isFinite(Number(confidence)) ? Number(confidence) : 0;
-  switch (currentState) {
-    case "IDLE":
-      if (act === "LONG") return "LOOK_LONG";
-      if (act === "SHORT") return "LOOK_SHORT";
-      return "WAIT";
-    case "LOOKING_LONG":
-      if (act === "LONG") return "ENTER_LONG";
-      return "CANCEL_LOOKING";
-    case "LOOKING_SHORT":
-      if (act === "SHORT") return "ENTER_SHORT";
-      return "CANCEL_LOOKING";
-    case "HOLDING_LONG":
-      if (act === "SHORT" && conf >= 90) return "EXIT_LONG";
-      return "HOLD";
-    case "HOLDING_SHORT":
-      if (act === "LONG" && conf >= 90) return "EXIT_SHORT";
-      return "HOLD";
-    case "COOLDOWN":
-    default:
-      return "WAIT";
-  }
-}
-
-function parseTradingDecision(rawText, tradeState) {
-  const parsed = tryParseJsonObject(rawText);
-  if (!parsed || typeof parsed !== "object") {
-    return { ok: false, error: "LLM 未返回可解析的 JSON，状态机未更新。" };
-  }
-  const currentState = String(tradeState?.state || "IDLE");
-  let intent =
-    typeof parsed.intent === "string" && parsed.intent.trim()
-      ? parsed.intent.trim().toUpperCase()
-      : "";
-  if (!intent && typeof parsed.action === "string") {
-    intent = mapLegacyActionToIntent(currentState, parsed.action, parsed.confidence);
-  }
-  if (!intent) {
-    return { ok: false, error: "LLM JSON 缺少 intent/action 字段，状态机未更新。" };
-  }
-  return {
-    ok: true,
-    decision: {
-      intent,
-      confidence: coerceFiniteNumber(parsed.confidence) ?? 0,
-      reasoning:
-        typeof parsed.reasoning === "string"
-          ? parsed.reasoning.trim()
-          : typeof parsed.summary === "string"
-            ? parsed.summary.trim()
-            : "",
-      keyLevel: coerceFiniteNumber(parsed.key_level ?? parsed.keyLevel),
-      stopLoss: coerceFiniteNumber(
-        parsed.stop_loss ?? parsed.stopLoss ?? parsed.stop_loss_suggestion,
-      ),
-      takeProfit: coerceFiniteNumber(
-        parsed.take_profit ?? parsed.takeProfit ?? parsed.take_profit_suggestion,
-      ),
-      riskNote:
-        typeof parsed.risk_note === "string"
-          ? parsed.risk_note.trim()
-          : typeof parsed.warning === "string"
-            ? parsed.warning.trim()
-            : "",
-    },
-  };
-}
-
-function buildStateAwareUserText(marketText, tradeState) {
-  const snapshot = {
-    current_state: tradeState?.state || "IDLE",
+function buildAgentContextUserText(marketText, tradeState, exchangeCtx) {
+  const sim = {
+    state: tradeState?.state || "IDLE",
     pending_direction: tradeState?.pendingDirection ?? null,
     position_side: tradeState?.positionSide ?? null,
     key_level: tradeState?.keyLevel ?? null,
@@ -140,20 +35,39 @@ function buildStateAwareUserText(marketText, tradeState) {
       tradeState?.cooldownUntil && tradeState.cooldownUntil > 0
         ? new Date(tradeState.cooldownUntil).toISOString()
         : null,
-    allowed_intents: getAllowedIntentsForState(tradeState?.state || "IDLE"),
   };
+  let exchangeBlock;
+  if (exchangeCtx && exchangeCtx.enabled && exchangeCtx.ok) {
+    exchangeBlock = {
+      instId: exchangeCtx.instId,
+      simulated: exchangeCtx.simulated,
+      position: exchangeCtx.position,
+      pending_orders: exchangeCtx.pending_orders,
+    };
+  } else if (exchangeCtx && exchangeCtx.enabled && !exchangeCtx.ok) {
+    exchangeBlock = { error: exchangeCtx.message || "交易所快照失败" };
+  } else {
+    exchangeBlock = {
+      note: exchangeCtx?.reason || "OKX 永续未启用或未配置，仅模拟仓。",
+    };
+  }
+  const snapshot = { sim, exchange: exchangeBlock };
   return [
     marketText,
     "",
-    "交易状态机上下文（由系统维护，必须严格遵守）：",
+    "交易上下文（模拟纪律 + 交易所；请用工具执行开平仓、改撤单与止损止盈调整）：",
     JSON.stringify(snapshot, null, 2),
-    "",
-    "补充规则：",
-    "1. 只能从 allowed_intents 中选择一个 intent。",
-    "2. 若当前为 LOOKING_*，只有确认条件成立才输出 ENTER_*；否则输出 CANCEL_LOOKING 或 WAIT。",
-    "3. 若当前为 HOLDING_*，禁止重复开仓，只能 HOLD 或 EXIT_*；若 intent 为 HOLD 且需移动止损或目标位，在 JSON 中给出新的 stop_loss / take_profit（置信度足够时才会更新纪律价位）。",
-    "4. 仅返回严格 JSON，不要输出 Markdown 代码块或额外解释。",
   ].join("\n");
+}
+
+function formatAgentToolTrace(trace) {
+  if (!Array.isArray(trace) || !trace.length) return "";
+  const lines = trace.map((t) => {
+    const r = t.result && typeof t.result === "object" ? t.result : {};
+    const ok = r.ok === true ? "ok" : "fail";
+    return `• ${t.name} (${ok}) ${JSON.stringify(r)}`;
+  });
+  return `\n\n---\n工具轨迹：\n${lines.join("\n")}`;
 }
 
 /**
@@ -227,6 +141,7 @@ async function emitBarClose(winGetter, ctx) {
 
   const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
   const stateSync = syncTradingStateBeforeLlm(convKey, ctx.candle);
+  const exchangeCtx = await getOkxExchangeContextForBar(cfg, ctx.tvSymbol);
 
   const payloadBase = {
     kind: "bar_close",
@@ -242,6 +157,7 @@ async function emitBarClose(winGetter, ctx) {
     textForLlm,
     tradeState: stateSync.tradeState,
     tradeStateEvent: stateSync.hardExit,
+    exchangeContext: exchangeCtx,
     llm,
   };
 
@@ -277,7 +193,7 @@ async function emitBarClose(winGetter, ctx) {
 
   const systemPrompt = resolveSystemPrompt(cfg);
   const history = getHistoryMessages(convKey);
-  const llmUserText = buildStateAwareUserText(textForLlm, stateSync.tradeState);
+  const llmUserText = buildAgentContextUserText(textForLlm, stateSync.tradeState, exchangeCtx);
   const currentUserContent = buildMultimodalUserContent(
     llmUserText,
     chartImage?.base64 ?? null,
@@ -310,67 +226,71 @@ async function emitBarClose(winGetter, ctx) {
     model: cfg.openaiModel,
   };
 
-  const result = await streamOpenAIChat(messages, streamOpts, (ev) => {
-    if (ev.type === "delta") {
-      win.webContents.send("llm-stream-delta", {
-        barCloseId,
-        full: ev.full,
-        reasoningFull: ev.reasoningFull ?? "",
-      });
-    }
+  const tradeStateAtLlm = stateSync.tradeState;
+  const executeTool = createTradingToolExecutor({
+    convKey,
+    candle: ctx.candle,
+    cfg,
+    tvSymbol: ctx.tvSymbol,
+    barCloseId,
+    win,
   });
 
-  if (result.ok) {
-    llm.analysisText = result.text;
-    llm.reasoningText = result.reasoningText ?? "";
-    llm.streaming = false;
-    const parsedDecision = parseTradingDecision(result.text, stateSync.tradeState);
-    if (parsedDecision.ok) {
-      const tradeStateBefore = stateSync.tradeState;
-      const stateResult = applyTradingDecision(convKey, ctx.candle, parsedDecision.decision);
-      payloadBase.tradeState = stateResult.tradeState;
-      if (stateResult.applied) {
-        void notifyTradePositionIfNeeded(cfg, {
-          tvSymbol: ctx.tvSymbol,
-          interval: ctx.interval,
-          prevState: tradeStateBefore,
-          nextState: stateResult.tradeState,
-          transition: stateResult.transition,
-          reasoning: parsedDecision.decision?.reasoning || "",
-          hardExit: null,
-        }).catch((err) => console.error("[Argus] 仓位通知邮件失败:", err));
-        void maybeExecuteOkxSwapOrders(cfg, {
-          win,
-          tvSymbol: ctx.tvSymbol,
-          transition: stateResult.transition,
-          tradeStateBefore,
-          hardExit: null,
+  let streamAcc = "";
+  const agentResult = await runTradingAgentTurn(messages, streamOpts, {
+    tools: TRADING_AGENT_TOOLS,
+    executeTool,
+    maxSteps: 8,
+    onStep: ({ toolCalls, assistantPreview }) => {
+      let add = "";
+      if (assistantPreview) add += `${assistantPreview}\n\n`;
+      if (toolCalls?.length) {
+        add += `${toolCalls.map((t) => `[调用 ${t.function?.name}]`).join(" ")}\n`;
+      }
+      if (add) {
+        streamAcc += add;
+        win.webContents.send("llm-stream-delta", {
           barCloseId,
-        }).catch((err) => console.error("[Argus] OKX 永续下单异常:", err));
+          full: streamAcc.trim(),
+          reasoningFull: "",
+        });
       }
-      if (!stateResult.applied && stateResult.ignoredReason) {
-        llm.skippedReason = `状态机未转移：${stateResult.ignoredReason}`;
-      }
-    } else {
-      llm.skippedReason = parsedDecision.error;
-    }
+    },
+  });
+
+  if (agentResult.ok) {
+    const traceStr = formatAgentToolTrace(agentResult.toolTrace);
+    llm.analysisText = [agentResult.text, traceStr].filter(Boolean).join("");
+    llm.reasoningText = "";
+    llm.streaming = false;
+    const nextTrade = getTradingState(convKey);
+    payloadBase.tradeState = nextTrade;
+    void notifyTradePositionIfNeeded(cfg, {
+      tvSymbol: ctx.tvSymbol,
+      interval: ctx.interval,
+      prevState: tradeStateAtLlm,
+      nextState: nextTrade,
+      transition: "AGENT",
+      reasoning: agentResult.text || traceStr || "",
+      hardExit: null,
+    }).catch((err) => console.error("[Argus] 仓位通知邮件失败:", err));
     appendSuccessfulTurn(
       convKey,
       buildUserTextForHistory(textForLlm, !!chartImage?.base64),
-      result.text,
+      llm.analysisText,
     );
     win.webContents.send("llm-stream-end", {
       barCloseId,
       conversationKey: convKey,
       tradeState: payloadBase.tradeState,
       tradeStateEvent: null,
-      analysisText: result.text,
-      reasoningText: result.reasoningText ?? "",
+      analysisText: llm.analysisText,
+      reasoningText: "",
     });
   } else {
-    llm.error = result.text;
+    llm.error = agentResult.text;
     llm.streaming = false;
-    win.webContents.send("llm-stream-error", { barCloseId, message: result.text });
+    win.webContents.send("llm-stream-error", { barCloseId, message: agentResult.text });
   }
 }
 

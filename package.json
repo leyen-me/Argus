@@ -18,7 +18,8 @@
     "preview": "electron-vite preview",
     "test:dashscope": "node tests/dashscope-generation-demo.test.js",
     "test:okx": "node --test tests/okx-swap-open-close.test.js",
-    "test:trading-state": "node --test tests/trading-state-hold-risk.test.js"
+    "test:trading-state": "node --test tests/trading-state-hold-risk.test.js",
+    "test:trading-agent": "node --test tests/trading-agent-state.test.js"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",

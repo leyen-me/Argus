@@ -473,14 +473,252 @@ function wipeTradingStateStore() {
   store = Object.create(null);
 }
 
+/**
+ * Agent：进入观察方向（等价 LOOK_LONG / LOOK_SHORT）。
+ * @param {string} key
+ * @param {{ direction: "LONG"|"SHORT", keyLevel?: number | null, stopLoss?: number | null, takeProfit?: number | null, confidence: number }} spec
+ */
+function agentPrepareWatch(key, spec, now = Date.now()) {
+  const state = getMutableState(key);
+  expireCooldownIfNeeded(state, now);
+  if (state.state === TradingState.COOLDOWN) {
+    return { ok: false, reason: "冷静期内不可新建观察", tradeState: cloneState(state) };
+  }
+  const confidence = Number.isFinite(Number(spec?.confidence))
+    ? Math.max(0, Math.min(100, Math.round(Number(spec.confidence))))
+    : 0;
+  if (confidence < MIN_LOOK_CONFIDENCE) {
+    return { ok: false, reason: `置信度需 ≥ ${MIN_LOOK_CONFIDENCE} 才能进入观察`, tradeState: cloneState(state) };
+  }
+  const dir = String(spec?.direction || "").toUpperCase();
+  if (dir !== "LONG" && dir !== "SHORT") {
+    return { ok: false, reason: "direction 须为 LONG 或 SHORT", tradeState: cloneState(state) };
+  }
+  if (
+    state.state === TradingState.HOLDING_LONG ||
+    state.state === TradingState.HOLDING_SHORT
+  ) {
+    return { ok: false, reason: "持仓中请先平仓再重新观察", tradeState: cloneState(state) };
+  }
+  const keyLevel = toPrice(spec?.keyLevel);
+  const stopLoss = toPrice(spec?.stopLoss);
+  const takeProfit = toPrice(spec?.takeProfit);
+  if (dir === "LONG") {
+    state.state = TradingState.LOOKING_LONG;
+    state.pendingDirection = "LONG";
+    state.positionSide = null;
+    state.keyLevel = keyLevel;
+    state.entryPrice = null;
+    state.stopLoss = stopLoss;
+    state.takeProfit = takeProfit;
+    state.cooldownUntil = 0;
+    touchTransition(state, now, "agent_watch_long", "LOOK_LONG");
+  } else {
+    state.state = TradingState.LOOKING_SHORT;
+    state.pendingDirection = "SHORT";
+    state.positionSide = null;
+    state.keyLevel = keyLevel;
+    state.entryPrice = null;
+    state.stopLoss = stopLoss;
+    state.takeProfit = takeProfit;
+    state.cooldownUntil = 0;
+    touchTransition(state, now, "agent_watch_short", "LOOK_SHORT");
+  }
+  return { ok: true, tradeState: cloneState(state) };
+}
+
+/** Agent：放弃观察，回到 IDLE。 */
+function agentCancelWatch(key, now = Date.now()) {
+  const state = getMutableState(key);
+  expireCooldownIfNeeded(state, now);
+  if (state.state !== TradingState.LOOKING_LONG && state.state !== TradingState.LOOKING_SHORT) {
+    return { ok: false, reason: "当前不在观察状态", tradeState: cloneState(state) };
+  }
+  resetToIdle(state, now, "agent_cancel_watch", "CANCEL_LOOKING");
+  return { ok: true, tradeState: cloneState(state) };
+}
+
+/**
+ * Agent：校验是否允许在本根 K 线上执行「开仓」动作（不含下单）。
+ * @param {string} key
+ * @param {object} candle
+ * @param {{ side: "LONG"|"SHORT", confidence: number, keyLevel?: number | null }} spec
+ */
+function agentCanOpen(key, candle, spec, now = Date.now()) {
+  const state = getMutableState(key);
+  expireCooldownIfNeeded(state, now);
+  const confidence = Number.isFinite(Number(spec?.confidence))
+    ? Math.max(0, Math.min(100, Math.round(Number(spec.confidence))))
+    : 0;
+  const side = String(spec?.side || "").toUpperCase();
+  if (side !== "LONG" && side !== "SHORT") {
+    return { ok: false, reason: "side 须为 LONG 或 SHORT" };
+  }
+  if (state.state === TradingState.COOLDOWN) {
+    return { ok: false, reason: "冷静期内不可开仓" };
+  }
+  if (state.state === TradingState.HOLDING_LONG || state.state === TradingState.HOLDING_SHORT) {
+    return { ok: false, reason: "已有模拟持仓，请先平仓" };
+  }
+  if (confidence < MIN_ENTER_CONFIDENCE) {
+    return { ok: false, reason: `开仓置信度需 ≥ ${MIN_ENTER_CONFIDENCE}` };
+  }
+  const keyLevel = toPrice(spec?.keyLevel);
+  const close = toPrice(candle?.close);
+
+  if (state.state === TradingState.LOOKING_LONG) {
+    if (side !== "LONG") return { ok: false, reason: "当前观察做多，只能开多" };
+    const ref = keyLevel ?? state.keyLevel;
+    if (!confirmEntry("LONG", close, ref)) {
+      return { ok: false, reason: "收盘价未确认做多触发/关键位" };
+    }
+    return { ok: true, ref };
+  }
+  if (state.state === TradingState.LOOKING_SHORT) {
+    if (side !== "SHORT") return { ok: false, reason: "当前观察做空，只能开空" };
+    const ref = keyLevel ?? state.keyLevel;
+    if (!confirmEntry("SHORT", close, ref)) {
+      return { ok: false, reason: "收盘价未确认做空触发/关键位" };
+    }
+    return { ok: true, ref };
+  }
+  if (state.state === TradingState.IDLE) {
+    return { ok: true, ref: keyLevel };
+  }
+  return { ok: false, reason: `当前状态 ${state.state} 不允许开仓` };
+}
+
+/**
+ * Agent：成交后写入模拟持仓（纪律型止损止盈由后续工具或本轮参数更新）。
+ */
+function applyAgentOpenFilled(key, candle, spec, now = Date.now()) {
+  const state = getMutableState(key);
+  expireCooldownIfNeeded(state, now);
+  const side = String(spec?.side || "").toUpperCase();
+  const entryPrice = toPrice(spec?.entryPrice ?? candle?.close);
+  if (side !== "LONG" && side !== "SHORT") {
+    return { ok: false, reason: "side 无效", tradeState: cloneState(state) };
+  }
+  if (entryPrice == null) {
+    return { ok: false, reason: "缺少有效成交价", tradeState: cloneState(state) };
+  }
+  const ref = toPrice(spec?.keyLevel ?? spec?.ref) ?? state.keyLevel;
+  const stopLoss = toPrice(spec?.stopLoss);
+  const takeProfit = toPrice(spec?.takeProfit);
+
+  if (side === "LONG") {
+    state.state = TradingState.HOLDING_LONG;
+    state.pendingDirection = null;
+    state.positionSide = "LONG";
+    state.keyLevel = ref;
+    state.entryPrice = entryPrice;
+    state.stopLoss = normalizeStopLoss("LONG", stopLoss ?? state.stopLoss, entryPrice);
+    state.takeProfit = normalizeTakeProfit("LONG", takeProfit ?? state.takeProfit, entryPrice);
+    state.cooldownUntil = 0;
+    touchTransition(state, now, "agent_open_long", "ENTER_LONG");
+  } else {
+    state.state = TradingState.HOLDING_SHORT;
+    state.pendingDirection = null;
+    state.positionSide = "SHORT";
+    state.keyLevel = ref;
+    state.entryPrice = entryPrice;
+    state.stopLoss = normalizeStopLoss("SHORT", stopLoss ?? state.stopLoss, entryPrice);
+    state.takeProfit = normalizeTakeProfit("SHORT", takeProfit ?? state.takeProfit, entryPrice);
+    state.cooldownUntil = 0;
+    touchTransition(state, now, "agent_open_short", "ENTER_SHORT");
+  }
+  return { ok: true, tradeState: cloneState(state) };
+}
+
+/** Agent：平仓进入冷静期（与 LLM EXIT_* 一致）。 */
+function applyAgentClose(key, spec, now = Date.now()) {
+  const state = getMutableState(key);
+  expireCooldownIfNeeded(state, now);
+  const confidence = Number.isFinite(Number(spec?.confidence))
+    ? Math.max(0, Math.min(100, Math.round(Number(spec.confidence))))
+    : 0;
+  if (state.state === TradingState.HOLDING_LONG) {
+    if (confidence < MIN_EXIT_CONFIDENCE) {
+      return {
+        ok: false,
+        reason: `平仓置信度需 ≥ ${MIN_EXIT_CONFIDENCE}`,
+        tradeState: cloneState(state),
+      };
+    }
+    enterCooldown(state, now, "agent_exit_long", EARLY_EXIT_COOLDOWN_MS, "EXIT_LONG");
+    return { ok: true, tradeState: cloneState(state) };
+  }
+  if (state.state === TradingState.HOLDING_SHORT) {
+    if (confidence < MIN_EXIT_CONFIDENCE) {
+      return {
+        ok: false,
+        reason: `平仓置信度需 ≥ ${MIN_EXIT_CONFIDENCE}`,
+        tradeState: cloneState(state),
+      };
+    }
+    enterCooldown(state, now, "agent_exit_short", EARLY_EXIT_COOLDOWN_MS, "EXIT_SHORT");
+    return { ok: true, tradeState: cloneState(state) };
+  }
+  return { ok: false, reason: "当前无模拟持仓可平", tradeState: cloneState(state) };
+}
+
+/** Agent：仅更新纪律型止损止盈（须持仓 + 置信度）。 */
+function applyAgentDisciplineRisk(key, spec, now = Date.now()) {
+  const state = getMutableState(key);
+  expireCooldownIfNeeded(state, now);
+  const confidence = Number.isFinite(Number(spec?.confidence))
+    ? Math.max(0, Math.min(100, Math.round(Number(spec.confidence))))
+    : 0;
+  if (state.state !== TradingState.HOLDING_LONG && state.state !== TradingState.HOLDING_SHORT) {
+    return { ok: false, reason: "仅持仓时可调整止损止盈", tradeState: cloneState(state) };
+  }
+  if (confidence < MIN_HOLD_RISK_ADJUST_CONFIDENCE) {
+    return {
+      ok: false,
+      reason: `调整止损止盈置信度需 ≥ ${MIN_HOLD_RISK_ADJUST_CONFIDENCE}`,
+      tradeState: cloneState(state),
+    };
+  }
+  const side = state.state === TradingState.HOLDING_LONG ? "LONG" : "SHORT";
+  const entry = toPrice(state.entryPrice);
+  if (entry == null) {
+    return { ok: false, reason: "缺少入场价", tradeState: cloneState(state) };
+  }
+  const stopLoss = toPrice(spec?.stopLoss);
+  const takeProfit = toPrice(spec?.takeProfit);
+  let changed = false;
+  if (stopLoss != null) {
+    state.stopLoss = normalizeStopLoss(side, stopLoss, entry);
+    changed = true;
+  }
+  if (takeProfit != null) {
+    state.takeProfit = normalizeTakeProfit(side, takeProfit, entry);
+    changed = true;
+  }
+  if (!changed) {
+    return { ok: false, reason: "请至少提供 stop_loss 或 take_profit 之一", tradeState: cloneState(state) };
+  }
+  touchTransition(state, now, `agent_risk_${side.toLowerCase()}`, "HOLD");
+  return { ok: true, tradeState: cloneState(state) };
+}
+
 module.exports = {
   TradingState,
   DEFAULT_COOLDOWN_MS,
   EARLY_EXIT_COOLDOWN_MS,
   MIN_HOLD_RISK_ADJUST_CONFIDENCE,
+  MIN_LOOK_CONFIDENCE,
+  MIN_ENTER_CONFIDENCE,
+  MIN_EXIT_CONFIDENCE,
   getAllowedIntentsForState,
   getTradingState,
   syncTradingStateBeforeLlm,
   applyTradingDecision,
+  agentPrepareWatch,
+  agentCancelWatch,
+  agentCanOpen,
+  applyAgentOpenFilled,
+  applyAgentClose,
+  applyAgentDisciplineRisk,
   wipeTradingStateStore,
 };

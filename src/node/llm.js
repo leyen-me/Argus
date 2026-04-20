@@ -453,9 +453,106 @@ function buildUserPrompt(symbol, periodKey, candle) {
     .join("\n");
 }
 
+/**
+ * 非流式多轮工具调用（Chat Completions tools），兼容 OpenAI 及多数 OpenAI 兼容网关。
+ * @param {Array<{ role: string, content?: unknown, tool_calls?: unknown, tool_call_id?: string }>} messages
+ * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
+ * @param {{
+ *   tools: unknown[],
+ *   executeTool: (name: string, args: object) => Promise<object>,
+ *   maxSteps?: number,
+ *   onStep?: (ev: { step: number, toolCalls?: unknown[], assistantPreview?: string }) => void,
+ * }} agentOpts
+ */
+async function runTradingAgentTurn(messages, options, agentOpts) {
+  const cfg = options.appConfig;
+  if (!isLlmEnabled(cfg)) {
+    return { ok: false, text: "LLM 未启用。", toolTrace: [], messagesOut: messages };
+  }
+  const apiKey = resolveOpenAiApiKey(cfg);
+  const signal = llmAbortSignal(cfg);
+  const built = buildChatCompletionRequestFromMessages(messages, options, false);
+  if (built.error) {
+    return { ok: false, text: built.error, toolTrace: [], messagesOut: messages };
+  }
+
+  const tools = agentOpts.tools;
+  const executeTool = agentOpts.executeTool;
+  const maxSteps = Math.min(16, Math.max(1, Number(agentOpts.maxSteps) || 8));
+  const onStep = typeof agentOpts.onStep === "function" ? agentOpts.onStep : null;
+
+  const client = new OpenAI({
+    apiKey,
+    baseURL: built.baseURL,
+    timeout: llmRequestTimeoutMs(cfg),
+    maxRetries: 0,
+  });
+
+  const bodyBase = { ...built.body, tools, tool_choice: "auto" };
+  let thread = [...messages];
+  const toolTrace = [];
+
+  try {
+    for (let step = 1; step <= maxSteps; step++) {
+      const completion = await client.chat.completions.create(
+        { ...bodyBase, messages: thread },
+        { signal },
+      );
+      const choice = completion?.choices?.[0];
+      const msg = choice?.message;
+      if (!msg) {
+        return { ok: false, text: "LLM 无有效 message。", toolTrace, messagesOut: thread };
+      }
+      thread.push(msg);
+
+      const tcs = msg.tool_calls;
+      if (!Array.isArray(tcs) || tcs.length === 0) {
+        const finalText = messageContentToString(msg.content).trim();
+        onStep?.({ step, assistantPreview: finalText });
+        return {
+          ok: true,
+          text: finalText,
+          reasoningText: "",
+          toolTrace,
+          messagesOut: thread,
+        };
+      }
+
+      onStep?.({ step, toolCalls: tcs, assistantPreview: messageContentToString(msg.content).trim() });
+
+      for (const tc of tcs) {
+        const name = tc?.function?.name || "";
+        let args = {};
+        try {
+          args = JSON.parse(tc.function?.arguments || "{}");
+        } catch {
+          args = {};
+        }
+        const result = await executeTool(String(name), args);
+        toolTrace.push({ name: String(name), args, result });
+        thread.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify(result ?? {}),
+        });
+      }
+    }
+    return {
+      ok: false,
+      text: `工具调用超过 ${maxSteps} 步上限。`,
+      toolTrace,
+      messagesOut: thread,
+    };
+  } catch (e) {
+    const err = mapLlmSdkError(e, cfg);
+    return { ok: false, text: err.text, toolTrace, messagesOut: thread };
+  }
+}
+
 module.exports = {
   callOpenAIChat,
   streamOpenAIChat,
+  runTradingAgentTurn,
   buildUserPrompt,
   buildMultimodalUserContent,
   buildUserTextForHistory,

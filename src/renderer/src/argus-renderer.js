@@ -121,6 +121,61 @@ function rememberExchangeContext(key, ctx) {
 }
 
 /**
+ * @param {object} p
+ */
+function formatOnePlainPendingBrief(p) {
+  return `${p.ordType || "?"} ${p.side || ""} @${p.px ?? "?"}`;
+}
+
+/**
+ * @param {object} o
+ */
+function formatOneAlgoPendingBrief(o) {
+  const type = o.ordType || "?";
+  const side = o.side || "";
+  const parts = [];
+  if (o.tpTriggerPx != null && String(o.tpTriggerPx).trim() !== "") {
+    parts.push(`止盈${o.tpTriggerPx}`);
+  }
+  if (o.slTriggerPx != null && String(o.slTriggerPx).trim() !== "") {
+    parts.push(`止损${o.slTriggerPx}`);
+  }
+  if (
+    !parts.length &&
+    o.triggerPx != null &&
+    String(o.triggerPx).trim() !== ""
+  ) {
+    parts.push(`触发${o.triggerPx}`);
+  }
+  const tpsl = parts.join("/");
+  return tpsl ? `${type} ${side} ${tpsl}` : `${type} ${side}`;
+}
+
+/**
+ * @param {unknown} plain
+ * @param {unknown} algo
+ */
+function formatPendingOrdersSummaryLine(plain, algo) {
+  const pend = Array.isArray(plain) ? plain : [];
+  const alg = Array.isArray(algo) ? algo : [];
+  const pendBit =
+    pend.length === 0
+      ? "挂单 0"
+      : `挂单 ${pend.length}：${pend
+          .slice(0, 4)
+          .map(formatOnePlainPendingBrief)
+          .join("；")}${pend.length > 4 ? "…" : ""}`;
+  const algoBit =
+    alg.length === 0
+      ? "算法 0"
+      : `算法 ${alg.length}：${alg
+          .slice(0, 4)
+          .map(formatOneAlgoPendingBrief)
+          .join("；")}${alg.length > 4 ? "…" : ""}`;
+  return `${pendBit} ｜ ${algoBit}`;
+}
+
+/**
  * @param {object | null | undefined} ctx 主进程 getOkxExchangeContextForBar
  */
 function formatExchangeContextLine(ctx) {
@@ -144,15 +199,8 @@ function formatExchangeContextLine(ctx) {
     posSide: ctx.position?.posSide,
     fields: ctx.position?.fields,
   });
-  const pend = Array.isArray(ctx.pending_orders) ? ctx.pending_orders : [];
-  const pendBit =
-    pend.length === 0
-      ? "挂单 0"
-      : `挂单 ${pend.length}：${pend
-          .slice(0, 4)
-          .map((p) => `${p.ordType || "?"} ${p.side || ""} @${p.px ?? "?"}`)
-          .join("；")}${pend.length > 4 ? "…" : ""}`;
-  return `${posLine} ｜ ${pendBit}`;
+  const ordersLine = formatPendingOrdersSummaryLine(ctx.pending_orders, ctx.pending_algo_orders);
+  return `${posLine} ｜ ${ordersLine}`;
 }
 
 function updateOkxBarFromExchangeContext(ctx) {
@@ -1380,13 +1428,24 @@ async function refreshOkxPositionBar() {
   textEl.textContent = "查询中…";
   try {
     const r = await window.argus.getOkxSwapPosition(sym);
-    const line = formatOkxPositionLine(r);
+    const posLine = formatOkxPositionLine(r);
+    const ordersLine = formatPendingOrdersSummaryLine(r?.pending_orders, r?.pending_algo_orders);
+    const line =
+      posLine && posLine.length > 0
+        ? `${posLine} ｜ ${ordersLine}`
+        : ordersLine && ordersLine.length > 0
+          ? ordersLine
+          : "—";
     textEl.textContent = line && line.length > 0 ? line : "—";
-    if (r?.fields) {
-      textEl.title = JSON.stringify(r.fields, null, 2);
-    } else {
-      textEl.title = textEl.textContent;
-    }
+    textEl.title = JSON.stringify(
+      {
+        position: r?.fields ?? null,
+        pending_orders: r?.pending_orders,
+        pending_algo_orders: r?.pending_algo_orders,
+      },
+      null,
+      2,
+    );
   } catch (e) {
     textEl.textContent = e instanceof Error ? e.message : String(e);
     textEl.removeAttribute("title");

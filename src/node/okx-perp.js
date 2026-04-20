@@ -380,7 +380,8 @@ async function getOkxSwapPositionSnapshot(cfg, tvSymbol) {
   const simulated = cfg.okxSimulated !== false;
   const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
   const snapshot = await fetchSwapPositionSnapshot(client, instId);
-  return { ok: true, simulated, ...snapshot };
+  const { pending_orders, pending_algo_orders } = await fetchSwapPendingOrderSummaries(client, instId);
+  return { ok: true, simulated, ...snapshot, pending_orders, pending_algo_orders };
 }
 
 /**
@@ -933,6 +934,39 @@ async function fetchSwapPendingOrders(client, instId) {
 }
 
 /**
+ * 未触发算法单（含条件单、OCO、止盈止损 attach 等）。与普通 orders-pending 分离。
+ * @param {ReturnType<createOkxClient>} client
+ * @param {string} instId
+ */
+async function fetchSwapPendingAlgoOrders(client, instId) {
+  const q = new URLSearchParams({
+    instType: "SWAP",
+    instId,
+    ordType: "conditional,oco",
+  });
+  const j = await client.request("GET", `/api/v5/trade/orders-algo-pending?${q.toString()}`, "");
+  return Array.isArray(j.data) ? j.data : [];
+}
+
+/**
+ * 普通挂单 + 算法挂单（算法单拉取失败时返回空数组，不拖垮整次快照）。
+ * @param {ReturnType<createOkxClient>} client
+ * @param {string} instId
+ */
+async function fetchSwapPendingOrderSummaries(client, instId) {
+  const rawPending = await fetchSwapPendingOrders(client, instId);
+  const pending_orders = rawPending.map(serializePendingSwapOrder).filter(Boolean);
+  let pending_algo_orders = [];
+  try {
+    const rawAlgo = await fetchSwapPendingAlgoOrders(client, instId);
+    pending_algo_orders = rawAlgo.map(serializePendingSwapAlgoOrder).filter(Boolean);
+  } catch {
+    pending_algo_orders = [];
+  }
+  return { pending_orders, pending_algo_orders };
+}
+
+/**
  * @param {object} row
  */
 function serializePendingSwapOrder(row) {
@@ -962,6 +996,38 @@ function serializePendingSwapOrder(row) {
     slTriggerPx: pick("slTriggerPx"),
     tpOrdPx: pick("tpOrdPx"),
     slOrdPx: pick("slOrdPx"),
+  };
+}
+
+/**
+ * @param {object} row
+ */
+function serializePendingSwapAlgoOrder(row) {
+  if (!row || typeof row !== "object") return null;
+  /** @param {string} k */
+  const pick = (k) => {
+    const v = row[k];
+    if (v == null) return undefined;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
+    return String(v);
+  };
+  return {
+    algoId: pick("algoId"),
+    ordType: pick("ordType"),
+    side: pick("side"),
+    posSide: pick("posSide"),
+    state: pick("state"),
+    sz: pick("sz"),
+    tpTriggerPx: pick("tpTriggerPx"),
+    slTriggerPx: pick("slTriggerPx"),
+    tpTriggerPxType: pick("tpTriggerPxType"),
+    slTriggerPxType: pick("slTriggerPxType"),
+    triggerPx: pick("triggerPx"),
+    triggerPxType: pick("triggerPxType"),
+    tpOrdPx: pick("tpOrdPx"),
+    slOrdPx: pick("slOrdPx"),
+    ordPx: pick("ordPx"),
+    cTime: pick("cTime"),
   };
 }
 
@@ -1016,8 +1082,7 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol) {
   try {
     const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
     const position = await fetchSwapPositionSnapshot(client, instId);
-    const rawPending = await fetchSwapPendingOrders(client, instId);
-    const pending_orders = rawPending.map(serializePendingSwapOrder).filter(Boolean);
+    const { pending_orders, pending_algo_orders } = await fetchSwapPendingOrderSummaries(client, instId);
     return {
       ok: true,
       enabled: true,
@@ -1025,6 +1090,7 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol) {
       instId,
       position,
       pending_orders,
+      pending_algo_orders,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -1296,7 +1362,10 @@ module.exports = {
   tvSymbolToSwapInstId,
   createOkxClient,
   fetchSwapPendingOrders,
+  fetchSwapPendingAlgoOrders,
+  fetchSwapPendingOrderSummaries,
   serializePendingSwapOrder,
+  serializePendingSwapAlgoOrder,
   cancelSwapOrder,
   amendSwapOrder,
   getOkxExchangeContextForBar,

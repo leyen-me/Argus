@@ -41,7 +41,7 @@ export function LlmPanel() {
           hidden
           role="status"
           aria-live="polite"
-          title="OKX 永续持仓与未成交挂单（收盘推送或刷新）；须启用永续并配置 API。"
+          title="OKX 永续持仓、普通挂单与算法单（止盈止损等，收盘推送或刷新）；须启用永续并配置 API。"
         >
           <span className="shrink-0 text-[11px] font-semibold tracking-wide text-primary uppercase">
             OKX 持仓

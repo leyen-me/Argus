@@ -28,6 +28,7 @@ function buildOkxContextUserText(marketText, exchangeCtx) {
       simulated: exchangeCtx.simulated,
       position: exchangeCtx.position,
       pending_orders: exchangeCtx.pending_orders,
+      pending_algo_orders: exchangeCtx.pending_algo_orders,
     };
   } else if (exchangeCtx && exchangeCtx.enabled && !exchangeCtx.ok) {
     exchangeBlock = { error: exchangeCtx.message || "交易所快照失败" };

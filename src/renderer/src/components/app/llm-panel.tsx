@@ -11,8 +11,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 export function LlmPanel() {
   return (
     <Card className="bg-background flex min-h-0 min-w-0 flex-[0.75] gap-0 rounded-none border-0 py-0 shadow-none ring-0">
-      <CardHeader className="flex h-10 shrink-0 flex-row items-center justify-between space-y-0 border-b border-border px-3 py-0">
-        <CardTitle className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+      <CardHeader className="flex h-10 shrink-0 flex-row items-center justify-between gap-0 border-b border-border px-3 py-0">
+        <CardTitle className="text-xs leading-none font-semibold tracking-wider text-muted-foreground uppercase">
           LLM 分析
         </CardTitle>
         <div className="flex items-center gap-2">

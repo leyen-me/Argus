@@ -1,3 +1,4 @@
+import { ChartIntervalSelect } from "@/components/chart-interval-select"
 import { ChartSymbolSelect } from "@/components/chart-symbol-select"
 import {
   Card,
@@ -13,7 +14,10 @@ export function ChartPanel() {
         <CardTitle className="text-xs leading-none font-semibold tracking-wider text-muted-foreground uppercase">
           行情
         </CardTitle>
-        <ChartSymbolSelect />
+        <div className="flex min-w-0 shrink items-center gap-1.5">
+          <ChartIntervalSelect />
+          <ChartSymbolSelect />
+        </div>
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col p-0">
         <div className="chart-wrap">

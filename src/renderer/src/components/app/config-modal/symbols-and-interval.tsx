@@ -45,6 +45,7 @@ export function ConfigModalSymbolsAndInterval() {
           <option value="120">2 小时</option>
           <option value="240">4 小时</option>
           <option value="D">日线</option>
+          <option value="1D">1D</option>
         </select>
       </div>
     </div>

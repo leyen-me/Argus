@@ -464,6 +464,67 @@ function applySymbolSelect(config) {
   );
 }
 
+/** 与 `src/node/app-config.js` 中 `ALLOWED_INTERVAL` 一致 */
+const CHART_INTERVAL_ALLOWED = new Set(["1", "3", "5", "15", "30", "60", "120", "240", "D", "1D"]);
+
+/**
+ * 同步左侧行情标题栏 K 线周期控件，并更新内存中的 `chartInterval`。
+ * @param {string} interval
+ */
+function applyChartIntervalSelect(interval) {
+  const raw = String(interval ?? "5").trim() || "5";
+  let iv = CHART_INTERVAL_ALLOWED.has(raw) ? raw : "5";
+  const sel = document.getElementById("chart-interval-select");
+  if (sel) {
+    const has = [...sel.options].some((o) => o.value === iv);
+    if (!has) iv = "5";
+    sel.value = iv;
+  }
+  chartInterval = iv;
+  window.dispatchEvent(new CustomEvent("argus:chart-interval-sync", { detail: { value: iv } }));
+}
+
+/**
+ * 配置弹窗内「K 线周期 / 默认打开」与快捷栏一致（弹窗未打开时元素可能不存在）。
+ * @param {{ interval?: string, defaultSymbol?: string }} fields
+ */
+function syncConfigModalMarketFields(fields) {
+  if (!fields || typeof fields !== "object") return;
+  if (fields.interval != null) {
+    const intEl = document.getElementById("config-interval");
+    if (intEl) intEl.value = String(fields.interval);
+  }
+  if (fields.defaultSymbol != null) {
+    const defEl = document.getElementById("config-default-symbol");
+    if (defEl) defEl.value = String(fields.defaultSymbol);
+  }
+}
+
+/**
+ * 将快捷栏选的标的 / 周期写入本地设置（合并保存），并刷新主进程行情路由。
+ * @param {{ defaultSymbol?: string, interval?: string }} partial
+ */
+async function persistChartPreferences(partial) {
+  if (!partial || typeof partial !== "object") return;
+  if (!window.argus || typeof window.argus.saveConfig !== "function") {
+    syncConfigModalMarketFields(partial);
+    return;
+  }
+  try {
+    const saved = await window.argus.saveConfig(partial);
+    chartInterval = saved.interval || chartInterval;
+    applyChartIntervalSelect(chartInterval);
+    applySymbolSelect(saved);
+    syncConfigModalMarketFields({
+      interval: saved.interval,
+      defaultSymbol: saved.defaultSymbol,
+    });
+  } catch (err) {
+    console.error(err);
+    setLlmStatus("保存行情设置失败");
+  }
+}
+
 function collectSymbolsFromConfigRows() {
   const rows = document.querySelectorAll("#config-rows .config-row");
   const symbols = [];
@@ -737,7 +798,8 @@ function initConfigCenter() {
           fillConfigModalFields(FALLBACK_APP_CONFIG);
           applySymbolSelect(FALLBACK_APP_CONFIG);
           chartInterval = FALLBACK_APP_CONFIG.interval || "5";
-          createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol);
+          applyChartIntervalSelect(chartInterval);
+          createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol, chartInterval);
           void refreshCurrentSystemPromptPreview();
           setLlmStatus("已恢复界面为内置默认（非 Electron 环境不会写入磁盘）");
           refreshTradeStateBarFromCache();
@@ -748,7 +810,8 @@ function initConfigCenter() {
           fillConfigModalFields(saved);
           applySymbolSelect(saved);
           chartInterval = saved.interval || "5";
-          createTradingViewWidget(saved.defaultSymbol);
+          applyChartIntervalSelect(chartInterval);
+          createTradingViewWidget(saved.defaultSymbol, chartInterval);
           void refreshCurrentSystemPromptPreview();
           setLlmStatus("配置已恢复默认");
           refreshTradeStateBarFromCache();
@@ -816,7 +879,8 @@ function initConfigCenter() {
         if (!window.argus || typeof window.argus.saveConfig !== "function") {
           applySymbolSelect({ symbols, defaultSymbol });
           chartInterval = interval;
-          createTradingViewWidget(defaultSymbol);
+          applyChartIntervalSelect(chartInterval);
+          createTradingViewWidget(defaultSymbol, chartInterval);
           const selAfter = document.getElementById("symbol-select");
           updateCurrentSystemPromptPreview(
             {
@@ -871,7 +935,8 @@ function initConfigCenter() {
           });
           applySymbolSelect(saved);
           chartInterval = saved.interval || interval;
-          createTradingViewWidget(saved.defaultSymbol);
+          applyChartIntervalSelect(chartInterval);
+          createTradingViewWidget(saved.defaultSymbol, chartInterval);
           void refreshCurrentSystemPromptPreview();
           closeModal();
           refreshTradeStateBarFromCache();
@@ -961,13 +1026,32 @@ function initSymbolSelect() {
   const sel = document.getElementById("symbol-select");
   if (!sel) return;
   sel.addEventListener("change", () => {
-    createTradingViewWidget(sel.value);
-    if (window.argus && typeof window.argus.setMarketContext === "function") {
-      window.argus.setMarketContext(sel.value);
-    }
-    void refreshCurrentSystemPromptPreview();
-    refreshTradeStateBarFromCache();
-    void refreshOkxPositionBar();
+    const sym = sel.value;
+    createTradingViewWidget(sym, chartInterval);
+    void (async () => {
+      await persistChartPreferences({ defaultSymbol: sym });
+      void refreshCurrentSystemPromptPreview();
+      refreshTradeStateBarFromCache();
+      void refreshOkxPositionBar();
+    })();
+  });
+}
+
+function initChartIntervalSelect() {
+  const sel = document.getElementById("chart-interval-select");
+  if (!sel) return;
+  sel.addEventListener("change", () => {
+    const iv = sel.value;
+    chartInterval = iv;
+    const symEl = document.getElementById("symbol-select");
+    const sym = symEl?.value?.trim() || "OKX:BTCUSDT";
+    createTradingViewWidget(sym, iv);
+    void (async () => {
+      await persistChartPreferences({ interval: iv });
+      void refreshCurrentSystemPromptPreview();
+      refreshTradeStateBarFromCache();
+      void refreshOkxPositionBar();
+    })();
   });
 }
 
@@ -1386,8 +1470,8 @@ export function initArgusApp() {
   if (__argusRendererInitPromise) return __argusRendererInitPromise;
   __argusRendererInitPromise = (async () => {
     const cfg = await loadAppConfig();
-    chartInterval = cfg.interval || "5";
     applySymbolSelect(cfg);
+    applyChartIntervalSelect(cfg.interval || "5");
     const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
     createTradingViewWidget(sym, chartInterval);
     const sel = document.getElementById("symbol-select");
@@ -1396,6 +1480,7 @@ export function initArgusApp() {
       window.argus.setMarketContext(sym);
     }
     initSymbolSelect();
+    initChartIntervalSelect();
     initChartCaptureBridge();
     initConfigCenter();
     initDevToolsButton();

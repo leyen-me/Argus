@@ -31,7 +31,10 @@ test("每项为 function 类型且含 parameters", () => {
 
 test("open_position：required 字段", () => {
   const t = TRADING_AGENT_TOOLS.find((x) => x.function.name === "open_position");
-  assert.deepEqual(t.function.parameters.required.sort(), ["order_type", "side"].sort());
+  assert.deepEqual(
+    t.function.parameters.required.sort(),
+    ["leverage", "margin_fraction", "margin_mode", "order_type", "side"].sort(),
+  );
 });
 
 test("cancel_order：order_id 必填", () => {

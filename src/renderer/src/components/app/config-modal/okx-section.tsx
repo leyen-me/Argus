@@ -19,7 +19,7 @@ export function ConfigModalOkxSection() {
               仅在 <code>OKX:*</code> 上生效：启用后，模型通过工具对 <code>BTC-USDT-SWAP</code> 等合约开仓、平仓、改单、撤单。
             </p>
             <p className="m-0">
-              默认用 USDT 可用权益的 <strong>25%</strong> 作保证金；名义 ≈ 保证金 × 杠杆。模拟盘请用模拟 API 并勾选「模拟交易」。
+              开仓时由模型在 <code>open_position</code> 中传入杠杆、保证金占比与逐仓/全仓；下方三项为<strong>缺省回退</strong>（工具未传或测试直连时使用）。名义 ≈ 保证金 × 杠杆。模拟盘请用模拟 API 并勾选「模拟交易」。
             </p>
             <p className="m-0">
               <strong>默认关闭真实下单</strong>，避免误操作。
@@ -76,7 +76,7 @@ export function ConfigModalOkxSection() {
           autoComplete="new-password"
         />
         <Label htmlFor="config-okx-leverage" className="text-muted-foreground sm:pt-0.5">
-          杠杆
+          杠杆（缺省）
         </Label>
         <Input
           type="number"
@@ -88,7 +88,7 @@ export function ConfigModalOkxSection() {
           title="okxSwapLeverage"
         />
         <Label htmlFor="config-okx-margin-fraction" className="text-muted-foreground sm:pt-0.5">
-          保证金占比
+          保证金占比（缺省）
         </Label>
         <Input
           type="number"
@@ -100,7 +100,7 @@ export function ConfigModalOkxSection() {
           title="okxSwapMarginFraction，默认 0.25"
         />
         <Label htmlFor="config-okx-td-mode" className="text-muted-foreground sm:pt-0.5">
-          保证金模式
+          保证金模式（缺省）
         </Label>
         <select id="config-okx-td-mode" className={cn("symbol-select config-interval-select", nativeSelectClass)} title="okxTdMode">
           <option value="isolated">逐仓 isolated（默认）</option>

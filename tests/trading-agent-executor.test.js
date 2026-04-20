@@ -15,6 +15,13 @@ const {
 const TV_OKX = "OKX:BTCUSDT";
 const BAR_ID = "test-bar-close-id";
 
+/** 与 baseCfg 默认一致；open_position 工具应显式传入，缺省时执行层回退到 cfg */
+const OPEN_RISK = Object.freeze({
+  leverage: 10,
+  margin_fraction: 0.25,
+  margin_mode: "isolated",
+});
+
 function baseCfg(over = {}) {
   return {
     okxSwapTradingEnabled: true,
@@ -82,7 +89,7 @@ test("open_position：未启用 OKX 直接拒绝", async () => {
       },
     }),
   );
-  const out = await exec("open_position", { side: "long", order_type: "market" });
+  const out = await exec("open_position", { ...OPEN_RISK, side: "long", order_type: "market" });
   assert.equal(out.ok, false);
   assert.match(out.message, /启用/);
 });
@@ -98,7 +105,7 @@ test("open_position：交易所返回失败", async () => {
       },
     }),
   );
-  const out = await exec("open_position", { side: "long", order_type: "market" });
+  const out = await exec("open_position", { ...OPEN_RISK, side: "long", order_type: "market" });
   assert.equal(out.ok, false);
   assert.equal(out.message, "已有持仓");
   assert.ok(called);
@@ -121,7 +128,7 @@ test("open_position：市价成功", async () => {
       }),
     }),
   );
-  const out = await exec("open_position", { side: "long", order_type: "market" });
+  const out = await exec("open_position", { ...OPEN_RISK, side: "long", order_type: "market" });
   assert.equal(out.ok, true);
   assert.match(out.message, /ord-m-1/);
   assert.equal(out.exchange.ordId, "ord-m-1");
@@ -145,6 +152,7 @@ test("open_position：限价成功文案", async () => {
     }),
   );
   const out = await exec("open_position", {
+    ...OPEN_RISK,
     side: "short",
     order_type: "limit",
     limit_price: 98_000,
@@ -165,6 +173,7 @@ test("open_position：止盈止损与触发类型传入 executeAgentPerpOpen", a
     }),
   );
   const out = await exec("open_position", {
+    ...OPEN_RISK,
     side: "long",
     order_type: "market",
     take_profit_trigger_price: 100_000,
@@ -190,6 +199,7 @@ test("open_position：tp_sl_trigger_price_type 非法时回退 last", async () =
     }),
   );
   await exec("open_position", {
+    ...OPEN_RISK,
     side: "long",
     order_type: "market",
     take_profit_trigger_price: 99_000,
@@ -209,9 +219,9 @@ test("open_position：side 默认 long；非法字符串视为 long", async () =
       },
     }),
   );
-  await exec("open_position", { order_type: "market" });
+  await exec("open_position", { ...OPEN_RISK, order_type: "market" });
   assert.equal(sideSeen, "long");
-  await exec("open_position", { side: "bogus", order_type: "market" });
+  await exec("open_position", { ...OPEN_RISK, side: "bogus", order_type: "market" });
   assert.equal(sideSeen, "long");
 });
 
@@ -226,7 +236,7 @@ test("open_position：SHORT 传入", async () => {
       },
     }),
   );
-  await exec("open_position", { side: "short", order_type: "market" });
+  await exec("open_position", { ...OPEN_RISK, side: "short", order_type: "market" });
   assert.equal(sideSeen, "short");
 });
 
@@ -241,7 +251,7 @@ test("open_position：order_type 默认 market", async () => {
       },
     }),
   );
-  await exec("open_position", { side: "long" });
+  await exec("open_position", { ...OPEN_RISK, side: "long" });
   assert.equal(ot, "market");
 });
 
@@ -254,6 +264,30 @@ test("open_position：args 为 null 不抛错", async () => {
   );
   const out = await exec("open_position", null);
   assert.equal(out.ok, true);
+});
+
+test("open_position：杠杆/保证金参数传入 executeAgentPerpOpen", async () => {
+  let argsSeen = null;
+  const exec = createTradingToolExecutor(
+    { cfg: baseCfg(), tvSymbol: TV_OKX, barCloseId: BAR_ID, win: null },
+    depsWith({
+      executeAgentPerpOpen: async (_c, a) => {
+        argsSeen = a;
+        return { ok: true, ordId: "r" };
+      },
+    }),
+  );
+  await exec("open_position", {
+    side: "long",
+    order_type: "market",
+    leverage: 5,
+    margin_fraction: 0.1,
+    margin_mode: "cross",
+  });
+  assert.ok(argsSeen);
+  assert.equal(argsSeen.leverage, 5);
+  assert.equal(argsSeen.margin_fraction, 0.1);
+  assert.equal(argsSeen.margin_mode, "cross");
 });
 
 test("close_position：未启用", async () => {
@@ -505,6 +539,6 @@ test("destroyed 的 win 不发送 IPC", async () => {
       executeAgentPerpOpen: async () => ({ ok: true, ordId: "a" }),
     }),
   );
-  const out = await exec("open_position", { side: "long", order_type: "market" });
+  const out = await exec("open_position", { ...OPEN_RISK, side: "long", order_type: "market" });
   assert.equal(out.ok, true);
 });

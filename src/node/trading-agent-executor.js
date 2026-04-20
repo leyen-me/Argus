@@ -95,6 +95,9 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
             tpTriggerPx,
             slTriggerPx,
             tpSlTriggerPxType,
+            leverage: a.leverage,
+            margin_fraction: a.margin_fraction,
+            margin_mode: a.margin_mode,
           });
           if (!ex.ok) {
             sendOkxStatus({ ok: false, message: ex.message || "开仓失败" });

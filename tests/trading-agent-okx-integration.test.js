@@ -62,6 +62,15 @@ function testCfg() {
   };
 }
 
+/** 与 Agent open_position 工具契约一致（集成测试用 env/配置推导） */
+function agentOpenRiskFromCfg(cfg) {
+  return {
+    leverage: cfg.okxSwapLeverage,
+    margin_fraction: cfg.okxSwapMarginFraction,
+    margin_mode: cfg.okxTdMode,
+  };
+}
+
 if (!hasKeys) {
   console.log(
     "跳过 trading-agent-okx-integration：请设置 OKX_API_KEY、OKX_SECRET_KEY、OKX_PASSPHRASE 后执行 pnpm run test:okx:agent\n",
@@ -100,6 +109,7 @@ test(
       const tp = parseFloat(formatOkxPx(last * 1.06, inst.tickSz));
       const sl = parseFloat(formatOkxPx(last * 0.94, inst.tickSz));
       const r = await exec("open_position", {
+        ...agentOpenRiskFromCfg(cfg),
         side: "long",
         order_type: "market",
         take_profit_trigger_price: tp,
@@ -126,6 +136,7 @@ test(
       const f = Number.isFinite(frac) && frac > 0 && frac < 1 ? frac : 0.5;
       const limitPrice = parseFloat(formatOkxPx(last * f, inst.tickSz));
       const r = await exec("open_position", {
+        ...agentOpenRiskFromCfg(cfg),
         side: "long",
         order_type: "limit",
         limit_price: limitPrice,

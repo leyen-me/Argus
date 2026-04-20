@@ -8,12 +8,25 @@ const TRADING_AGENT_TOOLS = [
     function: {
       name: "open_position",
       description:
-        "开仓：市价或限价。须在配置中启用 OKX 永续并填写 API。限价单提交后未成交则持仓不变；下根 K 线可从挂单列表再判断。建议同时填写止盈/止损触发价：主单全部成交后 OKX 按触发价挂市价平仓（attachAlgoOrds）。",
+        "开仓：市价或限价。须在配置中启用 OKX 永续并填写 API。杠杆、保证金占比、逐仓/全仓由你根据本轮风险与仓位管理自行指定。限价单提交后未成交则持仓不变；下根 K 线可从挂单列表再判断。建议同时填写止盈/止损触发价：主单全部成交后 OKX 按触发价挂市价平仓（attachAlgoOrds）。",
       parameters: {
         type: "object",
         properties: {
           side: { type: "string", enum: ["long", "short"] },
           order_type: { type: "string", enum: ["market", "limit"] },
+          leverage: {
+            type: "integer",
+            description: "杠杆倍数（1–125）。名义 ≈ 保证金 × 杠杆；保证金 = 可用 USDT × margin_fraction。",
+          },
+          margin_fraction: {
+            type: "number",
+            description: "占用当前 USDT 可用权益的比例（建议 0.01–1），用于计算保证金与张数。",
+          },
+          margin_mode: {
+            type: "string",
+            enum: ["isolated", "cross"],
+            description: "isolated=逐仓；cross=全仓（与 OKX tdMode 一致）。",
+          },
           limit_price: { type: "number", description: "order_type=limit 时必填" },
           take_profit_trigger_price: {
             type: "number",
@@ -29,7 +42,7 @@ const TRADING_AGENT_TOOLS = [
             description: "止盈/止损触发基准，默认 last（最新价）",
           },
         },
-        required: ["side", "order_type"],
+        required: ["side", "order_type", "leverage", "margin_fraction", "margin_mode"],
       },
     },
   },

@@ -1,7 +1,7 @@
 /**
  * OKX USDT 永续（SWAP）REST：Agent 工具与快照，仅处理 OKX: 前缀品种。
- * 使用账户可用 USDT 的 okxSwapMarginFraction（默认 25%）作为保证金，
- * 名义约 = 保证金 × 杠杆；合约张数按行情价与 ctVal 换算。
+ * 开仓张数：保证金 = 可用 USDT × margin_fraction，名义 ≈ 保证金 × 杠杆；fraction / 杠杆 / 逐仓|全仓
+ * 优先取自 open_position 工具入参，缺省回退到应用配置（okxSwapMarginFraction 等）。
  */
 const crypto = require("crypto");
 const https = require("https");
@@ -439,7 +439,40 @@ async function waitSwapOrderFilled(client, instId, ordId) {
  */
 async function fetchSwapPositionDetail(client, instId) {
   const rows = await fetchSwapPositionRows(client, instId);
-  return pickBestSwapPositionRowData(rows).detail;
+  const { detail, row } = pickBestSwapPositionRowData(rows);
+  if (!row || row.mgnMode == null) return detail;
+  const raw = String(row.mgnMode).toLowerCase();
+  if (raw === "cross") return { ...detail, mgnMode: "cross" };
+  if (raw === "isolated") return { ...detail, mgnMode: "isolated" };
+  return detail;
+}
+
+/**
+ * 开仓风险参数：优先工具入参，缺省回退到应用配置（测试或部分调用可省略）。
+ * @param {object} cfg
+ * @param {{ leverage?: unknown, marginFraction?: unknown, margin_fraction?: unknown, marginMode?: unknown, margin_mode?: unknown, td_mode?: unknown, lever?: unknown }} [args]
+ * @returns {{ lever: number, marginFrac: number, tdMode: "cross"|"isolated" }}
+ */
+function resolveOpenRiskParams(cfg, args) {
+  const a = args && typeof args === "object" ? args : {};
+  const rawLev = a.leverage ?? a.lever;
+  let lever = Number(rawLev);
+  if (!Number.isFinite(lever)) lever = Number(cfg?.okxSwapLeverage);
+  if (!Number.isFinite(lever) || lever < 1) lever = 10;
+  lever = Math.min(125, Math.max(1, Math.floor(lever)));
+
+  const rawMf = a.marginFraction ?? a.margin_fraction;
+  let marginFrac = Number(rawMf);
+  if (!Number.isFinite(marginFrac)) marginFrac = Number(cfg?.okxSwapMarginFraction);
+  if (!Number.isFinite(marginFrac) || marginFrac <= 0) marginFrac = 0.25;
+  marginFrac = Math.min(1, Math.max(0.01, marginFrac));
+
+  const mm = String(a.marginMode ?? a.margin_mode ?? a.td_mode ?? "").toLowerCase();
+  let tdMode = mm === "cross" ? "cross" : mm === "isolated" ? "isolated" : undefined;
+  if (tdMode === undefined) {
+    tdMode = cfg?.okxTdMode === "cross" ? "cross" : "isolated";
+  }
+  return { lever, marginFrac, tdMode };
 }
 
 function floorToLot(sz, lotSz) {
@@ -1156,9 +1189,9 @@ function buildAttachAlgoOrdsForAgentOpen(o) {
 }
 
 /**
- * Agent：市价/限价开仓（按配置保证金比例与张数规则）。
+ * Agent：市价/限价开仓（杠杆/保证金比例/保证金模式优先来自工具入参，缺省用应用配置）。
  * @param {object} cfg
- * @param {{ tvSymbol: string, side: "long"|"short", orderType: "market"|"limit", limitPrice?: number, barCloseId: string, tpTriggerPx?: number, slTriggerPx?: number, tpSlTriggerPxType?: "last"|"mark"|"index" }} args
+ * @param {{ tvSymbol: string, side: "long"|"short", orderType: "market"|"limit", limitPrice?: number, barCloseId: string, tpTriggerPx?: number, slTriggerPx?: number, tpSlTriggerPxType?: "last"|"mark"|"index", leverage?: unknown, marginFraction?: unknown, margin_fraction?: unknown, marginMode?: unknown, margin_mode?: unknown, td_mode?: unknown }} args
  */
 async function executeAgentPerpOpen(cfg, args) {
   const { tvSymbol, side, orderType, limitPrice, barCloseId, tpTriggerPx, slTriggerPx, tpSlTriggerPxType } =
@@ -1181,13 +1214,7 @@ async function executeAgentPerpOpen(cfg, args) {
   }
 
   const simulated = cfg.okxSimulated !== false;
-  const tdMode = cfg.okxTdMode === "cross" ? "cross" : "isolated";
-  let lever = Number(cfg.okxSwapLeverage);
-  if (!Number.isFinite(lever) || lever < 1) lever = 10;
-  lever = Math.min(125, Math.max(1, Math.floor(lever)));
-  let marginFrac = Number(cfg.okxSwapMarginFraction);
-  if (!Number.isFinite(marginFrac) || marginFrac <= 0) marginFrac = 0.25;
-  marginFrac = Math.min(1, Math.max(0.01, marginFrac));
+  const { lever, marginFrac, tdMode } = resolveOpenRiskParams(cfg, args);
 
   const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
   const posMode = await fetchAccountPosMode(client);
@@ -1317,13 +1344,21 @@ async function executeAgentPerpClose(cfg, args) {
   }
 
   const simulated = cfg.okxSimulated !== false;
-  const tdMode = cfg.okxTdMode === "cross" ? "cross" : "isolated";
   const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
   const posMode = await fetchAccountPosMode(client);
   const detail = await fetchSwapPositionDetail(client, instId);
   if (detail.absPos <= 0) {
     return { ok: false, message: `${instId} 无持仓可平` };
   }
+
+  const tdMode =
+    detail.mgnMode === "cross"
+      ? "cross"
+      : detail.mgnMode === "isolated"
+        ? "isolated"
+        : cfg.okxTdMode === "cross"
+          ? "cross"
+          : "isolated";
 
   const { closeSide } = resolveCloseParams(posMode, detail);
   const closeBase = {

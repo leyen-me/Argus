@@ -12,6 +12,7 @@ const SHARED_AGENT_TOOLS_BLOCK =
   "2. 无动作时可用一两句中文总结观点，不必强行调用工具。\n" +
   "3. 限价单可能尚未成交：下根 K 线会看到 pending_orders 变化；止盈止损等多为算法单，见 pending_algo_orders。\n" +
   "4. 须在应用配置中启用 OKX 永续并填写 API，否则工具会返回未启用提示。\n" +
+  "5. 开仓时须在工具参数中指定杠杆（leverage）、保证金占比（margin_fraction）、逐仓或全仓（margin_mode）；配置里的对应项仅作缺省回退。\n" +
   "\n" +
   "纪律建议：已有持仓时不要重复开同向仓；方向不清时少下单、多观望。\n";
 

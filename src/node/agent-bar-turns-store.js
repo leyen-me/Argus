@@ -17,15 +17,16 @@ const { getDatabase } = require("./local-db");
  * @param {string | null} [row.chartBase64] 裸 base64，无 data: 前缀
  * @param {string | null} [row.chartCaptureError]
  * @param {string | null} [row.assistantText]
+ * @param {unknown[] | null} [row.toolTrace]
  * @param {object | null} [row.exchangeAfter]
  * @param {boolean} [row.agentOk]
  * @param {string | null} [row.agentError]
- * @param {{ estimatedPromptTokens?: number, contextWindowTokens?: number } | null} [row.usage]
  */
 function persistAgentBarTurn(row) {
   const db = getDatabase();
   const encBefore = row.exchangeContext != null ? JSON.stringify(row.exchangeContext) : null;
   const encAfter = row.exchangeAfter != null ? JSON.stringify(row.exchangeAfter) : null;
+  const encToolTrace = Array.isArray(row.toolTrace) ? JSON.stringify(row.toolTrace) : null;
   let pngBuf = null;
   if (row.chartBase64 && typeof row.chartBase64 === "string" && row.chartBase64.length > 0) {
     try {
@@ -39,13 +40,13 @@ function persistAgentBarTurn(row) {
       bar_close_id, tv_symbol, interval, period_label, captured_at,
       text_for_llm, llm_user_full_text, exchange_context_json,
       chart_mime, chart_png, chart_capture_error,
-      assistant_text, exchange_after_json, agent_ok, agent_error,
+      assistant_text, tool_trace_json, exchange_after_json, agent_ok, agent_error,
       estimated_prompt_tokens, context_window_tokens, updated_at
     ) VALUES (
       @bar_close_id, @tv_symbol, @interval, @period_label, @captured_at,
       @text_for_llm, @llm_user_full_text, @exchange_context_json,
       @chart_mime, @chart_png, @chart_capture_error,
-      @assistant_text, @exchange_after_json, @agent_ok, @agent_error,
+      @assistant_text, @tool_trace_json, @exchange_after_json, @agent_ok, @agent_error,
       @estimated_prompt_tokens, @context_window_tokens, datetime('now')
     )
   `);
@@ -65,18 +66,13 @@ function persistAgentBarTurn(row) {
         ? String(row.chartCaptureError)
         : null,
     assistant_text: row.assistantText != null ? String(row.assistantText) : null,
+    tool_trace_json: encToolTrace,
     exchange_after_json: encAfter,
     agent_ok: row.agentOk !== false ? 1 : 0,
     agent_error:
       row.agentError != null && String(row.agentError).trim() !== "" ? String(row.agentError) : null,
-    estimated_prompt_tokens:
-      row.usage && Number.isFinite(Number(row.usage.estimatedPromptTokens))
-        ? Math.floor(Number(row.usage.estimatedPromptTokens))
-        : null,
-    context_window_tokens:
-      row.usage && Number.isFinite(Number(row.usage.contextWindowTokens))
-        ? Math.floor(Number(row.usage.contextWindowTokens))
-        : null,
+    estimated_prompt_tokens: null,
+    context_window_tokens: null,
   });
 }
 
@@ -110,8 +106,7 @@ function listAgentBarTurnsPage(args = {}) {
       bar_close_id, tv_symbol, interval, period_label, captured_at,
       text_for_llm, llm_user_full_text, exchange_context_json,
       chart_mime, chart_capture_error,
-      assistant_text, exchange_after_json, agent_ok, agent_error,
-      estimated_prompt_tokens, context_window_tokens,
+      assistant_text, tool_trace_json, exchange_after_json, agent_ok, agent_error,
       CASE WHEN chart_png IS NOT NULL AND length(chart_png) > 0 THEN 1 ELSE 0 END AS has_chart
     FROM agent_bar_turns
     WHERE tv_symbol = ? AND interval = ?
@@ -128,23 +123,33 @@ function listAgentBarTurnsPage(args = {}) {
   params.push(limit);
 
   const raw = db.prepare(sql).all(...params);
-  const rows = raw.map((r) => ({
-    barCloseId: r.bar_close_id,
-    tvSymbol: r.tv_symbol,
-    interval: r.interval,
-    periodLabel: r.period_label,
-    capturedAt: r.captured_at,
-    textForLlm: r.text_for_llm,
-    llmUserFullText: r.llm_user_full_text,
-    hasChart: r.has_chart === 1,
-    chartMime: r.chart_mime,
-    chartCaptureError: r.chart_capture_error,
-    assistantText: r.assistant_text,
-    agentOk: r.agent_ok === 1,
-    agentError: r.agent_error,
-    estimatedPromptTokens: r.estimated_prompt_tokens,
-    contextWindowTokens: r.context_window_tokens,
-  }));
+  const rows = raw.map((r) => {
+    let toolTrace = null;
+    if (typeof r.tool_trace_json === "string" && r.tool_trace_json.trim()) {
+      try {
+        const parsed = JSON.parse(r.tool_trace_json);
+        toolTrace = Array.isArray(parsed) ? parsed : null;
+      } catch {
+        toolTrace = null;
+      }
+    }
+    return {
+      barCloseId: r.bar_close_id,
+      tvSymbol: r.tv_symbol,
+      interval: r.interval,
+      periodLabel: r.period_label,
+      capturedAt: r.captured_at,
+      textForLlm: r.text_for_llm,
+      llmUserFullText: r.llm_user_full_text,
+      hasChart: r.has_chart === 1,
+      chartMime: r.chart_mime,
+      chartCaptureError: r.chart_capture_error,
+      assistantText: r.assistant_text,
+      toolTrace,
+      agentOk: r.agent_ok === 1,
+      agentError: r.agent_error,
+    };
+  });
 
   const hasMore = rows.length === limit;
   const tail = rows[rows.length - 1];

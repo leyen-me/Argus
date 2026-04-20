@@ -23,9 +23,6 @@ function resolveSystemPrompt(cfg) {
   return p.systemPromptCrypto;
 }
 
-/** 与界面默认展示的「上下文窗口」一致（可用环境变量 ARGUS_CONTEXT_WINDOW_TOKENS 覆盖） */
-const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
-
 const DEFAULT_LLM_TIMEOUT_MS = 300_000;
 
 /** @param {object | null | undefined} cfg */
@@ -72,64 +69,6 @@ function mapLlmSdkError(e, cfg) {
   }
   const msg = e && typeof e === "object" && "message" in e ? String(e.message) : String(e);
   return { ok: false, text: `LLM 请求失败：${msg}` };
-}
-
-/**
- * 粗估文本 tokens（偏中文场景，略偏保守以免低估）。
- * @param {string} s
- */
-function estimateTextTokens(s) {
-  const t = String(s || "");
-  if (!t) return 0;
-  return Math.ceil(t.length / 3);
-}
-
-/**
- *  vision 输入无法本地精确计 token，按 base64 体积给一个量级估计（与 OpenAI 按块计费不同，仅用于占比参考）。
- * @param {string} b64
- */
-function estimateImageTokensFromBase64(b64) {
-  if (!b64 || typeof b64 !== "string") return 0;
-  const len = b64.trim().length;
-  if (len < 80) return 0;
-  const approxBytes = Math.floor((len * 3) / 4);
-  const raw = 300 + Math.floor(approxBytes / 800);
-  return Math.min(12000, Math.max(400, raw));
-}
-
-/**
- * @param {unknown} content message.content：string 或 multimodal 数组
- */
-function estimateContentTokens(content) {
-  if (typeof content === "string") return estimateTextTokens(content);
-  if (!Array.isArray(content)) return 0;
-  let n = 0;
-  for (const part of content) {
-    if (!part || typeof part !== "object") continue;
-    if (part.type === "text" && typeof part.text === "string") n += estimateTextTokens(part.text);
-    if (part.type === "image_url" && part.image_url && typeof part.image_url.url === "string") {
-      const url = part.image_url.url;
-      const idx = url.indexOf("base64,");
-      const b64 = idx >= 0 ? url.slice(idx + 7) : "";
-      n += estimateImageTokensFromBase64(b64);
-    }
-  }
-  return n;
-}
-
-/**
- * 估算本次请求 messages 的 prompt tokens（含 system / 历史 / 本轮；不含 API 返回的 completion）。
- * @param {Array<{ role?: string, content?: unknown }>} messages
- */
-function estimatePromptTokensFromMessages(messages) {
-  if (!Array.isArray(messages)) return 0;
-  let total = 0;
-  for (const m of messages) {
-    if (!m) continue;
-    total += 4;
-    total += estimateContentTokens(m.content);
-  }
-  return total;
 }
 
 /**
@@ -560,7 +499,5 @@ module.exports = {
   resolveSystemPrompt,
   isLlmEnabled,
   resolveOpenAiApiKey,
-  DEFAULT_CONTEXT_WINDOW_TOKENS,
-  estimatePromptTokensFromMessages,
   keepOnlyLastUserImageInMessages,
 };

@@ -334,18 +334,12 @@ function agentBarTurnRowToPayload(row) {
     chartDeferred: row.hasChart === true,
     chartCaptureError: row.chartCaptureError || null,
     fromHistory: true,
-    usage:
-      row.estimatedPromptTokens != null
-        ? {
-            estimatedPromptTokens: row.estimatedPromptTokens,
-            contextWindowTokens: row.contextWindowTokens,
-          }
-        : undefined,
     llm: {
       enabled: true,
       reasoningEnabled: false,
       streaming: false,
       analysisText: row.agentOk ? row.assistantText || "" : null,
+      toolTrace: Array.isArray(row.toolTrace) ? row.toolTrace : [],
       error: row.agentOk ? null : row.agentError || "Agent 失败",
       reasoningText: null,
     },
@@ -468,6 +462,16 @@ function findReasoningBubbleForBar(barCloseId) {
 
 /**
  * @param {string} barCloseId
+ * @returns {HTMLElement | null}
+ */
+function findToolBubbleForBar(barCloseId) {
+  if (!barCloseId) return null;
+  const id = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(barCloseId) : barCloseId;
+  return document.querySelector(`#llm-chat-history .llm-round[data-bar-close-id="${id}"] .llm-bubble--tools`);
+}
+
+/**
+ * @param {string} barCloseId
  * @returns {HTMLDetailsElement | null}
  */
 function findLlmRoundDetailsForBar(barCloseId) {
@@ -480,6 +484,51 @@ function findLlmRoundDetailsForBar(barCloseId) {
 }
 
 /**
+ * 老数据里曾将 assistant 正文与工具轨迹拼在同一个字段里，这里兼容拆开显示。
+ * @param {string | null | undefined} text
+ * @returns {{ assistantText: string, legacyToolText: string }}
+ */
+function splitLegacyAssistantAndToolText(text) {
+  const raw = typeof text === "string" ? text : "";
+  const marker = "\n---\n工具轨迹：\n";
+  const idx = raw.indexOf(marker);
+  if (idx < 0) return { assistantText: raw, legacyToolText: "" };
+  return {
+    assistantText: raw.slice(0, idx),
+    legacyToolText: raw.slice(idx + marker.length),
+  };
+}
+
+/**
+ * @param {unknown[] | null | undefined} trace
+ * @returns {string}
+ */
+function formatToolTraceDisplay(trace) {
+  if (!Array.isArray(trace) || trace.length === 0) return "";
+  return trace
+    .map((t) => {
+      const result = t?.result && typeof t.result === "object" ? t.result : {};
+      const ok = result.ok === true ? "ok" : "fail";
+      const name = t?.name ? String(t.name) : "unknown_tool";
+      return `• ${name} (${ok}) ${JSON.stringify(result)}`;
+    })
+    .join("\n");
+}
+
+/**
+ * @param {object | null | undefined} llm
+ * @returns {{ assistantText: string, toolText: string }}
+ */
+function resolveAssistantAndToolDisplay(llm) {
+  const legacy = splitLegacyAssistantAndToolText(llm?.analysisText);
+  const toolText = formatToolTraceDisplay(llm?.toolTrace) || legacy.legacyToolText;
+  return {
+    assistantText: legacy.assistantText,
+    toolText,
+  };
+}
+
+/**
  * 构建单轮 DOM（实时收盘与库分页复用）。
  * @returns {HTMLElement} `.llm-round` 根节点
  */
@@ -489,6 +538,7 @@ function buildLlmRoundElement(payload) {
   if (!barCloseId || !llm?.enabled) {
     throw new Error("buildLlmRoundElement: 无效 payload");
   }
+  const display = resolveAssistantAndToolDisplay(llm);
 
   const round = document.createElement("div");
   round.className = "llm-round";
@@ -503,11 +553,36 @@ function buildLlmRoundElement(payload) {
   const cap = payload.capturedAt
     ? new Date(payload.capturedAt).toLocaleString("zh-CN", { hour12: false })
     : "";
-  const tok = payload.usage?.estimatedPromptTokens;
-  const tokBit =
-    tok != null && Number.isFinite(Number(tok)) ? ` · 约 ${Math.round(Number(tok))} tokens` : "";
-  const histBit = payload.fromHistory ? " · 历史" : "";
-  summary.textContent = `${payload.tvSymbol || ""} · ${cap}${tokBit}${histBit} · 单轮 Agent（点击展开）`;
+  const summaryInner = document.createElement("span");
+  summaryInner.className = "llm-round-summary-inner";
+  const summaryHead = document.createElement("span");
+  summaryHead.className = "llm-round-summary-head";
+  const summaryTitle = document.createElement("span");
+  summaryTitle.className = "llm-round-summary-title";
+  summaryTitle.textContent = payload.tvSymbol || "未命名标的";
+  const summaryTag = document.createElement("span");
+  summaryTag.className = "llm-round-summary-tag";
+  summaryTag.textContent = "单轮 Agent";
+  summaryHead.append(summaryTitle, summaryTag);
+  const summaryMeta = document.createElement("span");
+  summaryMeta.className = "llm-round-summary-meta";
+  if (cap) {
+    const time = document.createElement("span");
+    time.className = "llm-round-summary-chip";
+    time.textContent = cap;
+    summaryMeta.appendChild(time);
+  }
+  if (payload.fromHistory) {
+    const hist = document.createElement("span");
+    hist.className = "llm-round-summary-chip llm-round-summary-chip--history";
+    hist.textContent = "历史记录";
+    summaryMeta.appendChild(hist);
+  }
+  const hint = document.createElement("span");
+  hint.className = "llm-round-summary-hint";
+  hint.textContent = details.open ? "点击收起" : "点击展开";
+  summaryInner.append(summaryHead, summaryMeta, hint);
+  summary.appendChild(summaryInner);
 
   const body = document.createElement("div");
   body.className = "llm-round-body";
@@ -609,6 +684,20 @@ function buildLlmRoundElement(payload) {
     rowReasoning.appendChild(wrap);
   }
 
+  const rowTool = document.createElement("div");
+  rowTool.className = "llm-chat-row llm-chat-row--tools";
+  rowTool.hidden = !display.toolText;
+  const toolWrap = document.createElement("div");
+  toolWrap.className = "llm-tools-wrap";
+  const toolLabel = document.createElement("div");
+  toolLabel.className = "llm-tools-label";
+  toolLabel.textContent = "工具调用";
+  const bubbleTool = document.createElement("div");
+  bubbleTool.className = "llm-bubble llm-bubble--tools";
+  bubbleTool.textContent = display.toolText;
+  toolWrap.append(toolLabel, bubbleTool);
+  rowTool.appendChild(toolWrap);
+
   const rowAsst = document.createElement("div");
   rowAsst.className = "llm-chat-row llm-chat-row--assistant";
   const bubbleAsst = document.createElement("div");
@@ -616,8 +705,8 @@ function buildLlmRoundElement(payload) {
   bubbleAsst.classList.remove("llm-bubble--error");
   if (llm.streaming) {
     bubbleAsst.textContent = "…";
-  } else if (llm.analysisText) {
-    bubbleAsst.textContent = normalizeAssistantDisplayText(llm.analysisText);
+  } else if (display.assistantText) {
+    bubbleAsst.textContent = normalizeAssistantDisplayText(display.assistantText);
   } else {
     bubbleAsst.textContent = llm.error || "";
     bubbleAsst.classList.add("llm-bubble--error");
@@ -628,6 +717,7 @@ function buildLlmRoundElement(payload) {
   if (thumbRow) body.appendChild(thumbRow);
   body.appendChild(rowUser);
   if (rowReasoning) body.appendChild(rowReasoning);
+  body.appendChild(rowTool);
   body.appendChild(rowAsst);
   details.append(summary, body);
   round.appendChild(details);
@@ -1299,7 +1389,7 @@ function normalizeAssistantDisplayText(s) {
   return String(s)
     .replace(/\r\n/g, "\n")
     .replace(/^\n+/, "")
-    .replace(/\n{2,}/g, "\n");
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 function formatBarClosePreview(payload) {
@@ -1367,28 +1457,6 @@ function setLlmStatus(text) {
   const full = String(text ?? "").trim() || "就绪";
   el.textContent = shortLlmStatusLabel(full);
   el.title = full;
-}
-
-/**
- * @param {{ estimatedPromptTokens?: number, contextWindowTokens?: number, percent?: number } | null | undefined} usage
- */
-function updateContextUsage(usage) {
-  const el = document.getElementById("llm-context-usage");
-  if (!el) return;
-  el.classList.remove("panel-badge--usage-warn", "panel-badge--usage-danger");
-  if (!usage || typeof usage.percent !== "number" || typeof usage.estimatedPromptTokens !== "number") {
-    el.textContent = "—";
-    el.title =
-      "启用 LLM 后，每次收盘请求会显示估算输入占比。默认按 200K 上下文窗口；可用环境变量 ARGUS_CONTEXT_WINDOW_TOKENS 覆盖。含图时为粗估。";
-    return;
-  }
-  const pct = usage.percent;
-  const est = usage.estimatedPromptTokens;
-  const cap = usage.contextWindowTokens ?? 200_000;
-  el.textContent = `${pct}%`;
-  el.title = `估算输入约 ${est.toLocaleString("zh-CN")} tokens，窗口 ${cap.toLocaleString("zh-CN")}（约 ${pct}%）。含图为粗估，与服务商实际计费可能略有差异。`;
-  if (pct >= 80) el.classList.add("panel-badge--usage-danger");
-  else if (pct >= 50) el.classList.add("panel-badge--usage-warn");
 }
 
 function openLlmChartPreview(dataUrl) {
@@ -1481,9 +1549,6 @@ function bindMarketBarClose() {
     } catch {
       console.log("[Argus] market-bar-close", payload);
     }
-    if (payload?.usage) {
-      updateContextUsage(payload.usage);
-    }
     if (payload?.chartCaptureError) {
       setLlmStatus("收盘（截图异常）");
     } else if (llm?.enabled && llm.streaming) {
@@ -1502,12 +1567,19 @@ function bindLlmStream() {
   if (typeof window.argus === "undefined") return;
   const { onLlmStreamDelta, onLlmStreamEnd, onLlmStreamError } = window.argus;
   if (typeof onLlmStreamDelta === "function") {
-    onLlmStreamDelta(({ barCloseId, full, reasoningFull }) => {
+    onLlmStreamDelta(({ barCloseId, full, reasoningFull, toolFull }) => {
       const bubbleAsst = findAssistantBubbleForBar(barCloseId);
       const bubbleReas = findReasoningBubbleForBar(barCloseId);
-      if (!bubbleAsst && !bubbleReas) return;
+      const bubbleTool = findToolBubbleForBar(barCloseId);
+      if (!bubbleAsst && !bubbleReas && !bubbleTool) return;
       if (bubbleReas && reasoningFull != null) {
         bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningFull));
+      }
+      if (bubbleTool) {
+        bubbleTool.textContent = toolFull ? normalizeAssistantDisplayText(String(toolFull)) : "";
+        if (bubbleTool.parentElement?.parentElement) {
+          bubbleTool.parentElement.parentElement.hidden = !toolFull;
+        }
       }
       if (bubbleAsst) {
         bubbleAsst.textContent = normalizeAssistantDisplayText(full);
@@ -1522,15 +1594,23 @@ function bindLlmStream() {
   }
   if (typeof onLlmStreamEnd === "function") {
     onLlmStreamEnd(
-      ({ barCloseId, analysisText, reasoningText, conversationKey, exchangeContext }) => {
+      ({ barCloseId, analysisText, reasoningText, toolTrace, conversationKey, exchangeContext }) => {
       const bubbleAsst = findAssistantBubbleForBar(barCloseId);
+      const display = resolveAssistantAndToolDisplay({ analysisText, toolTrace });
       if (bubbleAsst && analysisText != null) {
-        bubbleAsst.textContent = normalizeAssistantDisplayText(analysisText);
+        bubbleAsst.textContent = normalizeAssistantDisplayText(display.assistantText);
         bubbleAsst.classList.remove("llm-bubble--error");
       }
       const bubbleReas = findReasoningBubbleForBar(barCloseId);
       if (bubbleReas && reasoningText != null) {
         bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningText));
+      }
+      const bubbleTool = findToolBubbleForBar(barCloseId);
+      if (bubbleTool) {
+        bubbleTool.textContent = display.toolText ? normalizeAssistantDisplayText(display.toolText) : "";
+        if (bubbleTool.parentElement?.parentElement) {
+          bubbleTool.parentElement.parentElement.hidden = !display.toolText;
+        }
       }
       if (conversationKey && exchangeContext) {
         rememberExchangeContext(conversationKey, exchangeContext);
@@ -1545,6 +1625,7 @@ function bindLlmStream() {
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.analysisText = analysisText;
+        window.argusLastBarClose.llm.toolTrace = Array.isArray(toolTrace) ? toolTrace : [];
         window.argusLastBarClose.llm.reasoningText = reasoningText ?? "";
         window.argusLastBarClose.llm.streaming = false;
         window.argusLastBarClose.llm.error = null;
@@ -1557,11 +1638,19 @@ function bindLlmStream() {
     );
   }
   if (typeof onLlmStreamError === "function") {
-    onLlmStreamError(({ barCloseId, message }) => {
+    onLlmStreamError(({ barCloseId, message, toolTrace }) => {
       const bubbleAsst = findAssistantBubbleForBar(barCloseId);
       if (bubbleAsst) {
         bubbleAsst.textContent = message || "错误";
         bubbleAsst.classList.add("llm-bubble--error");
+      }
+      const bubbleTool = findToolBubbleForBar(barCloseId);
+      const toolText = formatToolTraceDisplay(toolTrace);
+      if (bubbleTool) {
+        bubbleTool.textContent = toolText ? normalizeAssistantDisplayText(toolText) : "";
+        if (bubbleTool.parentElement?.parentElement) {
+          bubbleTool.parentElement.parentElement.hidden = !toolText;
+        }
       }
       const roundDetailsErr = findLlmRoundDetailsForBar(barCloseId);
       if (roundDetailsErr) {
@@ -1572,6 +1661,7 @@ function bindLlmStream() {
         window.argusLastBarClose.llm.error = message;
         window.argusLastBarClose.llm.streaming = false;
         window.argusLastBarClose.llm.analysisText = null;
+        window.argusLastBarClose.llm.toolTrace = Array.isArray(toolTrace) ? toolTrace : [];
       }
       setLlmStatus("收盘 · LLM 失败");
     });

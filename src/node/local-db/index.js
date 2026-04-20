@@ -5,7 +5,7 @@
  * - 单库文件位于仓库根目录、与 `src` 同级：`argus.sqlite`（WAL 模式）。
  * - 版本用 PRAGMA user_version；升级时在 applyMigrations() 中按版本递增追加 DDL。
  * - 通用键值：`kv_store(namespace, key)`，适合配置、功能开关、缓存等；值一般为 JSON 文本。
- * - `agent_bar_turns`：每根 K 线收盘 Agent 单轮的完整用户提示、OKX 快照 JSON、图表 BLOB、助手输出等（user_version ≥ 3）。
+ * - `agent_bar_turns`：每根 K 线收盘 Agent 单轮的完整用户提示、OKX 快照 JSON、图表 BLOB、助手输出、工具轨迹等（user_version ≥ 3）。
  * - 其他强关系数据可在同一库中新建表并递增 user_version；业务模块仅依赖 `getDatabase()`。
  *
  * 约定命名空间（namespace）示例：
@@ -89,6 +89,13 @@ function applyMigrations(database) {
       DROP INDEX IF EXISTS idx_agent_bar_turns_tv_captured;
     `);
     database.pragma("user_version = 4");
+    v = 4;
+  }
+  if (v < 5) {
+    database.exec(`
+      ALTER TABLE agent_bar_turns ADD COLUMN tool_trace_json TEXT;
+    `);
+    database.pragma("user_version = 5");
   }
 }
 

@@ -11,8 +11,6 @@ const {
   runTradingAgentTurn,
   buildMultimodalUserContent,
   resolveSystemPrompt,
-  DEFAULT_CONTEXT_WINDOW_TOKENS,
-  estimatePromptTokensFromMessages,
 } = require("./llm");
 const { getOkxExchangeContextForBar } = require("./okx-perp");
 const { TRADING_AGENT_TOOLS } = require("./trading-agent-tools");
@@ -50,14 +48,14 @@ function buildOkxContextUserText(marketText, exchangeCtx) {
   ].join("\n");
 }
 
-function formatAgentToolTrace(trace) {
-  if (!Array.isArray(trace) || !trace.length) return "";
-  const lines = trace.map((t) => {
-    const r = t.result && typeof t.result === "object" ? t.result : {};
-    const ok = r.ok === true ? "ok" : "fail";
-    return `• ${t.name} (${ok}) ${JSON.stringify(r)}`;
-  });
-  return `\n\n---\n工具轨迹：\n${lines.join("\n")}`;
+function formatToolCallPreview(toolCalls) {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return "";
+  return toolCalls
+    .map((t) => {
+      const name = t?.function?.name ? String(t.function.name) : "unknown_tool";
+      return `调用 ${name}`;
+    })
+    .join("\n");
 }
 
 /**
@@ -149,6 +147,7 @@ async function emitBarClose(winGetter, ctx) {
     fullUserPromptForDisplay: llmUserText,
     llm,
   };
+  llm.toolTrace = [];
 
   if (!llm.enabled) {
     llm.skippedReason =
@@ -169,17 +168,6 @@ async function emitBarClose(winGetter, ctx) {
     { role: "user", content: currentUserContent },
   ];
 
-  const envCtx = process.env.ARGUS_CONTEXT_WINDOW_TOKENS;
-  const contextWindowTokens =
-    envCtx && Number(envCtx) > 0 ? Math.floor(Number(envCtx)) : DEFAULT_CONTEXT_WINDOW_TOKENS;
-  const estimatedPromptTokens = estimatePromptTokensFromMessages(messages);
-  const percent = Math.round((estimatedPromptTokens / contextWindowTokens) * 1000) / 10;
-  payloadBase.usage = {
-    estimatedPromptTokens,
-    contextWindowTokens,
-    percent,
-  };
-
   llm.streaming = true;
   llm.analysisText = "";
   win.webContents.send("market-bar-close", payloadBase);
@@ -198,30 +186,36 @@ async function emitBarClose(winGetter, ctx) {
   });
 
   let streamAcc = "";
+  let streamToolAcc = "";
   const agentResult = await runTradingAgentTurn(messages, streamOpts, {
     tools: TRADING_AGENT_TOOLS,
     executeTool,
     maxSteps: 8,
     onStep: ({ toolCalls, assistantPreview }) => {
-      let add = "";
-      if (assistantPreview) add += `${assistantPreview}\n\n`;
-      if (toolCalls?.length) {
-        add += `${toolCalls.map((t) => `[调用 ${t.function?.name}]`).join(" ")}\n`;
+      let changed = false;
+      if (assistantPreview) {
+        streamAcc = [streamAcc, assistantPreview].filter(Boolean).join("\n\n").trim();
+        changed = true;
       }
-      if (add) {
-        streamAcc += add;
+      const toolPreview = formatToolCallPreview(toolCalls);
+      if (toolPreview) {
+        streamToolAcc = [streamToolAcc, toolPreview].filter(Boolean).join("\n");
+        changed = true;
+      }
+      if (changed) {
         win.webContents.send("llm-stream-delta", {
           barCloseId,
-          full: streamAcc.trim(),
+          full: streamAcc,
           reasoningFull: "",
+          toolFull: streamToolAcc,
         });
       }
     },
   });
 
   if (agentResult.ok) {
-    const traceStr = formatAgentToolTrace(agentResult.toolTrace);
-    llm.analysisText = [agentResult.text, traceStr].filter(Boolean).join("");
+    llm.analysisText = agentResult.text;
+    llm.toolTrace = Array.isArray(agentResult.toolTrace) ? agentResult.toolTrace : [];
     llm.reasoningText = "";
     llm.streaming = false;
     const exchangeAfter = await getOkxExchangeContextForBar(cfg, ctx.tvSymbol);
@@ -239,10 +233,10 @@ async function emitBarClose(winGetter, ctx) {
         chartMime: chartImage?.mimeType ?? null,
         chartBase64: chartImage?.base64 ?? null,
         chartCaptureError,
-        assistantText: llm.analysisText,
+        assistantText: agentResult.text,
+        toolTrace: llm.toolTrace,
         exchangeAfter,
         agentOk: true,
-        usage: payloadBase.usage,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -256,9 +250,11 @@ async function emitBarClose(winGetter, ctx) {
       exchangeContext: exchangeAfter,
       analysisText: llm.analysisText,
       reasoningText: "",
+      toolTrace: llm.toolTrace,
     });
   } else {
     llm.error = agentResult.text;
+    llm.toolTrace = Array.isArray(agentResult.toolTrace) ? agentResult.toolTrace : [];
     llm.streaming = false;
     try {
       persistAgentBarTurn({
@@ -274,10 +270,10 @@ async function emitBarClose(winGetter, ctx) {
         chartBase64: chartImage?.base64 ?? null,
         chartCaptureError,
         assistantText: null,
+        toolTrace: llm.toolTrace,
         exchangeAfter: null,
         agentOk: false,
         agentError: agentResult.text,
-        usage: payloadBase.usage,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -285,7 +281,11 @@ async function emitBarClose(winGetter, ctx) {
         win.webContents.send("market-status", { text: `Agent 记录落库失败：${msg}` });
       }
     }
-    win.webContents.send("llm-stream-error", { barCloseId, message: agentResult.text });
+    win.webContents.send("llm-stream-error", {
+      barCloseId,
+      message: agentResult.text,
+      toolTrace: llm.toolTrace,
+    });
   }
 }
 

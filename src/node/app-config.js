@@ -23,8 +23,8 @@ const ALLOWED_INTERVAL = new Set(["1", "3", "5", "15", "30", "60", "120", "240",
  */
 const APP_SETTINGS_SEED = Object.freeze({
   symbols: [
-    { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
-    { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
+    { label: "BTC/USDT", value: "OKX:BTCUSDT" },
+    { label: "ETH/USDT", value: "OKX:ETHUSDT" },
   ],
   defaultSymbol: "OKX:BTCUSDT",
   promptStrategy: "default",

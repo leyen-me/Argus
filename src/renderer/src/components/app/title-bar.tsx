@@ -1,4 +1,4 @@
-import { EyeOff } from "lucide-react"
+import { EyeOff, Settings, Terminal } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
@@ -24,20 +24,22 @@ export function TitleBar() {
           type="button"
           variant="outline"
           size="sm"
-          className="titlebar-config h-7 px-2.5 text-xs font-semibold shadow-none"
+          className="titlebar-config h-7 gap-1.5 px-2.5 text-xs font-semibold shadow-none"
           id="btn-open-devtools"
           title="开发者工具"
         >
+          <Terminal className="size-3.5 opacity-80" aria-hidden />
           控制台
         </Button>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="titlebar-config h-7 px-2.5 text-xs font-semibold shadow-none"
+          className="titlebar-config h-7 gap-1.5 px-2.5 text-xs font-semibold shadow-none"
           id="btn-open-config"
           title="配置中心"
         >
+          <Settings className="size-3.5 opacity-80" aria-hidden />
           配置
         </Button>
       </div>

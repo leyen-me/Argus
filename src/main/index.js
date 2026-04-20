@@ -13,6 +13,7 @@ const { inferFeed } = require(path.join(nodeRoot, "market.js"));
 const { loadAppConfig, databasePath, resetAppConfig, saveMergedConfigPayload } = require(
   path.join(nodeRoot, "app-config.js"),
 );
+const promptStrategiesStore = require(path.join(nodeRoot, "prompt-strategies-store.js"));
 const { closeDatabase } = require(path.join(nodeRoot, "local-db", "index.js"));
 const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context.js"));
 const { wipeTradingStateStore } = require(path.join(nodeRoot, "trading-state.js"));
@@ -67,6 +68,26 @@ ipcMain.handle("market:set-context", async (_event, tvSymbol) => {
 
 ipcMain.handle("okx:swap-position", async (_event, tvSymbol) => {
   return getOkxSwapPositionSnapshot(loadAppConfig(), tvSymbol);
+});
+
+ipcMain.handle("prompt-strategies:list", () => promptStrategiesStore.listStrategiesMeta());
+
+ipcMain.handle("prompt-strategies:get", (_event, id) => promptStrategiesStore.getStrategy(id));
+
+ipcMain.handle("prompt-strategies:save", (_event, payload) => {
+  promptStrategiesStore.saveStrategy(payload ?? {});
+  return loadAppConfig();
+});
+
+ipcMain.handle("prompt-strategies:delete", (_event, id) => {
+  promptStrategiesStore.deleteStrategy(id);
+  saveMergedConfigPayload({});
+  return loadAppConfig();
+});
+
+ipcMain.handle("prompt-strategies:import-bundled", () => {
+  promptStrategiesStore.importBundledBodies();
+  return loadAppConfig();
 });
 
 ipcMain.handle("llm-request-analysis", async (_event, payload) => {

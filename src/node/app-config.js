@@ -1,19 +1,13 @@
-const fs = require("fs");
-const path = require("path");
-
 const localDb = require("./local-db");
+const promptStrategiesStore = require("./prompt-strategies-store");
 
 /**
  * 应用可序列化设置保存在仓库根目录 `argus.sqlite`（`local-db`）的 kv `app/settings` 中。
  * 首次启动或库中无记录时：用 {@link APP_SETTINGS_SEED} 经 `normalizeConfig` 后写入。
  *
- * 系统提示词正文不落库，仅 `promptStrategy` 落库；正文来自 `prompts/<策略名>/system-crypto.txt`（每次 load 读盘）。
+ * 系统提示词正文存于 SQLite 表 `prompt_strategies`（界面「策略中心」管理）；`app/settings` 仅保存当前选用的 `promptStrategy` id。
  */
-/** prompts 所在目录（本文件在 src/node，资源在 src/） */
-const SRC_ROOT = path.join(__dirname, "..");
-const PROMPTS_DIR = path.join(SRC_ROOT, "prompts");
-const STRATEGY_PROMPT_BASENAME = "system-crypto.txt";
-const DEFAULT_PROMPT_STRATEGY = "default";
+const DEFAULT_PROMPT_STRATEGY = promptStrategiesStore.DEFAULT_PROMPT_STRATEGY;
 
 const ALLOWED_INTERVAL = new Set(["1", "3", "5", "15", "30", "60", "120", "240", "D", "1D"]);
 
@@ -70,34 +64,16 @@ function normalizeSystemPromptField(raw, fallback) {
 }
 
 /**
- * 枚举 `prompts/<目录>/system-crypto.txt` 存在的子目录名（每种策略一个文件夹）。
  * @returns {string[]}
  */
 function listPromptStrategies() {
-  const out = [];
-  try {
-    if (!fs.existsSync(PROMPTS_DIR)) return [DEFAULT_PROMPT_STRATEGY];
-    const entries = fs.readdirSync(PROMPTS_DIR, { withFileTypes: true });
-    for (const e of entries) {
-      if (!e.isDirectory()) continue;
-      const name = e.name;
-      if (name.startsWith(".")) continue;
-      const f = path.join(PROMPTS_DIR, name, STRATEGY_PROMPT_BASENAME);
-      if (fs.existsSync(f)) out.push(name);
-    }
-  } catch {
-    return [DEFAULT_PROMPT_STRATEGY];
-  }
-  out.sort((a, b) => {
-    if (a === DEFAULT_PROMPT_STRATEGY) return -1;
-    if (b === DEFAULT_PROMPT_STRATEGY) return 1;
-    return a.localeCompare(b);
-  });
-  return out.length ? out : [DEFAULT_PROMPT_STRATEGY];
+  promptStrategiesStore.seedFromDiskIfEmpty();
+  const ids = promptStrategiesStore.listStrategyIds();
+  return ids.length ? ids : [DEFAULT_PROMPT_STRATEGY];
 }
 
 /**
- * @param {string | undefined} preferred 首选策略文件夹名
+ * @param {string | undefined} preferred 首选策略 id
  * @returns {string}
  */
 function resolvePromptStrategyId(preferred) {
@@ -105,32 +81,22 @@ function resolvePromptStrategyId(preferred) {
   const want =
     typeof preferred === "string" && preferred.trim() ? preferred.trim() : DEFAULT_PROMPT_STRATEGY;
   if (available.includes(want)) return want;
-  /** 未填写、或 ID 无效 / 已删目录时：回到 default（「默认提示词」固定对应 prompts/default） */
-  if (want === DEFAULT_PROMPT_STRATEGY || preferred == null || preferred === "") {
-    return DEFAULT_PROMPT_STRATEGY;
-  }
   if (available.includes(DEFAULT_PROMPT_STRATEGY)) return DEFAULT_PROMPT_STRATEGY;
   return available[0] || DEFAULT_PROMPT_STRATEGY;
 }
 
 /**
- * 从 `prompts/<strategy>/system-crypto.txt` 读取；每次 `loadAppConfig` 重新读盘。
+ * 从本地库 `prompt_strategies` 读取当前策略的系统提示词（每次 `loadAppConfig` / 规范化时重新查询）。
  * @param {string} [strategyId]
  * @returns {{ systemPromptCrypto: string }}
  */
 function loadSystemPromptsFromDisk(strategyId) {
   const id = resolvePromptStrategyId(strategyId);
-  let cryptoRaw = "";
-  try {
-    const f = path.join(PROMPTS_DIR, id, STRATEGY_PROMPT_BASENAME);
-    if (fs.existsSync(f)) {
-      cryptoRaw = fs.readFileSync(f, "utf8");
-    }
-  } catch {
-    cryptoRaw = "";
-  }
   return {
-    systemPromptCrypto: normalizeSystemPromptField(cryptoRaw, MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO),
+    systemPromptCrypto: normalizeSystemPromptField(
+      promptStrategiesStore.getStrategyBody(id),
+      MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO,
+    ),
   };
 }
 
@@ -146,7 +112,7 @@ function defaultConfigFallback() {
 }
 
 /**
- * 持久化时不写入完整系统提示词正文（正文仅来自 `prompts/<策略>/system-crypto.txt`），但保留 `promptStrategy`。
+ * 持久化时不写入完整系统提示词正文（正文在表 `prompt_strategies`），但保留 `promptStrategy` id。
  * @param {object} cfg `normalizeConfig` 返回值
  */
 function stripSystemPromptsForPersistence(cfg) {

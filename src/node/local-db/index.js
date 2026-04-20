@@ -40,6 +40,20 @@ function applyMigrations(database) {
       CREATE INDEX idx_kv_namespace ON kv_store (namespace);
     `);
     database.pragma("user_version = 1");
+    v = 1;
+  }
+  if (v < 2) {
+    database.exec(`
+      CREATE TABLE prompt_strategies (
+        id TEXT NOT NULL PRIMARY KEY,
+        label TEXT NOT NULL DEFAULT '',
+        body TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_prompt_strategies_sort ON prompt_strategies (sort_order, id);
+    `);
+    database.pragma("user_version = 2");
   }
 }
 

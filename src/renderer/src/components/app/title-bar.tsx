@@ -1,4 +1,4 @@
-import { EyeOff, Settings, Terminal } from "lucide-react"
+import { BookOpen, EyeOff, Settings, Terminal } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
@@ -30,6 +30,17 @@ export function TitleBar() {
         >
           <Terminal className="size-3.5 opacity-80" aria-hidden />
           控制台
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="titlebar-config h-7 gap-1.5 px-2.5 text-xs font-semibold shadow-none"
+          id="btn-open-strategy-center"
+          title="策略中心：管理系统提示词"
+        >
+          <BookOpen className="size-3.5 opacity-80" aria-hidden />
+          策略中心
         </Button>
         <Button
           type="button"

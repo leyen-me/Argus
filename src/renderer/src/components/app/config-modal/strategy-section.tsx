@@ -11,15 +11,18 @@ export function ConfigModalStrategySection() {
   return (
     <div className="space-y-3 pt-1">
       <div className="flex items-center gap-2">
-        <p className="m-0 text-xs text-muted-foreground">选择 <code className="rounded bg-muted px-1 text-[11px]">prompts</code>{" "}下的策略文件夹。</p>
+        <p className="m-0 text-xs text-muted-foreground">
+          从本地库已入库的策略中选择当前使用的系统提示词（在顶部「策略中心」编辑正文）。
+        </p>
         <ConfigHelpTooltip>
           <div className="space-y-2">
             <p className="m-0">
-              每种策略对应 <code>{`src/prompts/<策略名>/system-crypto.txt`}</code>；保存后写入本地库的{" "}
-              <code>promptStrategy</code>。
+              策略正文保存在 SQLite 表 <code className="rounded bg-muted px-1 text-[11px]">prompt_strategies</code>
+              ；此处仅选择 <code className="rounded bg-muted px-1 text-[11px]">promptStrategy</code> id。
             </p>
             <p className="m-0">
-              品种代码需为 <code>OKX:</code> 前缀（与左侧图表一致）。改 txt 后保存配置或重启应用加载最新内容。
+              可用「同步内置」将仓库自带的 <code className="rounded bg-muted px-1 text-[11px]">src/prompts</code>{" "}
+              模板写入或覆盖同名策略正文。
             </p>
           </div>
         </ConfigHelpTooltip>
@@ -31,7 +34,7 @@ export function ConfigModalStrategySection() {
         <select
           id="config-prompt-strategy"
           className={cn("symbol-select config-interval-select min-w-[160px] flex-1", nativeSelectClass)}
-          title="每种策略对应 src/prompts 下的一个子文件夹"
+          title="策略列表来自本地库，编辑请打开「策略中心」"
         />
       </div>
     </div>

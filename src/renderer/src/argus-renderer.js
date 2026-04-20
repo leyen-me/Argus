@@ -47,7 +47,7 @@ async function captureTradingViewPng() {
 
 /**
  * 与 app-config 中 `MIN_FALLBACK_*` 一致：仅当非 Electron 打开页面时用于界面预览兜底。
- * 正式内容由 `src/prompts/<策略>/system-crypto.txt` 提供（策略在配置中心选择）。
+ * 正式内容由本地库表 `prompt_strategies` 提供（策略在「策略中心」维护，在配置中心选用）。
  */
 const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
@@ -630,6 +630,8 @@ function initFishMode() {
 /** 与 `lib/argus-config-modal-events.ts` 中常量一致（shadcn Dialog 由 React 控制显隐） */
 const ARGUS_CONFIG_MODAL_OPEN = "argus:config-modal-open";
 const ARGUS_CONFIG_MODAL_CLOSE = "argus:config-modal-close";
+const ARGUS_STRATEGY_MODAL_OPEN = "argus:strategy-modal-open";
+const ARGUS_PROMPT_STRATEGIES_CHANGED = "argus:prompt-strategies-changed";
 
 /**
  * 配置弹窗按钮用 document 委托绑定：Dialog 关闭会卸载 Portal，若只对节点 addEventListener 一次，
@@ -700,6 +702,18 @@ function initConfigCenter() {
       stratSel.value = cur;
     }
   };
+
+  window.addEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, () => {
+    void (async () => {
+      try {
+        const cfg = await loadAppConfig();
+        fillConfigModalFields(cfg);
+        await refreshCurrentSystemPromptPreview();
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  });
 
   const closeModal = () => {
     window.dispatchEvent(new CustomEvent(ARGUS_CONFIG_MODAL_CLOSE));
@@ -948,6 +962,14 @@ function initConfigCenter() {
     __argusConfigModalDocClickBound = true;
     document.addEventListener("click", handleConfigModalDocumentClick);
   }
+}
+
+function initStrategyCenter() {
+  const btn = document.getElementById("btn-open-strategy-center");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    window.dispatchEvent(new CustomEvent(ARGUS_STRATEGY_MODAL_OPEN));
+  });
 }
 
 function destroyWidget() {
@@ -1477,6 +1499,7 @@ export function initArgusApp() {
     initChartIntervalSelect();
     initChartCaptureBridge();
     initConfigCenter();
+    initStrategyCenter();
     initDevToolsButton();
     initFishMode();
     initLlmChartPreview();

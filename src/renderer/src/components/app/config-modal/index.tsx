@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -58,16 +59,18 @@ export function ConfigModal() {
             <DialogTitle className="text-base font-semibold" id="config-modal-title">
               配置中心
             </DialogTitle>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-              id="btn-config-close"
-              aria-label="关闭"
-            >
-              ×
-            </Button>
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                id="btn-config-close"
+                aria-label="关闭"
+              >
+                ×
+              </Button>
+            </DialogClose>
           </div>
           <DialogDescription className="sr-only">编辑行情、LLM、邮件与 OKX 等配置</DialogDescription>
         </DialogHeader>

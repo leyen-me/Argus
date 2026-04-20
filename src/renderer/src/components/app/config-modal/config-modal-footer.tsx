@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { DialogFooter } from "@/components/ui/dialog";
+import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 export function ConfigModalFooter() {
@@ -20,9 +20,11 @@ export function ConfigModalFooter() {
       >
         恢复默认
       </Button>
-      <Button type="button" variant="secondary" size="sm" id="btn-config-cancel">
-        取消
-      </Button>
+      <DialogClose asChild>
+        <Button type="button" variant="secondary" size="sm" id="btn-config-cancel">
+          取消
+        </Button>
+      </DialogClose>
       <Button type="button" size="sm" id="btn-config-save">
         保存
       </Button>

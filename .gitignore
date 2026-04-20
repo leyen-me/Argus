@@ -1,3 +1,8 @@
 node_modules
 out
 dist
+
+# 本地 SQLite（与 src 同级，勿提交）
+argus.sqlite
+argus.sqlite-wal
+argus.sqlite-shm

@@ -2,7 +2,7 @@
  * 本地持久化（SQLite）
  *
  * 设计要点：
- * - 单库文件位于 userData/argus.sqlite，WAL 模式。
+ * - 单库文件位于仓库根目录、与 `src` 同级：`argus.sqlite`（WAL 模式）。
  * - 版本用 PRAGMA user_version；升级时在 applyMigrations() 中按版本递增追加 DDL。
  * - 通用键值：`kv_store(namespace, key)`，适合配置、功能开关、缓存等；值一般为 JSON 文本。
  * - 后续若有强关系数据（成交记录、审计日志等），在同一库中新建表并增加 user_version 迁移即可，
@@ -14,7 +14,6 @@
 const fs = require("fs");
 const path = require("path");
 const Database = require("better-sqlite3");
-const { app } = require("electron");
 
 /** @type {import("better-sqlite3").Database | null} */
 let _db = null;
@@ -23,7 +22,8 @@ const KV_NS_APP = "app";
 const KV_KEY_SETTINGS = "settings";
 
 function databasePath() {
-  return path.join(app.getPath("userData"), "argus.sqlite");
+  // 本文件在 src/node/local-db → 上级两级为仓库根（与 src 同级）
+  return path.join(__dirname, "..", "..", "argus.sqlite");
 }
 
 function applyMigrations(database) {
@@ -44,7 +44,7 @@ function applyMigrations(database) {
 }
 
 /**
- * 打开数据库（懒加载）。须在 Electron app 已可解析 userData 路径之后调用。
+ * 打开数据库（懒加载）。
  * @returns {import("better-sqlite3").Database}
  */
 function getDatabase() {

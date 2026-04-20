@@ -4,7 +4,7 @@ const path = require("path");
 const localDb = require("./local-db");
 
 /**
- * 应用可序列化设置保存在 userData SQLite（`local-db`）的 kv `app/settings` 中。
+ * 应用可序列化设置保存在仓库根目录 `argus.sqlite`（`local-db`）的 kv `app/settings` 中。
  * 首次启动或库中无记录时：用 {@link APP_SETTINGS_SEED} 经 `normalizeConfig` 后写入。
  *
  * 系统提示词正文不落库，仅 `promptStrategy` 落库；正文来自 `prompts/<策略名>/system-crypto.txt`（每次 load 读盘）。
@@ -164,7 +164,7 @@ function persistLoadedConfig(normalizedCfg) {
   );
 }
 
-/** @returns {string} 本地 SQLite 数据库路径（userData/argus.sqlite） */
+/** @returns {string} 本地 SQLite 数据库路径（仓库根目录 argus.sqlite，与 src 同级） */
 function databasePath() {
   return localDb.databasePath();
 }

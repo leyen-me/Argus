@@ -9,7 +9,7 @@ export function ConfigModalLlmSection() {
         <p className="m-0 text-xs text-muted-foreground">OpenAI 兼容 API；未填 Key 时可读环境变量 OPENAI_API_KEY。</p>
         <ConfigHelpTooltip>
           <p className="m-0">
-            API Key 保存在本机用户目录配置文件；<strong>配置优先于</strong>环境变量{" "}
+            API Key 保存在项目根目录 SQLite（与源码中 <code>src</code> 同级）；<strong>配置优先于</strong>环境变量{" "}
             <code>OPENAI_API_KEY</code>。填写后即可启用分析。
           </p>
         </ConfigHelpTooltip>

@@ -2,24 +2,36 @@
   "name": "argus",
   "version": "0.1.0",
   "description": "Multimodal fusion analysis — TradingView + LLM",
-  "main": "main.js",
+  "main": "out/main/index.js",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "electron"
+      "electron",
+      "esbuild"
     ]
   },
   "scripts": {
     "start": "electron .",
-    "dev": "electron .",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
     "test:dashscope": "node tests/dashscope-generation-demo.test.js",
     "test:okx": "node --test tests/okx-swap-open-close.test.js"
   },
   "devDependencies": {
-    "electron": "^34.0.0"
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "^34.0.0",
+    "electron-vite": "^5.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^6.4.2"
   },
   "dependencies": {
     "nodemailer": "^6.9.16",
     "openai": "^6.34.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "ws": "^8.20.0"
   }
 }

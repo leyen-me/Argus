@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://*.tradingview.com https://s3.tradingview.com 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:* http://localhost:*; style-src 'self' 'unsafe-inline' https://*.tradingview.com; img-src 'self' data: https: blob:; font-src 'self' data: https://*.tradingview.com; connect-src 'self' https://*.tradingview.com wss://*.tradingview.com https://api.openai.com http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; frame-src https://*.tradingview.com; worker-src blob:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Argus — 多模态融合分析</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="https://s3.tradingview.com/tv.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1337,28 +1337,35 @@ function bindOkxSwapStatus() {
   });
 }
 
-window.addEventListener("DOMContentLoaded", async () => {
-  const cfg = await loadAppConfig();
-  chartInterval = cfg.interval || "5";
-  applySymbolSelect(cfg);
-  const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
-  createTradingViewWidget(sym, chartInterval);
-  const sel = document.getElementById("symbol-select");
-  updateCurrentSystemPromptPreview(cfg, sel?.value?.trim() || sym);
-  if (window.argus && typeof window.argus.setMarketContext === "function") {
-    window.argus.setMarketContext(sym);
-  }
-  initSymbolSelect();
-  initChartCaptureBridge();
-  initConfigCenter();
-  initDevToolsButton();
-  initFishMode();
-  initLlmChartPreview();
-  bindMarketBarClose();
-  bindLlmStream();
-  bindMarketStatus();
-  bindOkxSwapStatus();
-  initOkxPositionBar();
-  refreshTradeStateBarFromCache();
-  void refreshOkxPositionBar();
-});
+let __argusRendererInitPromise = null;
+
+/** 由 React 根组件挂载后调用；可安全重复调用（只初始化一次）。 */
+export function initArgusApp() {
+  if (__argusRendererInitPromise) return __argusRendererInitPromise;
+  __argusRendererInitPromise = (async () => {
+    const cfg = await loadAppConfig();
+    chartInterval = cfg.interval || "5";
+    applySymbolSelect(cfg);
+    const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
+    createTradingViewWidget(sym, chartInterval);
+    const sel = document.getElementById("symbol-select");
+    updateCurrentSystemPromptPreview(cfg, sel?.value?.trim() || sym);
+    if (window.argus && typeof window.argus.setMarketContext === "function") {
+      window.argus.setMarketContext(sym);
+    }
+    initSymbolSelect();
+    initChartCaptureBridge();
+    initConfigCenter();
+    initDevToolsButton();
+    initFishMode();
+    initLlmChartPreview();
+    bindMarketBarClose();
+    bindLlmStream();
+    bindMarketStatus();
+    bindOkxSwapStatus();
+    initOkxPositionBar();
+    refreshTradeStateBarFromCache();
+    void refreshOkxPositionBar();
+  })();
+  return __argusRendererInitPromise;
+}

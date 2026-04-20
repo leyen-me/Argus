@@ -1,18 +1,24 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
-const fs = require("fs");
-const path = require("path");
-const cryptoSched = require("./crypto-scheduler");
-const { inferFeed } = require("./market");
+import { app, BrowserWindow, ipcMain } from "electron";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { createRequire } from "module";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+
+const cryptoSched = require("../../crypto-scheduler.js");
+const { inferFeed } = require("../../market.js");
 const {
   loadAppConfig,
   normalizeConfig,
   configPath,
   stripSystemPromptsForPersistence,
   resetAppConfig,
-} = require("./app-config");
-const { wipeConversationStore } = require("./llm-context");
-const { wipeTradingStateStore } = require("./trading-state");
-const { getOkxSwapPositionSnapshot } = require("./okx-perp");
+} = require("../../app-config.js");
+const { wipeConversationStore } = require("../../llm-context.js");
+const { wipeTradingStateStore } = require("../../trading-state.js");
+const { getOkxSwapPositionSnapshot } = require("../../okx-perp.js");
 
 /**
  * 左侧当前品种：仅加密（Binance / OKX WS K 线）。
@@ -93,7 +99,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -107,7 +113,12 @@ function createWindow() {
     win.show();
   });
 
-  win.loadFile(path.join(__dirname, "index.html"));
+  if (process.env.ELECTRON_RENDERER_URL) {
+    win.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else {
+    win.loadFile(path.join(__dirname, "../renderer/index.html"));
+  }
+
   mainWindow = win;
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;

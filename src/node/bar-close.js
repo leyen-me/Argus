@@ -4,21 +4,20 @@
 const crypto = require("crypto");
 const { ipcMain } = require("electron");
 const { loadAppConfig } = require("./app-config");
-const { conversationKey, getHistoryMessages, appendSuccessfulTurn } = require("./llm-context");
+const { conversationKey } = require("./llm-context");
 const {
   isLlmEnabled,
   buildUserPrompt,
   runTradingAgentTurn,
   buildMultimodalUserContent,
-  buildUserTextForHistory,
   resolveSystemPrompt,
   DEFAULT_CONTEXT_WINDOW_TOKENS,
   estimatePromptTokensFromMessages,
-  keepOnlyLastUserImageInMessages,
 } = require("./llm");
 const { getOkxExchangeContextForBar } = require("./okx-perp");
 const { TRADING_AGENT_TOOLS } = require("./trading-agent-tools");
 const { createTradingToolExecutor } = require("./trading-agent-executor");
+const { persistAgentBarTurn } = require("./agent-bar-turns-store");
 
 function buildOkxContextUserText(marketText, exchangeCtx) {
   let exchangeBlock;
@@ -40,7 +39,7 @@ function buildOkxContextUserText(marketText, exchangeCtx) {
   return [
     marketText,
     "",
-    "OKX 永续快照（持仓 + 未成交挂单；请用工具下单，勿只写评论）：",
+    "OKX 永续快照（持仓 + 普通挂单 + 算法挂单；请用工具下单，勿只写评论）：",
     JSON.stringify(exchangeBlock, null, 2),
   ].join("\n");
 }
@@ -126,6 +125,7 @@ async function emitBarClose(winGetter, ctx) {
 
   const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
   const exchangeCtx = await getOkxExchangeContextForBar(cfg, ctx.tvSymbol);
+  const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx);
 
   const payloadBase = {
     kind: "bar_close",
@@ -140,6 +140,7 @@ async function emitBarClose(winGetter, ctx) {
     chartCaptureError,
     textForLlm,
     exchangeContext: exchangeCtx,
+    fullUserPromptForDisplay: llmUserText,
     llm,
   };
 
@@ -151,18 +152,16 @@ async function emitBarClose(winGetter, ctx) {
   }
 
   const systemPrompt = resolveSystemPrompt(cfg);
-  const history = getHistoryMessages(convKey);
-  const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx);
   const currentUserContent = buildMultimodalUserContent(
     llmUserText,
     chartImage?.base64 ?? null,
     chartImage?.mimeType || "image/png",
   );
-  const messages = keepOnlyLastUserImageInMessages([
+  /** 每根 K 线独立单轮：不传历史 messages，仅 system + 本轮 user（含完整 OKX 快照与图）。 */
+  const messages = [
     { role: "system", content: systemPrompt },
-    ...history,
     { role: "user", content: currentUserContent },
-  ]);
+  ];
 
   const envCtx = process.env.ARGUS_CONTEXT_WINDOW_TOKENS;
   const contextWindowTokens =
@@ -221,11 +220,30 @@ async function emitBarClose(winGetter, ctx) {
     llm.streaming = false;
     const exchangeAfter = await getOkxExchangeContextForBar(cfg, ctx.tvSymbol);
     payloadBase.exchangeContext = exchangeAfter;
-    appendSuccessfulTurn(
-      convKey,
-      buildUserTextForHistory(textForLlm, !!chartImage?.base64),
-      llm.analysisText,
-    );
+    try {
+      persistAgentBarTurn({
+        barCloseId,
+        tvSymbol: ctx.tvSymbol,
+        interval: ctx.interval,
+        periodLabel: ctx.periodLabel,
+        capturedAt: payloadBase.capturedAt,
+        textForLlm,
+        llmUserFullText: llmUserText,
+        exchangeContext: exchangeCtx,
+        chartMime: chartImage?.mimeType ?? null,
+        chartBase64: chartImage?.base64 ?? null,
+        chartCaptureError,
+        assistantText: llm.analysisText,
+        exchangeAfter,
+        agentOk: true,
+        usage: payloadBase.usage,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("market-status", { text: `Agent 记录落库失败：${msg}` });
+      }
+    }
     win.webContents.send("llm-stream-end", {
       barCloseId,
       conversationKey: convKey,
@@ -236,6 +254,31 @@ async function emitBarClose(winGetter, ctx) {
   } else {
     llm.error = agentResult.text;
     llm.streaming = false;
+    try {
+      persistAgentBarTurn({
+        barCloseId,
+        tvSymbol: ctx.tvSymbol,
+        interval: ctx.interval,
+        periodLabel: ctx.periodLabel,
+        capturedAt: payloadBase.capturedAt,
+        textForLlm,
+        llmUserFullText: llmUserText,
+        exchangeContext: exchangeCtx,
+        chartMime: chartImage?.mimeType ?? null,
+        chartBase64: chartImage?.base64 ?? null,
+        chartCaptureError,
+        assistantText: null,
+        exchangeAfter: null,
+        agentOk: false,
+        agentError: agentResult.text,
+        usage: payloadBase.usage,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("market-status", { text: `Agent 记录落库失败：${msg}` });
+      }
+    }
     win.webContents.send("llm-stream-error", { barCloseId, message: agentResult.text });
   }
 }

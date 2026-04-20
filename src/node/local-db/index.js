@@ -5,8 +5,8 @@
  * - 单库文件位于仓库根目录、与 `src` 同级：`argus.sqlite`（WAL 模式）。
  * - 版本用 PRAGMA user_version；升级时在 applyMigrations() 中按版本递增追加 DDL。
  * - 通用键值：`kv_store(namespace, key)`，适合配置、功能开关、缓存等；值一般为 JSON 文本。
- * - 后续若有强关系数据（成交记录、审计日志等），在同一库中新建表并增加 user_version 迁移即可，
- *   与 kv 并存；业务代码可放在独立模块中，仅依赖本文件导出的 `getDatabase()`。
+ * - `agent_bar_turns`：每根 K 线收盘 Agent 单轮的完整用户提示、OKX 快照 JSON、图表 BLOB、助手输出等（user_version ≥ 3）。
+ * - 其他强关系数据可在同一库中新建表并递增 user_version；业务模块仅依赖 `getDatabase()`。
  *
  * 约定命名空间（namespace）示例：
  * - app — 应用级；键 `settings` 存可序列化的应用设置（不含运行时注入的 systemPromptCrypto 正文）。
@@ -54,6 +54,33 @@ function applyMigrations(database) {
       CREATE INDEX idx_prompt_strategies_sort ON prompt_strategies (sort_order, id);
     `);
     database.pragma("user_version = 2");
+    v = 2;
+  }
+  if (v < 3) {
+    database.exec(`
+      CREATE TABLE agent_bar_turns (
+        bar_close_id TEXT NOT NULL PRIMARY KEY,
+        tv_symbol TEXT NOT NULL,
+        interval TEXT NOT NULL,
+        period_label TEXT NOT NULL DEFAULT '',
+        captured_at TEXT NOT NULL,
+        text_for_llm TEXT NOT NULL DEFAULT '',
+        llm_user_full_text TEXT NOT NULL,
+        exchange_context_json TEXT,
+        chart_mime TEXT,
+        chart_png BLOB,
+        chart_capture_error TEXT,
+        assistant_text TEXT,
+        exchange_after_json TEXT,
+        agent_ok INTEGER NOT NULL DEFAULT 0,
+        agent_error TEXT,
+        estimated_prompt_tokens INTEGER,
+        context_window_tokens INTEGER,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX idx_agent_bar_turns_tv_captured ON agent_bar_turns (tv_symbol, captured_at DESC);
+    `);
+    database.pragma("user_version = 3");
   }
 }
 

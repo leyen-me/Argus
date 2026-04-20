@@ -169,7 +169,7 @@ function keepOnlyLastUserImageInMessages(messages) {
 }
 
 /**
- * 本轮发给 API 的 user 内容（含多模态）；历史轮仅存纯文本，见 llm-context。
+ * 本轮发给 API 的 user 内容（含多模态）。K 线收盘 Agent 为单轮 system+user，历史不落盘到 LLM messages；持久化见 agent_bar_turns 表。
  */
 function buildMultimodalUserContent(userText, imageBase64, mimeType) {
   const image = imageBase64 && String(imageBase64).trim();

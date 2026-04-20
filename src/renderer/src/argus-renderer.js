@@ -235,75 +235,6 @@ let latestBarCloseId = null;
 const LLM_HISTORY_MAX_ROUNDS = 40;
 
 /**
- * @param {object} cfg `loadAppConfig()` 结果
- */
-function resolveSystemPromptForUi(cfg) {
-  const c = cfg || FALLBACK_APP_CONFIG;
-  return c.systemPromptCrypto ?? FALLBACK_APP_CONFIG.systemPromptCrypto;
-}
-
-/**
- * @param {string} systemText
- * @returns {HTMLElement | null}
- */
-function buildSystemPromptRow(systemText) {
-  const t = String(systemText || "").trim();
-  if (!t) return null;
-  const rowSystem = document.createElement("div");
-  rowSystem.className = "llm-chat-row llm-chat-row--system";
-  const details = document.createElement("details");
-  details.className = "llm-system-details";
-  const summary = document.createElement("summary");
-  summary.className = "llm-system-summary";
-  summary.textContent = "系统提示词 · 点击展开";
-  const bubbleSys = document.createElement("div");
-  bubbleSys.className = "llm-bubble llm-bubble--system";
-  bubbleSys.textContent = t;
-  details.append(summary, bubbleSys);
-  rowSystem.appendChild(details);
-  return rowSystem;
-}
-
-/**
- * 启动后 / 切换品种时：右侧顶部展示当前将使用的系统提示词（无需等 K 线收盘）。
- * @param {object} cfg
- * @param {string} tvSymbol
- */
-function updateCurrentSystemPromptPreview(cfg, tvSymbol) {
-  const root = document.getElementById("llm-current-system");
-  if (!root) return;
-  root.replaceChildren();
-  const sym = String(tvSymbol || "").trim() || "—";
-  const c = cfg || FALLBACK_APP_CONFIG;
-  const meta = document.createElement("div");
-  meta.className = "llm-current-system-meta";
-  const strat = String(c.promptStrategy || "default").trim() || "default";
-  meta.textContent = `当前图表：${sym} · 策略：${strat}`;
-  const text = String(resolveSystemPromptForUi(c) || "").trim();
-  const row = buildSystemPromptRow(text);
-  root.appendChild(meta);
-  if (row) {
-    root.appendChild(row);
-  } else {
-    const hint = document.createElement("div");
-    hint.className = "llm-current-system-empty";
-    hint.textContent = "（未配置系统提示词）";
-    root.appendChild(hint);
-  }
-}
-
-async function refreshCurrentSystemPromptPreview() {
-  const cfg = await loadAppConfig();
-  const sel = document.getElementById("symbol-select");
-  const sym =
-    sel?.value?.trim() ||
-    cfg.defaultSymbol ||
-    cfg.symbols[0]?.value ||
-    "OKX:BTCUSDT";
-  updateCurrentSystemPromptPreview(cfg, sym);
-}
-
-/**
  * @param {string} barCloseId
  * @returns {HTMLElement | null}
  */
@@ -328,6 +259,19 @@ function findReasoningBubbleForBar(barCloseId) {
 }
 
 /**
+ * @param {string} barCloseId
+ * @returns {HTMLDetailsElement | null}
+ */
+function findLlmRoundDetailsForBar(barCloseId) {
+  if (!barCloseId) return null;
+  const id = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(barCloseId) : barCloseId;
+  const el = document.querySelector(
+    `#llm-chat-history .llm-round[data-bar-close-id="${id}"] .llm-round-details`,
+  );
+  return el instanceof HTMLDetailsElement ? el : null;
+}
+
+/**
  * 每根 K 线收盘且启用 LLM 时追加一轮（左模型回复 / 右用户与推送摘要），流式时先占位「…」。
  * @returns {HTMLElement | null} 本轮助手气泡，便于调试
  */
@@ -341,14 +285,22 @@ function appendLlmRound(payload) {
   round.className = "llm-round";
   round.dataset.barCloseId = barCloseId;
 
-  const meta = document.createElement("div");
-  meta.className = "llm-round-meta";
+  const details = document.createElement("details");
+  details.className = "llm-round-details";
+  details.open = llm.streaming === true;
+
+  const summary = document.createElement("summary");
+  summary.className = "llm-round-summary";
   const cap = payload.capturedAt
     ? new Date(payload.capturedAt).toLocaleString("zh-CN", { hour12: false })
     : "";
-  meta.textContent = [payload.tvSymbol, cap, payload.conversationKey ? "多轮上下文" : ""]
-    .filter(Boolean)
-    .join(" · ");
+  const tok = payload.usage?.estimatedPromptTokens;
+  const tokBit =
+    tok != null && Number.isFinite(Number(tok)) ? ` · 约 ${Math.round(Number(tok))} tokens` : "";
+  summary.textContent = `${payload.tvSymbol || ""} · ${cap}${tokBit} · 单轮 Agent（点击展开）`;
+
+  const body = document.createElement("div");
+  body.className = "llm-round-body";
 
   const chartDataUrl = payload?.chartImage?.dataUrl;
   let thumbRow = null;
@@ -373,7 +325,11 @@ function appendLlmRound(payload) {
   rowUser.className = "llm-chat-row llm-chat-row--user";
   const bubbleUser = document.createElement("div");
   bubbleUser.className = "llm-bubble llm-bubble--user";
-  bubbleUser.textContent = truncateText(payload?.textForLlm || "", 400);
+  const userFull =
+    typeof payload?.fullUserPromptForDisplay === "string" && payload.fullUserPromptForDisplay.trim()
+      ? payload.fullUserPromptForDisplay
+      : payload?.textForLlm || "";
+  bubbleUser.textContent = userFull;
 
   /** @type {HTMLElement | null} */
   let rowReasoning = null;
@@ -417,12 +373,12 @@ function appendLlmRound(payload) {
 
   rowUser.appendChild(bubbleUser);
   rowAsst.appendChild(bubbleAsst);
-  const parts = [meta];
-  if (thumbRow) parts.push(thumbRow);
-  parts.push(rowUser);
-  if (rowReasoning) parts.push(rowReasoning);
-  parts.push(rowAsst);
-  round.append(...parts);
+  if (thumbRow) body.appendChild(thumbRow);
+  body.appendChild(rowUser);
+  if (rowReasoning) body.appendChild(rowReasoning);
+  body.appendChild(rowAsst);
+  details.append(summary, body);
+  round.appendChild(details);
   history.appendChild(round);
   history.hidden = false;
 
@@ -730,7 +686,6 @@ function initConfigCenter() {
       try {
         const cfg = await loadAppConfig();
         fillConfigModalFields(cfg);
-        await refreshCurrentSystemPromptPreview();
       } catch (e) {
         console.error(e);
       }
@@ -831,7 +786,6 @@ function initConfigCenter() {
           chartInterval = FALLBACK_APP_CONFIG.interval || "5";
           applyChartIntervalSelect(chartInterval);
           createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol, chartInterval);
-          void refreshCurrentSystemPromptPreview();
           setLlmStatus("已恢复界面为内置默认（非 Electron 环境不会写入磁盘）");
           refreshExchangeContextBarFromCache();
           return;
@@ -843,7 +797,6 @@ function initConfigCenter() {
           chartInterval = saved.interval || "5";
           applyChartIntervalSelect(chartInterval);
           createTradingViewWidget(saved.defaultSymbol, chartInterval);
-          void refreshCurrentSystemPromptPreview();
           setLlmStatus("配置已恢复默认");
           refreshExchangeContextBarFromCache();
         } catch (err) {
@@ -912,30 +865,6 @@ function initConfigCenter() {
           chartInterval = interval;
           applyChartIntervalSelect(chartInterval);
           createTradingViewWidget(defaultSymbol, chartInterval);
-          const selAfter = document.getElementById("symbol-select");
-          updateCurrentSystemPromptPreview(
-            {
-              ...FALLBACK_APP_CONFIG,
-              symbols,
-              defaultSymbol,
-              interval,
-              promptStrategy,
-              llmReasoningEnabled,
-              tradeNotifyEmailEnabled,
-              smtpUser,
-              smtpPass,
-              notifyEmailTo,
-              okxSwapTradingEnabled,
-              okxSimulated,
-              okxApiKey,
-              okxSecretKey,
-              okxPassphrase,
-              okxSwapLeverage,
-              okxSwapMarginFraction,
-              okxTdMode,
-            },
-            selAfter?.value?.trim() || defaultSymbol,
-          );
           closeModal();
           refreshExchangeContextBarFromCache();
           void refreshOkxPositionBar();
@@ -968,7 +897,6 @@ function initConfigCenter() {
           chartInterval = saved.interval || interval;
           applyChartIntervalSelect(chartInterval);
           createTradingViewWidget(saved.defaultSymbol, chartInterval);
-          void refreshCurrentSystemPromptPreview();
           closeModal();
           refreshExchangeContextBarFromCache();
           void refreshOkxPositionBar();
@@ -1069,7 +997,6 @@ function initSymbolSelect() {
     createTradingViewWidget(sym, chartInterval);
     void (async () => {
       await persistChartPreferences({ defaultSymbol: sym });
-      void refreshCurrentSystemPromptPreview();
       refreshExchangeContextBarFromCache();
       void refreshOkxPositionBar();
     })();
@@ -1087,17 +1014,10 @@ function initChartIntervalSelect() {
     createTradingViewWidget(sym, iv);
     void (async () => {
       await persistChartPreferences({ interval: iv });
-      void refreshCurrentSystemPromptPreview();
       refreshExchangeContextBarFromCache();
       void refreshOkxPositionBar();
     })();
   });
-}
-
-function truncateText(str, max) {
-  if (str == null || str === "") return "";
-  if (str.length <= max) return str;
-  return `${str.slice(0, max)}…`;
 }
 
 /**
@@ -1120,6 +1040,10 @@ function formatBarClosePreview(payload) {
       ...safe.chartImage,
       base64: `[省略 ${n} 字符，完整数据在 window.argusLastBarClose.chartImage.base64]`,
     };
+  }
+  if (typeof safe.fullUserPromptForDisplay === "string" && safe.fullUserPromptForDisplay.length > 400) {
+    const n = safe.fullUserPromptForDisplay.length;
+    safe.fullUserPromptForDisplay = `${safe.fullUserPromptForDisplay.slice(0, 400)}… [共 ${n} 字符]`;
   }
   return JSON.stringify(safe, null, 2);
 }
@@ -1343,6 +1267,10 @@ function bindLlmStream() {
           updateOkxBarFromExchangeContext(exchangeContext);
         }
       }
+      const roundDetails = findLlmRoundDetailsForBar(barCloseId);
+      if (roundDetails) {
+        roundDetails.open = false;
+      }
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.analysisText = analysisText;
@@ -1363,6 +1291,10 @@ function bindLlmStream() {
       if (bubbleAsst) {
         bubbleAsst.textContent = message || "错误";
         bubbleAsst.classList.add("llm-bubble--error");
+      }
+      const roundDetailsErr = findLlmRoundDetailsForBar(barCloseId);
+      if (roundDetailsErr) {
+        roundDetailsErr.open = false;
       }
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
@@ -1520,8 +1452,6 @@ export function initArgusApp() {
     applyChartIntervalSelect(cfg.interval || "5");
     const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
     createTradingViewWidget(sym, chartInterval);
-    const sel = document.getElementById("symbol-select");
-    updateCurrentSystemPromptPreview(cfg, sel?.value?.trim() || sym);
     if (window.argus && typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(sym);
     }

@@ -1,7 +1,6 @@
 /**
- * 多轮对话上下文：按「TradingView 品种 + K 线周期」分桶，仅存文本（历史轮不重传截图，避免体积与重复）。
- * API 侧在 bar-close 中另经 keepOnlyLastUserImageInMessages 保证仅最后一轮 user 可带图。
- * 应用正常退出前会 wipeConversationStore，下次启动不继承上次会话。
+ * 历史 JSON 存储（userData/argus-llm-conversations.json）：K 线收盘 Agent 已改为每根独立单轮并写入 SQLite `agent_bar_turns`，
+ * 此处不再由 bar-close 写入。保留文件与 wipeConversationStore 供清理旧数据或后续功能复用。
  */
 const { app } = require("electron");
 const fs = require("fs");

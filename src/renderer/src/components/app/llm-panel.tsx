@@ -63,14 +63,7 @@ export function LlmPanel() {
           </Button>
         </div>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="shrink-0 px-3.5 pt-3">
-            <div
-              className="llm-current-system border-b border-border pb-3"
-              id="llm-current-system"
-              aria-label="当前图表品种对应的系统提示词"
-            />
-          </div>
-          <ScrollArea className="min-h-0 min-w-0 flex-1 px-3.5 pb-3">
+          <ScrollArea className="min-h-0 min-w-0 flex-1 px-3.5 pt-3 pb-3">
             <div
               className="llm-chat-history flex min-h-0 flex-col gap-0"
               id="llm-chat-history"

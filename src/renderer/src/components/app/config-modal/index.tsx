@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Accordion,
   AccordionContent,
@@ -5,9 +6,18 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import {
+  ARGUS_CONFIG_MODAL_CLOSE,
+  ARGUS_CONFIG_MODAL_OPEN,
+} from "@/lib/argus-config-modal-events";
 import { ConfigModalEmailSection } from "./email-section";
 import { ConfigModalFooter } from "./config-modal-footer";
 import { ConfigModalIntro } from "./intro";
@@ -16,40 +26,54 @@ import { ConfigModalOkxSection } from "./okx-section";
 import { ConfigModalStrategySection } from "./strategy-section";
 import { ConfigModalSymbolsAndInterval } from "./symbols-and-interval";
 
-/** 配置中心：DOM id 与结构需与 `argus-renderer.js` 中 getElementById 保持一致 */
+/**
+ * 配置中心：shadcn Dialog；表单 id 与 `argus-renderer.js` 中 getElementById 一致。
+ * 显隐由 `ARGUS_CONFIG_MODAL_OPEN` / `CLOSE` 事件驱动（见 argus-renderer）。
+ */
 export function ConfigModal() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    const onClose = () => setOpen(false);
+    window.addEventListener(ARGUS_CONFIG_MODAL_OPEN, onOpen);
+    window.addEventListener(ARGUS_CONFIG_MODAL_CLOSE, onClose);
+    return () => {
+      window.removeEventListener(ARGUS_CONFIG_MODAL_OPEN, onOpen);
+      window.removeEventListener(ARGUS_CONFIG_MODAL_CLOSE, onClose);
+    };
+  }, []);
+
   return (
-    <div
-      className="modal-backdrop"
-      id="config-modal"
-      hidden
-      aria-modal="true"
-      role="dialog"
-      aria-labelledby="config-modal-title"
-    >
-      <div
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent
+        showCloseButton={false}
+        forceMount
         className={cn(
-          "modal flex max-h-[min(90vh,720px)] min-h-0 w-[min(560px,100%)] flex-col overflow-hidden! p-0!",
+          "flex max-h-[min(90vh,720px)] w-[min(560px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]",
         )}
       >
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-4">
-          <h2 className="modal-title m-0 text-base font-semibold leading-none" id="config-modal-title">
-            配置中心
-          </h2>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:text-foreground"
-            id="btn-config-close"
-            aria-label="关闭"
-          >
-            ×
-          </Button>
-        </div>
+        <DialogHeader className="shrink-0 space-y-0 border-b border-border px-5 py-4 text-left">
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="text-base font-semibold" id="config-modal-title">
+              配置中心
+            </DialogTitle>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              id="btn-config-close"
+              aria-label="关闭"
+            >
+              ×
+            </Button>
+          </div>
+          <DialogDescription className="sr-only">编辑行情、LLM、邮件与 OKX 等配置</DialogDescription>
+        </DialogHeader>
 
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-1 px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          <div className="space-y-1">
             <ConfigModalIntro />
             <p className="modal-path m-0 text-[11px] leading-snug text-muted-foreground" id="config-file-path" />
 
@@ -100,11 +124,10 @@ export function ConfigModal() {
               </AccordionItem>
             </Accordion>
           </div>
-        </ScrollArea>
+        </div>
 
-        <Separator />
         <ConfigModalFooter />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

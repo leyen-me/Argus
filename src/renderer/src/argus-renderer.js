@@ -574,17 +574,16 @@ function initFishMode() {
   );
 }
 
-function initConfigCenter() {
-  const modal = document.getElementById("config-modal");
-  const btnOpen = document.getElementById("btn-open-config");
-  const btnClose = document.getElementById("btn-config-close");
-  const btnCancel = document.getElementById("btn-config-cancel");
-  const btnSave = document.getElementById("btn-config-save");
-  const btnReset = document.getElementById("btn-config-reset");
-  const btnAdd = document.getElementById("btn-config-add");
-  const pathEl = document.getElementById("config-file-path");
+/** 与 `lib/argus-config-modal-events.ts` 中常量一致（shadcn Dialog 由 React 控制显隐） */
+const ARGUS_CONFIG_MODAL_OPEN = "argus:config-modal-open";
+const ARGUS_CONFIG_MODAL_CLOSE = "argus:config-modal-close";
 
-  if (!modal || !btnOpen || !btnSave) return;
+/** Dialog 关闭时 Portal 内按钮可能尚未挂载，不能与 #btn-open-config 同时检测 */
+let __argusConfigFormListenersBound = false;
+
+function initConfigCenter() {
+  const btnOpen = document.getElementById("btn-open-config");
+  if (!btnOpen) return;
 
   const fillConfigModalFields = (cfg) => {
     renderConfigRows(cfg.symbols);
@@ -647,26 +646,47 @@ function initConfigCenter() {
   };
 
   const closeModal = () => {
-    modal.hidden = true;
+    window.dispatchEvent(new CustomEvent(ARGUS_CONFIG_MODAL_CLOSE));
   };
 
   const openModal = async () => {
     const cfg = await loadAppConfig();
-    if (pathEl && window.argus && typeof window.argus.getConfigPath === "function") {
-      try {
-        const p = await window.argus.getConfigPath();
-        pathEl.textContent = `配置文件（仅此一份）：${p}`;
-      } catch {
+    window.dispatchEvent(new CustomEvent(ARGUS_CONFIG_MODAL_OPEN));
+    const fillAfterOpen = async () => {
+      const pathEl = document.getElementById("config-file-path");
+      if (pathEl && window.argus && typeof window.argus.getConfigPath === "function") {
+        try {
+          const p = await window.argus.getConfigPath();
+          pathEl.textContent = `配置文件（仅此一份）：${p}`;
+        } catch {
+          pathEl.textContent = "";
+        }
+      } else if (pathEl) {
         pathEl.textContent = "";
       }
-    }
-    fillConfigModalFields(cfg);
-    modal.hidden = false;
+      fillConfigModalFields(cfg);
+    };
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        void fillAfterOpen();
+      });
+    });
   };
 
   btnOpen.addEventListener("click", () => {
-    openModal();
+    void openModal();
   });
+
+  const tryBindConfigFormListeners = () => {
+    if (__argusConfigFormListenersBound) return true;
+    const btnSave = document.getElementById("btn-config-save");
+    const btnClose = document.getElementById("btn-config-close");
+    const btnCancel = document.getElementById("btn-config-cancel");
+    const btnReset = document.getElementById("btn-config-reset");
+    const btnAdd = document.getElementById("btn-config-add");
+    if (!btnSave) return false;
+    __argusConfigFormListenersBound = true;
+
   btnReset?.addEventListener("click", async () => {
     const ok = window.confirm(
       "将用户目录下的 config.json 恢复为 src/config.json 模板（或内置默认值）。API Key、SMTP 等将清空为默认，是否继续？",
@@ -699,9 +719,6 @@ function initConfigCenter() {
   });
   btnClose?.addEventListener("click", closeModal);
   btnCancel?.addEventListener("click", closeModal);
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
-  });
 
   btnAdd?.addEventListener("click", () => {
     const container = document.getElementById("config-rows");
@@ -848,12 +865,14 @@ function initConfigCenter() {
     }
   });
 
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !modal.hidden) {
-      e.preventDefault();
-      closeModal();
-    }
-  });
+    return true;
+  };
+
+  tryBindConfigFormListeners();
+  const pollId = setInterval(() => {
+    if (tryBindConfigFormListeners()) clearInterval(pollId);
+  }, 50);
+  setTimeout(() => clearInterval(pollId), 15000);
 }
 
 function destroyWidget() {

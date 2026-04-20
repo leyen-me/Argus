@@ -563,6 +563,16 @@ body,
   display: none;
 }
 
+/* shadcn Dialog：与旧配置弹窗一致的压暗与层级（Electron 内与 TradingView 等叠放） */
+[data-slot="dialog-overlay"] {
+  z-index: 1000;
+  background: rgba(1, 4, 9, 0.72);
+}
+
+[data-slot="dialog-content"] {
+  z-index: 1001;
+}
+
 .modal {
   width: min(560px, 100%);
   max-height: min(90vh, 720px);

@@ -1,8 +1,15 @@
 import { Button } from "@/components/ui/button";
+import { DialogFooter } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 export function ConfigModalFooter() {
   return (
-    <div className="config-modal-footer flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-muted/30 px-5 py-4">
+    <DialogFooter
+      className={cn(
+        "config-modal-footer shrink-0 flex-row flex-wrap items-center justify-end gap-2 bg-muted/30 px-5 py-4 sm:justify-end",
+        "mx-0 mb-0 rounded-none border-t border-border",
+      )}
+    >
       <Button
         type="button"
         variant="secondary"
@@ -19,6 +26,6 @@ export function ConfigModalFooter() {
       <Button type="button" size="sm" id="btn-config-save">
         保存
       </Button>
-    </div>
+    </DialogFooter>
   );
 }

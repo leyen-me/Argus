@@ -526,10 +526,6 @@ function renderConfigRows(symbols) {
     btn.type = "button";
     btn.className = "btn-row-remove";
     btn.textContent = "删除";
-    btn.addEventListener("click", () => {
-      row.remove();
-      onConfigRowRemoved();
-    });
 
     row.append(inLabel, inValue, btn);
     container.appendChild(row);
@@ -579,8 +575,11 @@ function initFishMode() {
 const ARGUS_CONFIG_MODAL_OPEN = "argus:config-modal-open";
 const ARGUS_CONFIG_MODAL_CLOSE = "argus:config-modal-close";
 
-/** Dialog 关闭时 Portal 内按钮可能尚未挂载，不能与 #btn-open-config 同时检测 */
-let __argusConfigFormListenersBound = false;
+/**
+ * 配置弹窗按钮用 document 委托绑定：Dialog 关闭会卸载 Portal，若只对节点 addEventListener 一次，
+ * 第二次打开会是新 DOM，旧监听全丢。
+ */
+let __argusConfigModalDocClickBound = false;
 
 function initConfigCenter() {
   const btnOpen = document.getElementById("btn-open-config");
@@ -678,202 +677,217 @@ function initConfigCenter() {
     void openModal();
   });
 
-  const tryBindConfigFormListeners = () => {
-    if (__argusConfigFormListenersBound) return true;
-    const btnSave = document.getElementById("btn-config-save");
-    const btnClose = document.getElementById("btn-config-close");
-    const btnCancel = document.getElementById("btn-config-cancel");
-    const btnReset = document.getElementById("btn-config-reset");
-    const btnAdd = document.getElementById("btn-config-add");
-    if (!btnSave) return false;
-    __argusConfigFormListenersBound = true;
+  const handleConfigModalDocumentClick = (ev) => {
+    const raw = ev.target;
+    if (!(raw instanceof Element)) return;
+    const dlg = raw.closest('[data-slot="dialog-content"]');
+    if (!dlg) return;
 
-  btnReset?.addEventListener("click", async () => {
-    const ok = window.confirm(
-      "将本地数据库中的应用设置恢复为代码中的默认种子。API Key、SMTP 等将清空为默认，是否继续？",
+    const el = raw.closest(
+      "#btn-config-save, #btn-config-reset, #btn-config-close, #btn-config-cancel, #btn-config-add, .btn-row-remove",
     );
-    if (!ok) return;
+    if (!el) return;
 
-    if (!window.argus || typeof window.argus.resetConfig !== "function") {
-      fillConfigModalFields(FALLBACK_APP_CONFIG);
-      applySymbolSelect(FALLBACK_APP_CONFIG);
-      chartInterval = FALLBACK_APP_CONFIG.interval || "5";
-      createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol);
-      void refreshCurrentSystemPromptPreview();
-      setLlmStatus("已恢复界面为内置默认（非 Electron 环境不会写入磁盘）");
-      refreshTradeStateBarFromCache();
-      return;
-    }
-    try {
-      const saved = await window.argus.resetConfig();
-      fillConfigModalFields(saved);
-      applySymbolSelect(saved);
-      chartInterval = saved.interval || "5";
-      createTradingViewWidget(saved.defaultSymbol);
-      void refreshCurrentSystemPromptPreview();
-      setLlmStatus("配置已恢复默认");
-      refreshTradeStateBarFromCache();
-    } catch (err) {
-      console.error(err);
-      setLlmStatus("恢复默认配置失败");
-    }
-  });
-  btnClose?.addEventListener("click", closeModal);
-  btnCancel?.addEventListener("click", closeModal);
-
-  btnAdd?.addEventListener("click", () => {
-    const container = document.getElementById("config-rows");
-    if (!container) return;
-    const row = document.createElement("div");
-    row.className = "config-row";
-    const inLabel = document.createElement("input");
-    inLabel.type = "text";
-    inLabel.className = "config-in config-in-label";
-    inLabel.placeholder = "展示名称";
-    const inValue = document.createElement("input");
-    inValue.type = "text";
-    inValue.className = "config-in config-in-value";
-    inValue.placeholder = "OKX:BTCUSDT";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn-row-remove";
-    btn.textContent = "删除";
-    btn.addEventListener("click", () => {
-      row.remove();
+    if (el.classList.contains("btn-row-remove")) {
+      ev.preventDefault();
+      const row = el.closest(".config-row");
+      row?.remove();
       onConfigRowRemoved();
-    });
-    row.append(inLabel, inValue, btn);
-    container.appendChild(row);
-  });
-
-  btnSave.addEventListener("click", async () => {
-    let symbols = collectSymbolsFromConfigRows();
-    const defEl = document.getElementById("config-default-symbol");
-    let defaultSymbol = defEl?.value?.trim() ?? "";
-    if (symbols.length === 0) {
-      setLlmStatus("请至少填写一行品种");
       return;
     }
-    if (!symbols.some((s) => s.value === defaultSymbol)) {
-      defaultSymbol = symbols[0].value;
-    }
-    const intEl = document.getElementById("config-interval");
-    const interval = intEl?.value?.trim() || "5";
-    const openaiUrlEl = document.getElementById("config-openai-base-url");
-    const openaiModelEl = document.getElementById("config-openai-model");
-    const openaiKeyEl = document.getElementById("config-openai-api-key");
-    const openaiBaseUrl = openaiUrlEl?.value?.trim() ?? "";
-    const openaiModel = openaiModelEl?.value?.trim() ?? "";
-    const openaiApiKey = openaiKeyEl?.value?.trim() ?? "";
-    const reasoningEl = document.getElementById("config-llm-reasoning");
-    const llmReasoningEnabled = reasoningEl?.checked === true;
-    const tradeNotifyEl = document.getElementById("config-trade-notify-email");
-    const tradeNotifyEmailEnabled = tradeNotifyEl?.checked === true;
-    const smtpUserEl = document.getElementById("config-smtp-user");
-    const smtpPassEl = document.getElementById("config-smtp-pass");
-    const notifyToEl = document.getElementById("config-notify-email-to");
-    const smtpUser = smtpUserEl?.value?.trim() ?? "";
-    const smtpPass = smtpPassEl?.value?.trim() ?? "";
-    const notifyEmailTo = notifyToEl?.value?.trim() ?? "";
-    const okxEn = document.getElementById("config-okx-swap-enabled");
-    const okxSim = document.getElementById("config-okx-simulated");
-    const okxAk = document.getElementById("config-okx-api-key");
-    const okxSk = document.getElementById("config-okx-secret-key");
-    const okxPh = document.getElementById("config-okx-passphrase");
-    const okxLev = document.getElementById("config-okx-leverage");
-    const okxMf = document.getElementById("config-okx-margin-fraction");
-    const okxTd = document.getElementById("config-okx-td-mode");
-    const okxSwapTradingEnabled = okxEn?.checked === true;
-    const okxSimulated = okxSim?.checked !== false;
-    const okxApiKey = okxAk?.value?.trim() ?? "";
-    const okxSecretKey = okxSk?.value?.trim() ?? "";
-    const okxPassphrase = okxPh?.value?.trim() ?? "";
-    const okxSwapLeverage = Math.min(125, Math.max(1, Math.floor(Number(okxLev?.value) || 10)));
-    const okxSwapMarginFraction = Math.min(
-      1,
-      Math.max(0.01, Number(okxMf?.value) || 0.25),
-    );
-    const okxTdMode = okxTd?.value === "isolated" ? "isolated" : "cross";
-    const stratEl = document.getElementById("config-prompt-strategy");
-    const promptStrategy = stratEl?.value?.trim() || "default";
 
-    if (!window.argus || typeof window.argus.saveConfig !== "function") {
-      applySymbolSelect({ symbols, defaultSymbol });
-      chartInterval = interval;
-      createTradingViewWidget(defaultSymbol);
-      const selAfter = document.getElementById("symbol-select");
-      updateCurrentSystemPromptPreview(
-        {
-          ...FALLBACK_APP_CONFIG,
-          symbols,
-          defaultSymbol,
-          interval,
-          promptStrategy,
-          llmReasoningEnabled,
-          tradeNotifyEmailEnabled,
-          smtpUser,
-          smtpPass,
-          notifyEmailTo,
-          okxSwapTradingEnabled,
-          okxSimulated,
-          okxApiKey,
-          okxSecretKey,
-          okxPassphrase,
-          okxSwapLeverage,
-          okxSwapMarginFraction,
-          okxTdMode,
-        },
-        selAfter?.value?.trim() || defaultSymbol,
-      );
-      closeModal();
-      refreshTradeStateBarFromCache();
-      void refreshOkxPositionBar();
+    const id = el.id;
+    if (id === "btn-config-add") {
+      ev.preventDefault();
+      const container = document.getElementById("config-rows");
+      if (!container) return;
+      const row = document.createElement("div");
+      row.className = "config-row";
+      const inLabel = document.createElement("input");
+      inLabel.type = "text";
+      inLabel.className = "config-in config-in-label";
+      inLabel.placeholder = "展示名称";
+      const inValue = document.createElement("input");
+      inValue.type = "text";
+      inValue.className = "config-in config-in-value";
+      inValue.placeholder = "OKX:BTCUSDT";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-row-remove";
+      btn.textContent = "删除";
+      row.append(inLabel, inValue, btn);
+      container.appendChild(row);
       return;
     }
-    try {
-      const saved = await window.argus.saveConfig({
-        symbols,
-        defaultSymbol,
-        interval,
-        promptStrategy,
-        openaiBaseUrl,
-        openaiModel,
-        openaiApiKey,
-        llmReasoningEnabled,
-        tradeNotifyEmailEnabled,
-        smtpUser,
-        smtpPass,
-        notifyEmailTo,
-        okxSwapTradingEnabled,
-        okxSimulated,
-        okxApiKey,
-        okxSecretKey,
-        okxPassphrase,
-        okxSwapLeverage,
-        okxSwapMarginFraction,
-        okxTdMode,
-      });
-      applySymbolSelect(saved);
-      chartInterval = saved.interval || interval;
-      createTradingViewWidget(saved.defaultSymbol);
-      void refreshCurrentSystemPromptPreview();
-      closeModal();
-      refreshTradeStateBarFromCache();
-      void refreshOkxPositionBar();
-    } catch (err) {
-      console.error(err);
-      setLlmStatus("保存配置失败");
-    }
-  });
 
-    return true;
+    if (id === "btn-config-close" || id === "btn-config-cancel") {
+      closeModal();
+      return;
+    }
+
+    if (id === "btn-config-reset") {
+      ev.preventDefault();
+      void (async () => {
+        const ok = window.confirm(
+          "将本地数据库中的应用设置恢复为代码中的默认种子。API Key、SMTP 等将清空为默认，是否继续？",
+        );
+        if (!ok) return;
+
+        if (!window.argus || typeof window.argus.resetConfig !== "function") {
+          fillConfigModalFields(FALLBACK_APP_CONFIG);
+          applySymbolSelect(FALLBACK_APP_CONFIG);
+          chartInterval = FALLBACK_APP_CONFIG.interval || "5";
+          createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol);
+          void refreshCurrentSystemPromptPreview();
+          setLlmStatus("已恢复界面为内置默认（非 Electron 环境不会写入磁盘）");
+          refreshTradeStateBarFromCache();
+          return;
+        }
+        try {
+          const saved = await window.argus.resetConfig();
+          fillConfigModalFields(saved);
+          applySymbolSelect(saved);
+          chartInterval = saved.interval || "5";
+          createTradingViewWidget(saved.defaultSymbol);
+          void refreshCurrentSystemPromptPreview();
+          setLlmStatus("配置已恢复默认");
+          refreshTradeStateBarFromCache();
+        } catch (err) {
+          console.error(err);
+          setLlmStatus("恢复默认配置失败");
+        }
+      })();
+      return;
+    }
+
+    if (id === "btn-config-save") {
+      ev.preventDefault();
+      void (async () => {
+        let symbols = collectSymbolsFromConfigRows();
+        const defEl = document.getElementById("config-default-symbol");
+        let defaultSymbol = defEl?.value?.trim() ?? "";
+        if (symbols.length === 0) {
+          setLlmStatus("请至少填写一行品种");
+          return;
+        }
+        if (!symbols.some((s) => s.value === defaultSymbol)) {
+          defaultSymbol = symbols[0].value;
+        }
+        const intEl = document.getElementById("config-interval");
+        const interval = intEl?.value?.trim() || "5";
+        const openaiUrlEl = document.getElementById("config-openai-base-url");
+        const openaiModelEl = document.getElementById("config-openai-model");
+        const openaiKeyEl = document.getElementById("config-openai-api-key");
+        const openaiBaseUrl = openaiUrlEl?.value?.trim() ?? "";
+        const openaiModel = openaiModelEl?.value?.trim() ?? "";
+        const openaiApiKey = openaiKeyEl?.value?.trim() ?? "";
+        const reasoningEl = document.getElementById("config-llm-reasoning");
+        const llmReasoningEnabled = reasoningEl?.checked === true;
+        const tradeNotifyEl = document.getElementById("config-trade-notify-email");
+        const tradeNotifyEmailEnabled = tradeNotifyEl?.checked === true;
+        const smtpUserEl = document.getElementById("config-smtp-user");
+        const smtpPassEl = document.getElementById("config-smtp-pass");
+        const notifyToEl = document.getElementById("config-notify-email-to");
+        const smtpUser = smtpUserEl?.value?.trim() ?? "";
+        const smtpPass = smtpPassEl?.value?.trim() ?? "";
+        const notifyEmailTo = notifyToEl?.value?.trim() ?? "";
+        const okxEn = document.getElementById("config-okx-swap-enabled");
+        const okxSim = document.getElementById("config-okx-simulated");
+        const okxAk = document.getElementById("config-okx-api-key");
+        const okxSk = document.getElementById("config-okx-secret-key");
+        const okxPh = document.getElementById("config-okx-passphrase");
+        const okxLev = document.getElementById("config-okx-leverage");
+        const okxMf = document.getElementById("config-okx-margin-fraction");
+        const okxTd = document.getElementById("config-okx-td-mode");
+        const okxSwapTradingEnabled = okxEn?.checked === true;
+        const okxSimulated = okxSim?.checked !== false;
+        const okxApiKey = okxAk?.value?.trim() ?? "";
+        const okxSecretKey = okxSk?.value?.trim() ?? "";
+        const okxPassphrase = okxPh?.value?.trim() ?? "";
+        const okxSwapLeverage = Math.min(125, Math.max(1, Math.floor(Number(okxLev?.value) || 10)));
+        const okxSwapMarginFraction = Math.min(
+          1,
+          Math.max(0.01, Number(okxMf?.value) || 0.25),
+        );
+        const okxTdMode = okxTd?.value === "isolated" ? "isolated" : "cross";
+        const stratEl = document.getElementById("config-prompt-strategy");
+        const promptStrategy = stratEl?.value?.trim() || "default";
+
+        if (!window.argus || typeof window.argus.saveConfig !== "function") {
+          applySymbolSelect({ symbols, defaultSymbol });
+          chartInterval = interval;
+          createTradingViewWidget(defaultSymbol);
+          const selAfter = document.getElementById("symbol-select");
+          updateCurrentSystemPromptPreview(
+            {
+              ...FALLBACK_APP_CONFIG,
+              symbols,
+              defaultSymbol,
+              interval,
+              promptStrategy,
+              llmReasoningEnabled,
+              tradeNotifyEmailEnabled,
+              smtpUser,
+              smtpPass,
+              notifyEmailTo,
+              okxSwapTradingEnabled,
+              okxSimulated,
+              okxApiKey,
+              okxSecretKey,
+              okxPassphrase,
+              okxSwapLeverage,
+              okxSwapMarginFraction,
+              okxTdMode,
+            },
+            selAfter?.value?.trim() || defaultSymbol,
+          );
+          closeModal();
+          refreshTradeStateBarFromCache();
+          void refreshOkxPositionBar();
+          return;
+        }
+        try {
+          const saved = await window.argus.saveConfig({
+            symbols,
+            defaultSymbol,
+            interval,
+            promptStrategy,
+            openaiBaseUrl,
+            openaiModel,
+            openaiApiKey,
+            llmReasoningEnabled,
+            tradeNotifyEmailEnabled,
+            smtpUser,
+            smtpPass,
+            notifyEmailTo,
+            okxSwapTradingEnabled,
+            okxSimulated,
+            okxApiKey,
+            okxSecretKey,
+            okxPassphrase,
+            okxSwapLeverage,
+            okxSwapMarginFraction,
+            okxTdMode,
+          });
+          applySymbolSelect(saved);
+          chartInterval = saved.interval || interval;
+          createTradingViewWidget(saved.defaultSymbol);
+          void refreshCurrentSystemPromptPreview();
+          closeModal();
+          refreshTradeStateBarFromCache();
+          void refreshOkxPositionBar();
+        } catch (err) {
+          console.error(err);
+          setLlmStatus("保存配置失败");
+        }
+      })();
+    }
   };
 
-  tryBindConfigFormListeners();
-  const pollId = setInterval(() => {
-    if (tryBindConfigFormListeners()) clearInterval(pollId);
-  }, 50);
-  setTimeout(() => clearInterval(pollId), 15000);
+  if (!__argusConfigModalDocClickBound) {
+    __argusConfigModalDocClickBound = true;
+    document.addEventListener("click", handleConfigModalDocumentClick);
+  }
 }
 
 function destroyWidget() {

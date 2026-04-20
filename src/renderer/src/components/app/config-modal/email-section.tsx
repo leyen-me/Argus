@@ -32,7 +32,7 @@ export function ConfigModalEmailSection() {
           type="checkbox"
           id="config-trade-notify-email"
           className="size-4 shrink-0 rounded border-input accent-primary"
-          title="写入 config.json 的 tradeNotifyEmailEnabled"
+          title="写入应用设置的 tradeNotifyEmailEnabled（SQLite）"
         />
         <Label htmlFor="config-trade-notify-email" className="cursor-pointer font-normal">
           启用仓位邮件

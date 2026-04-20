@@ -57,7 +57,7 @@ const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "若信号一般、位置不佳、盈亏比不清晰或只是震荡中部，优先 WAIT / HOLD / CANCEL_LOOKING。" +
   "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
 
-/** 与内置模板 src/config.json 语义一致，供非 Electron 打开页面时兜底 */
+/** 与主进程 `APP_SETTINGS_SEED` + 兜底系统提示词语义一致，供非 Electron 打开页面时兜底 */
 const FALLBACK_APP_CONFIG = {
   symbols: [
     { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
@@ -67,10 +67,11 @@ const FALLBACK_APP_CONFIG = {
   promptStrategy: "default",
   promptStrategies: ["default"],
   interval: "5",
-  openaiBaseUrl: "https://api.openai.com/v1",
-  openaiModel: "gpt-4o-mini",
+  openaiBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  openaiModel: "qwen3.5-plus",
   openaiApiKey: "",
   systemPromptCrypto: FALLBACK_SYSTEM_PROMPT_CRYPTO,
+  llmRequestTimeoutMs: 300000,
   llmReasoningEnabled: false,
   tradeNotifyEmailEnabled: false,
   smtpHost: "smtp.qq.com",
@@ -85,8 +86,8 @@ const FALLBACK_APP_CONFIG = {
   okxSecretKey: "",
   okxPassphrase: "",
   okxSwapLeverage: 10,
-    okxSwapMarginFraction: 0.25,
-    okxTdMode: "isolated",
+  okxSwapMarginFraction: 0.25,
+  okxTdMode: "isolated",
 };
 
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
@@ -657,7 +658,7 @@ function initConfigCenter() {
       if (pathEl && window.argus && typeof window.argus.getConfigPath === "function") {
         try {
           const p = await window.argus.getConfigPath();
-          pathEl.textContent = `配置文件（仅此一份）：${p}`;
+          pathEl.textContent = `本地数据库（应用设置存于此）：${p}`;
         } catch {
           pathEl.textContent = "";
         }
@@ -689,7 +690,7 @@ function initConfigCenter() {
 
   btnReset?.addEventListener("click", async () => {
     const ok = window.confirm(
-      "将用户目录下的 config.json 恢复为 src/config.json 模板（或内置默认值）。API Key、SMTP 等将清空为默认，是否继续？",
+      "将本地数据库中的应用设置恢复为代码中的默认种子。API Key、SMTP 等将清空为默认，是否继续？",
     );
     if (!ok) return;
 

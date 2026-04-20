@@ -1,5 +1,4 @@
 import { app, BrowserWindow, ipcMain } from "electron";
-import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createRequire } from "module";
@@ -11,13 +10,10 @@ const require = createRequire(import.meta.url);
 const nodeRoot = path.join(__dirname, "..", "..", "src", "node");
 const cryptoSched = require(path.join(nodeRoot, "crypto-scheduler.js"));
 const { inferFeed } = require(path.join(nodeRoot, "market.js"));
-const {
-  loadAppConfig,
-  normalizeConfig,
-  configPath,
-  stripSystemPromptsForPersistence,
-  resetAppConfig,
-} = require(path.join(nodeRoot, "app-config.js"));
+const { loadAppConfig, databasePath, resetAppConfig, saveMergedConfigPayload } = require(
+  path.join(nodeRoot, "app-config.js"),
+);
+const { closeDatabase } = require(path.join(nodeRoot, "local-db", "index.js"));
 const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context.js"));
 const { wipeTradingStateStore } = require(path.join(nodeRoot, "trading-state.js"));
 const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp.js"));
@@ -46,7 +42,7 @@ async function routeMarket(cfg, tvSymbol) {
 
 ipcMain.handle("config:get", () => loadAppConfig());
 
-ipcMain.handle("config:path", () => configPath());
+ipcMain.handle("config:path", () => databasePath());
 
 ipcMain.handle("devtools:open", () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -55,15 +51,7 @@ ipcMain.handle("devtools:open", () => {
 });
 
 ipcMain.handle("config:save", async (_event, payload) => {
-  const current = loadAppConfig();
-  const merged = { ...current, ...payload };
-  const next = normalizeConfig(merged);
-  fs.mkdirSync(path.dirname(configPath()), { recursive: true });
-  fs.writeFileSync(
-    configPath(),
-    `${JSON.stringify(stripSystemPromptsForPersistence(next), null, 2)}\n`,
-    "utf8",
-  );
+  const next = saveMergedConfigPayload(payload ?? {});
   await routeMarket(next, next.defaultSymbol);
   return next;
 });
@@ -141,4 +129,5 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   wipeConversationStore();
   wipeTradingStateStore();
+  closeDatabase();
 });

@@ -15,8 +15,8 @@ export function ConfigModalStrategySection() {
         <ConfigHelpTooltip>
           <div className="space-y-2">
             <p className="m-0">
-              每种策略对应 <code>{`src/prompts/<策略名>/system-crypto.txt`}</code>；保存后写入{" "}
-              <code>config.json</code> 的 <code>promptStrategy</code>。
+              每种策略对应 <code>{`src/prompts/<策略名>/system-crypto.txt`}</code>；保存后写入本地库的{" "}
+              <code>promptStrategy</code>。
             </p>
             <p className="m-0">
               与行情一致：仅 <code>BINANCE:</code> / <code>OKX:</code> 或品种行 <code>feed: crypto</code>。改

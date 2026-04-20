@@ -1,26 +1,58 @@
-const { app } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
-/**
- * 应用配置仅此一份：用户数据目录下的 `config.json`（与仓库内同名模板在首次启动时用于生成该文件）。
- * 旧版 `argus-config.json` 会在首次迁移到 `config.json` 后删除。
- *
- * 系统提示词按策略分目录：`prompts/<策略名>/system-crypto.txt`；当前策略 ID 写在 `config.json` 的 `promptStrategy`。
- */
-/** 内置模板与 prompts 所在目录（本文件在 src/node，资源在 src/） */
-const SRC_ROOT = path.join(__dirname, "..");
-const BUNDLED_CONFIG = path.join(SRC_ROOT, "config.json");
-const LEGACY_USER_CONFIG_NAME = "argus-config.json";
+const localDb = require("./local-db");
 
+/**
+ * 应用可序列化设置保存在 userData SQLite（`local-db`）的 kv `app/settings` 中。
+ * 首次启动或库中无记录时：用 {@link APP_SETTINGS_SEED} 经 `normalizeConfig` 后写入。
+ *
+ * 系统提示词正文不落库，仅 `promptStrategy` 落库；正文来自 `prompts/<策略名>/system-crypto.txt`（每次 load 读盘）。
+ */
+/** prompts 所在目录（本文件在 src/node，资源在 src/） */
+const SRC_ROOT = path.join(__dirname, "..");
 const PROMPTS_DIR = path.join(SRC_ROOT, "prompts");
 const STRATEGY_PROMPT_BASENAME = "system-crypto.txt";
 const DEFAULT_PROMPT_STRATEGY = "default";
 
 const ALLOWED_INTERVAL = new Set(["1", "3", "5", "15", "30", "60", "120", "240", "D", "1D"]);
 
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+/**
+ * 首次安装 /「恢复默认」时使用的持久化字段种子（仅存在于代码）。
+ * @type {Readonly<Record<string, unknown>>}
+ */
+const APP_SETTINGS_SEED = Object.freeze({
+  symbols: [
+    { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
+    { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
+  ],
+  defaultSymbol: "OKX:BTCUSDT",
+  promptStrategy: "default",
+  interval: "5",
+  openaiBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  openaiModel: "qwen3.5-plus",
+  openaiApiKey: "",
+  llmRequestTimeoutMs: 300_000,
+  llmReasoningEnabled: false,
+  tradeNotifyEmailEnabled: false,
+  smtpHost: "smtp.qq.com",
+  smtpPort: 465,
+  smtpSecure: true,
+  smtpUser: "",
+  smtpPass: "",
+  notifyEmailTo: "",
+  okxSwapTradingEnabled: false,
+  okxSimulated: true,
+  okxApiKey: "",
+  okxSecretKey: "",
+  okxPassphrase: "",
+  okxSwapLeverage: 10,
+  okxSwapMarginFraction: 0.25,
+  okxTdMode: "isolated",
+});
+
+const DEFAULT_OPENAI_BASE_URL = APP_SETTINGS_SEED.openaiBaseUrl;
+const DEFAULT_OPENAI_MODEL = APP_SETTINGS_SEED.openaiModel;
 
 /** 仅当策略文件缺失或为空时的极简兜底（与 renderer 非 Electron 兜底语义一致） */
 const MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO =
@@ -103,50 +135,18 @@ function loadSystemPromptsFromDisk(strategyId) {
 }
 
 function defaultConfigFallback() {
-  const promptStrategy = resolvePromptStrategyId(DEFAULT_PROMPT_STRATEGY);
+  const promptStrategy = resolvePromptStrategyId(
+    typeof APP_SETTINGS_SEED.promptStrategy === "string" ? APP_SETTINGS_SEED.promptStrategy : undefined,
+  );
   return {
-    symbols: [
-      { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
-      { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
-    ],
-    defaultSymbol: "OKX:BTCUSDT",
-    interval: "5",
-    openaiBaseUrl: DEFAULT_OPENAI_BASE_URL,
-    openaiModel: DEFAULT_OPENAI_MODEL,
-    openaiApiKey: "",
+    ...APP_SETTINGS_SEED,
     promptStrategy,
     ...loadSystemPromptsFromDisk(promptStrategy),
-    /** 单次调用 LLM 的超时（毫秒），含流式读完全程 */
-    llmRequestTimeoutMs: 300_000,
-    /**
-     * 是否请求并展示「深度思考」：OpenRouter 用 `reasoning.enabled`；其它兼容端点（如通义）用 `enable_thinking`。
-     * 默认关闭；模型不支持时可能被忽略或报错，请按需开启。
-     */
-    llmReasoningEnabled: false,
-    /** 模拟仓位开仓/平仓（含止损止盈硬触发）时发邮件；需配置 QQ SMTP 授权码 */
-    tradeNotifyEmailEnabled: false,
-    smtpHost: "smtp.qq.com",
-    smtpPort: 465,
-    smtpSecure: true,
-    smtpUser: "",
-    smtpPass: "",
-    /** 留空则发到发件邮箱本号 */
-    notifyEmailTo: "",
-    /** OKX USDT 永续：需显式开启；默认模拟盘（x-simulated-trading + 模拟站密钥） */
-    okxSwapTradingEnabled: false,
-    okxSimulated: true,
-    okxApiKey: "",
-    okxSecretKey: "",
-    okxPassphrase: "",
-    okxSwapLeverage: 10,
-    /** 使用账户 USDT 可用权益的比例作为单笔保证金（默认 0.25 = 25%） */
-    okxSwapMarginFraction: 0.25,
-    okxTdMode: "isolated",
   };
 }
 
 /**
- * 写入 `config.json` 时不包含完整系统提示词正文（正文仅来自 `prompts/<策略>/system-crypto.txt`），但保留 `promptStrategy`。
+ * 持久化时不写入完整系统提示词正文（正文仅来自 `prompts/<策略>/system-crypto.txt`），但保留 `promptStrategy`。
  * @param {object} cfg `normalizeConfig` 返回值
  */
 function stripSystemPromptsForPersistence(cfg) {
@@ -155,78 +155,57 @@ function stripSystemPromptsForPersistence(cfg) {
   return rest;
 }
 
-/** @returns {string} 唯一生效的配置文件路径（userData/config.json） */
-function configPath() {
-  return path.join(app.getPath("userData"), "config.json");
+function persistLoadedConfig(normalizedCfg) {
+  const payload = stripSystemPromptsForPersistence(normalizedCfg);
+  localDb.kvSet(
+    localDb.KV_NS_APP,
+    localDb.KV_KEY_SETTINGS,
+    `${JSON.stringify(payload, null, 2)}\n`,
+  );
 }
 
-/** @deprecated 与 configPath 相同，保留旧名 */
+/** @returns {string} 本地 SQLite 数据库路径（userData/argus.sqlite） */
+function databasePath() {
+  return localDb.databasePath();
+}
+
+/** @deprecated 历史名 configPath；现为 SQLite 库路径，与 {@link databasePath} 相同 */
+function configPath() {
+  return databasePath();
+}
+
+/** @deprecated 与 databasePath 相同，保留旧名 */
 function userConfigPath() {
-  return configPath();
+  return databasePath();
 }
 
 /**
- * 与首次启动种子一致：优先使用 `src/config.json` 模板，否则用内置默认再 `normalizeConfig`。
+ * 确保 kv 中已有应用设置：否则用代码种子写入。
+ */
+function ensurePersistedConfig() {
+  localDb.getDatabase();
+  if (localDb.kvHas(localDb.KV_NS_APP, localDb.KV_KEY_SETTINGS)) return;
+
+  const initial = buildInitialConfigFromSeed();
+  persistLoadedConfig(initial);
+}
+
+/**
+ * 与首次启动 /「恢复默认」一致：`APP_SETTINGS_SEED` 经 `normalizeConfig`。
  * @returns {ReturnType<typeof normalizeConfig>}
  */
-function buildInitialConfigFromBundled() {
-  let raw = null;
-  try {
-    if (fs.existsSync(BUNDLED_CONFIG)) {
-      raw = JSON.parse(fs.readFileSync(BUNDLED_CONFIG, "utf8"));
-    }
-  } catch {
-    raw = null;
-  }
-  return normalizeConfig(raw && typeof raw === "object" ? raw : defaultConfigFallback());
+function buildInitialConfigFromSeed() {
+  return normalizeConfig({ ...APP_SETTINGS_SEED });
 }
 
 /**
- * 将用户 `config.json` 重置为模板/内置默认值（覆盖写入），并返回规范化后的完整配置（含当前磁盘上的系统提示词）。
+ * 将应用设置重置为模板/内置默认值（覆盖写入 SQLite），并返回规范化后的完整配置（含当前磁盘上的系统提示词）。
  * @returns {ReturnType<typeof normalizeConfig>}
  */
 function resetAppConfig() {
-  const initial = buildInitialConfigFromBundled();
-  const p = configPath();
-  try {
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, `${JSON.stringify(stripSystemPromptsForPersistence(initial), null, 2)}\n`, "utf8");
-  } catch {
-    /* ignore */
-  }
+  const initial = buildInitialConfigFromSeed();
+  persistLoadedConfig(initial);
   return initial;
-}
-
-/**
- * 确保 userData/config.json 存在：优先迁移旧 argus-config.json，否则从 `src/config.json` 模板或内置默认写入。
- */
-function ensureConfigFile() {
-  const p = configPath();
-  const dir = path.dirname(p);
-  const legacy = path.join(dir, LEGACY_USER_CONFIG_NAME);
-
-  if (fs.existsSync(p)) {
-    return;
-  }
-
-  fs.mkdirSync(dir, { recursive: true });
-
-  if (fs.existsSync(legacy)) {
-    try {
-      fs.copyFileSync(legacy, p);
-      fs.unlinkSync(legacy);
-      return;
-    } catch {
-      /* fall through to seed */
-    }
-  }
-
-  const initial = buildInitialConfigFromBundled();
-  try {
-    fs.writeFileSync(p, `${JSON.stringify(stripSystemPromptsForPersistence(initial), null, 2)}\n`, "utf8");
-  } catch {
-    /* ignore */
-  }
 }
 
 function normalizeOpenAiBaseUrl(raw) {
@@ -372,23 +351,41 @@ function normalizeConfig(raw) {
 }
 
 function loadAppConfig() {
-  ensureConfigFile();
-  const p = configPath();
+  ensurePersistedConfig();
+  const rawStr = localDb.kvGet(localDb.KV_NS_APP, localDb.KV_KEY_SETTINGS);
   try {
-    const raw = JSON.parse(fs.readFileSync(p, "utf8"));
+    const raw = JSON.parse(rawStr);
     return normalizeConfig(raw);
   } catch {
-    return normalizeConfig(defaultConfigFallback());
+    const repaired = normalizeConfig(defaultConfigFallback());
+    persistLoadedConfig(repaired);
+    return repaired;
   }
 }
 
+/**
+ * 合并 partial 到当前配置、规范化并持久化（主进程保存配置用）。
+ * @param {Record<string, unknown>} payload
+ * @returns {ReturnType<typeof normalizeConfig>}
+ */
+function saveMergedConfigPayload(payload) {
+  const current = loadAppConfig();
+  const merged = { ...current, ...payload };
+  const next = normalizeConfig(merged);
+  persistLoadedConfig(next);
+  return next;
+}
+
 module.exports = {
+  APP_SETTINGS_SEED,
   loadAppConfig,
   normalizeConfig,
+  databasePath,
   configPath,
   userConfigPath,
-  buildInitialConfigFromBundled,
+  buildInitialConfigFromSeed,
   resetAppConfig,
+  saveMergedConfigPayload,
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
   loadSystemPromptsFromDisk,

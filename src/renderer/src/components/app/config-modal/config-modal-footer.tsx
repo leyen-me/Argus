@@ -16,7 +16,7 @@ export function ConfigModalFooter() {
         size="sm"
         className="mr-auto"
         id="btn-config-reset"
-        title="将用户目录 config.json 恢复为 src/config.json 模板（或内置默认值），API Key 等将清空"
+        title="将 SQLite 中的应用设置恢复为代码中的默认种子，API Key 等将清空"
       >
         恢复默认
       </Button>

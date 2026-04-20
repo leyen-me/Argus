@@ -6,18 +6,21 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron",
-      "esbuild"
+      "esbuild",
+      "better-sqlite3"
     ]
   },
   "scripts": {
     "start": "electron .",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
     "preview": "electron-vite preview",
     "test:dashscope": "node tests/dashscope-generation-demo.test.js",
     "test:okx": "node --test tests/okx-swap-open-close.test.js"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
@@ -30,6 +33,7 @@
     "vite": "^6.4.2"
   },
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.8.0",

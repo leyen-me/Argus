@@ -4,8 +4,7 @@ export function ConfigModalIntro() {
   return (
     <div className="flex items-start gap-2 pb-2">
       <p className="m-0 flex-1 text-sm leading-snug text-muted-foreground">
-        编辑本机 <code className="rounded bg-muted px-1 py-0.5 text-xs">config.json</code>：交易品种、K
-        线周期、LLM 与交易所等。路径见下方。
+        编辑本机 SQLite 中的应用设置：交易品种、K 线周期、LLM 与交易所等。数据库路径见下方。
       </p>
       <ConfigHelpTooltip className="mt-0.5">
         <div className="space-y-2">
@@ -21,7 +20,7 @@ export function ConfigModalIntro() {
             <strong>interval</strong> 与图表周期、WS 一致。
           </p>
           <p className="m-0">
-            首次启动会从内置模板 <code>src/config.json</code> 生成用户目录配置；保存即写回该文件。
+            首次启动会用代码中的默认种子写入本地库；保存即写回 SQLite。
           </p>
         </div>
       </ConfigHelpTooltip>

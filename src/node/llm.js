@@ -60,7 +60,7 @@ function isDashScopeBaseUrl(baseURL) {
  * @param {object | null | undefined} cfg */
 function mapLlmSdkError(e, cfg) {
   const timeoutMsg =
-    "LLM 请求超时（可在 config.json 里改 llmRequestTimeoutMs，单位毫秒）";
+    "LLM 请求超时（可在应用设置里改 llmRequestTimeoutMs，单位毫秒）";
   if (e instanceof APIUserAbortError) {
     return { ok: false, text: timeoutMsg };
   }

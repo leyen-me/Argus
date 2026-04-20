@@ -1,10 +1,4 @@
 import { useEffect, useState } from "react";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -80,52 +74,28 @@ export function ConfigModal() {
             <ConfigModalIntro />
             <p className="modal-path m-0 text-[11px] leading-snug text-muted-foreground" id="config-file-path" />
 
-            <Accordion
-              type="multiple"
-              defaultValue={["market", "llm", "email", "okx", "strategy"]}
-              className="w-full pt-2"
-            >
-              <AccordionItem value="market" className="border-border/80">
-                <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">
-                  行情与周期
-                </AccordionTrigger>
-                <AccordionContent>
-                  <ConfigModalSymbolsAndInterval />
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="llm" className="border-border/80">
-                <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">
-                  LLM 接口
-                </AccordionTrigger>
-                <AccordionContent>
-                  <ConfigModalLlmSection />
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="email" className="border-border/80">
-                <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">
-                  仓位邮件
-                </AccordionTrigger>
-                <AccordionContent>
-                  <ConfigModalEmailSection />
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="okx" className="border-border/80">
-                <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">
-                  OKX 永续
-                </AccordionTrigger>
-                <AccordionContent>
-                  <ConfigModalOkxSection />
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="strategy" className="border-border/80">
-                <AccordionTrigger className="py-3 text-sm font-medium hover:no-underline">
-                  交易策略
-                </AccordionTrigger>
-                <AccordionContent>
-                  <ConfigModalStrategySection />
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+            <div className="flex flex-col gap-6 pt-4">
+              <section className="space-y-0">
+                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">行情与周期</h3>
+                <ConfigModalSymbolsAndInterval />
+              </section>
+              <section className="space-y-0">
+                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">LLM 接口</h3>
+                <ConfigModalLlmSection />
+              </section>
+              <section className="space-y-0">
+                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">仓位邮件</h3>
+                <ConfigModalEmailSection />
+              </section>
+              <section className="space-y-0">
+                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">OKX 永续</h3>
+                <ConfigModalOkxSection />
+              </section>
+              <section className="space-y-0">
+                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">交易策略</h3>
+                <ConfigModalStrategySection />
+              </section>
+            </div>
           </div>
         </div>
 

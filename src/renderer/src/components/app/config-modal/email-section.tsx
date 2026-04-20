@@ -6,7 +6,7 @@ export function ConfigModalEmailSection() {
   return (
     <div className="space-y-4 pt-1">
       <div className="flex items-center gap-2">
-        <p className="m-0 text-xs text-muted-foreground">模拟仓位开平仓或触发止损/止盈时发邮件（QQ SMTP）。</p>
+        <p className="m-0 text-xs text-muted-foreground">预留：交易通知邮件（QQ SMTP；当前版本主流程不自动发送）。</p>
         <ConfigHelpTooltip>
           <div className="space-y-2">
             <p className="m-0">

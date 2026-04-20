@@ -1,5 +1,5 @@
 /**
- * OKX USDT 永续（SWAP）下单：与状态机转移对齐，仅处理 OKX: 前缀品种。
+ * OKX USDT 永续（SWAP）REST：Agent 工具与快照，仅处理 OKX: 前缀品种。
  * 使用账户可用 USDT 的 okxSwapMarginFraction（默认 25%）作为保证金，
  * 名义约 = 保证金 × 杠杆；合约张数按行情价与 ctVal 换算。
  */
@@ -911,16 +911,6 @@ async function smokeSwapOpenLongThenClose(opts) {
 }
 
 /**
- * @param {object} cfg
- * @param {object} args
- * @param {import("electron").BrowserWindow | null} args.win
- * @param {string} args.tvSymbol
- * @param {string} args.transition
- * @param {object | null} args.tradeStateBefore
- * @param {object | null} args.hardExit
- * @param {string} args.barCloseId
- */
-/**
  * 当前挂单（普通委托，不含历史）。
  * @param {ReturnType<createOkxClient>} client
  * @param {string} instId
@@ -1035,7 +1025,7 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol) {
 }
 
 /**
- * Agent：市价/限价开仓（与 maybeExecuteOkxSwapOrders 同源 sizing）。
+ * Agent：市价/限价开仓（按配置保证金比例与张数规则）。
  * @param {object} cfg
  * @param {{ tvSymbol: string, side: "long"|"short", orderType: "market"|"limit", limitPrice?: number, barCloseId: string }} args
  */
@@ -1218,193 +1208,6 @@ async function executeAgentPerpClose(cfg, args) {
   return { ok: true, ordId, instId, closeSz: String(detail.absPos), orderType: orderType || "market" };
 }
 
-async function maybeExecuteOkxSwapOrders(cfg, args) {
-  const { win, tvSymbol, transition, tradeStateBefore, hardExit, barCloseId } = args;
-
-  const sendStatus = (payload) => {
-    if (win && !win.isDestroyed()) {
-      win.webContents.send("okx-swap-status", payload);
-    }
-  };
-
-  if (!cfg || cfg.okxSwapTradingEnabled !== true) return;
-
-  if (inferFeed(tvSymbol) !== "crypto") return;
-
-  const instId = tvSymbolToSwapInstId(tvSymbol);
-  if (!instId) {
-    sendStatus({ ok: false, message: "无效 OKX 品种代码" });
-    return;
-  }
-
-  const apiKey = typeof cfg.okxApiKey === "string" ? cfg.okxApiKey.trim() : "";
-  const secretKey = typeof cfg.okxSecretKey === "string" ? cfg.okxSecretKey.trim() : "";
-  const passphrase = typeof cfg.okxPassphrase === "string" ? cfg.okxPassphrase.trim() : "";
-  if (!apiKey || !secretKey || !passphrase) {
-    sendStatus({ ok: false, message: "OKX API 未配置完整（okxApiKey / okxSecretKey / okxPassphrase）" });
-    return;
-  }
-
-  const simulated = cfg.okxSimulated !== false;
-  const tdMode = cfg.okxTdMode === "cross" ? "cross" : "isolated";
-  let lever = Number(cfg.okxSwapLeverage);
-  if (!Number.isFinite(lever) || lever < 1) lever = 10;
-  lever = Math.min(125, Math.max(1, Math.floor(lever)));
-  let marginFrac = Number(cfg.okxSwapMarginFraction);
-  if (!Number.isFinite(marginFrac) || marginFrac <= 0) marginFrac = 0.25;
-  marginFrac = Math.min(1, Math.max(0.01, marginFrac));
-
-  const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
-
-  const sendStatusWithPosition = async (payload) => {
-    try {
-      const position = await fetchSwapPositionSnapshot(client, instId);
-      sendStatus({ ...payload, position, instId, tvSymbol, simulated });
-    } catch (err) {
-      console.warn("[Argus] OKX 持仓快照:", err instanceof Error ? err.message : err);
-      sendStatus({ ...payload, instId, tvSymbol, simulated });
-    }
-  };
-
-  const isOpenLong = transition === "LOOKING_LONG->HOLDING_LONG";
-  const isOpenShort = transition === "LOOKING_SHORT->HOLDING_SHORT";
-  const isExitCooldown =
-    transition === "HOLDING_LONG->COOLDOWN" || transition === "HOLDING_SHORT->COOLDOWN";
-  const isHard = transition === "HARD_EXIT" && hardExit && hardExit.side;
-
-  try {
-    const posMode = await fetchAccountPosMode(client);
-
-    if (isHard) {
-      const detail = await fetchSwapPositionDetail(client, instId);
-      if (detail.absPos <= 0) {
-        await sendStatusWithPosition({ ok: true, message: `${instId} 硬触发：交易所无持仓，跳过平仓` });
-        return;
-      }
-      const { closeSide } = resolveCloseParams(posMode, detail);
-      const ord = await placeSwapMarketPosSideFallback(
-        client,
-        {
-          instId,
-          tdMode,
-          side: closeSide,
-          sz: String(detail.absPos),
-          reduceOnly: true,
-        },
-        posSideAttemptsClose(closeSide),
-      );
-      const oid = ord.data?.[0]?.ordId ?? "";
-      await sendStatusWithPosition({
-        ok: true,
-        message: `OKX 平仓（${simulated ? "模拟" : "实盘"}）${instId} ordId=${oid}`,
-      });
-      return;
-    }
-
-    if (isExitCooldown && tradeStateBefore) {
-      const side = String(tradeStateBefore.positionSide || "").toUpperCase();
-      if (side !== "LONG" && side !== "SHORT") return;
-      const detail = await fetchSwapPositionDetail(client, instId);
-      if (detail.absPos <= 0) {
-        await sendStatusWithPosition({ ok: true, message: `${instId} 状态机平仓：交易所无持仓，跳过` });
-        return;
-      }
-      const { closeSide } = resolveCloseParams(posMode, detail);
-      const ord = await placeSwapMarketPosSideFallback(
-        client,
-        {
-          instId,
-          tdMode,
-          side: closeSide,
-          sz: String(detail.absPos),
-          reduceOnly: true,
-        },
-        posSideAttemptsClose(closeSide),
-      );
-      const oid = ord.data?.[0]?.ordId ?? "";
-      await sendStatusWithPosition({
-        ok: true,
-        message: `OKX 平仓（${simulated ? "模拟" : "实盘"}）${instId} ${side} ordId=${oid}`,
-      });
-      return;
-    }
-
-    if (!isOpenLong && !isOpenShort) return;
-
-    const existing = await fetchSwapPositionDetail(client, instId);
-    if (existing.absPos > 0) {
-      await sendStatusWithPosition({ ok: false, message: `${instId} 已有永续持仓，跳过开仓` });
-      return;
-    }
-
-    const avail = await fetchUsdtAvailEq(client);
-    if (avail <= 0) throw new Error("USDT 可用权益为 0，无法开仓");
-
-    const margin = avail * marginFrac;
-    const notional = margin * lever;
-    const inst = await fetchSwapInstrument(instId);
-    const px = await fetchTickerLast(instId);
-    let sz = notional / (inst.ctVal * px);
-    sz = floorToLot(sz, inst.lotSz);
-    if (sz < inst.minSz) {
-      throw new Error(
-        `计算张数 ${sz} 低于最小下单 ${inst.minSz}（可用 USDT ${avail.toFixed(2)}、保证金比例 ${marginFrac}、${lever}x）`,
-      );
-    }
-
-    const levStr = String(lever);
-    try {
-      if (posMode === "hedge") {
-        await setLeverageSafe(client, {
-          instId,
-          mgnMode: tdMode,
-          lever: levStr,
-          posSide: isOpenLong ? "long" : "short",
-        });
-      } else {
-        await setLeverageSafe(client, {
-          instId,
-          mgnMode: tdMode,
-          lever: levStr,
-          posSide: "net",
-        });
-      }
-    } catch (e) {
-      if (isOkx51010AccountMode(e)) {
-        console.warn(
-          "[Argus] OKX set-leverage 51010，跳过设杠杆并继续下单。",
-          OKX_51010_ACCOUNT_MODE_HINT,
-        );
-      } else {
-        throw e;
-      }
-    }
-
-    const side = isOpenLong ? "buy" : "sell";
-
-    const ord = await placeSwapMarketPosSideFallback(
-      client,
-      {
-        instId,
-        tdMode,
-        side,
-        sz: String(sz),
-        reduceOnly: false,
-      },
-      posSideAttemptsOpen(isOpenLong),
-    );
-    const oid = ord.data?.[0]?.ordId ?? "";
-    await sendStatusWithPosition({
-      ok: true,
-      message: `OKX 开仓（${simulated ? "模拟" : "实盘"}）${instId} ${isOpenLong ? "多" : "空"} sz=${sz} ordId=${oid}`,
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[Argus] OKX 永续:", msg);
-    void sendStatusWithPosition({ ok: false, message: msg });
-  }
-}
-
 module.exports = {
   tvSymbolToSwapInstId,
   createOkxClient,
@@ -1415,7 +1218,6 @@ module.exports = {
   getOkxExchangeContextForBar,
   executeAgentPerpOpen,
   executeAgentPerpClose,
-  maybeExecuteOkxSwapOrders,
   getOkxSwapPositionSnapshot,
   smokeSwapOpenLong,
   smokeSwapClosePosition,

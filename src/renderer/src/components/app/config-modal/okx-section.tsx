@@ -12,12 +12,11 @@ export function ConfigModalOkxSection() {
   return (
     <div className="space-y-4 pt-1">
       <div className="flex items-center gap-2">
-        <p className="m-0 text-xs text-muted-foreground">仅 OKX 品种：状态机联动永续市价单（默认关闭）。</p>
+        <p className="m-0 text-xs text-muted-foreground">仅 OKX 品种：K 线收盘后 LLM Agent 可调用工具对永续下单（默认关闭）。</p>
         <ConfigHelpTooltip>
           <div className="space-y-2">
             <p className="m-0">
-              仅在 <code>OKX:*</code> 上生效：进入持仓、冷静期、止损/止盈硬触发时向 OKX 下对应{" "}
-              <code>BTC-USDT-SWAP</code> 等永续市价单。
+              仅在 <code>OKX:*</code> 上生效：启用后，模型通过工具对 <code>BTC-USDT-SWAP</code> 等合约开仓、平仓、改单、撤单。
             </p>
             <p className="m-0">
               默认用 USDT 可用权益的 <strong>25%</strong> 作保证金；名义 ≈ 保证金 × 杠杆。模拟盘请用模拟 API 并勾选「模拟交易」。

@@ -36,26 +36,12 @@ export function LlmPanel() {
       </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
         <div
-          className="flex shrink-0 items-start gap-2 border-b border-border bg-muted/35 px-3 py-2 text-xs leading-snug text-foreground"
-          id="llm-trade-state-bar"
-          role="status"
-          aria-live="polite"
-          title="由应用维护的交易状态；未启用 OKX 永续下单时仅为纪律模拟。"
-        >
-          <span className="shrink-0 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-            状态机
-          </span>
-          <span className="min-w-0 flex-1 wrap-break-word" id="llm-trade-state-text">
-            —
-          </span>
-        </div>
-        <div
           className="flex shrink-0 items-start gap-2 border-b border-border bg-muted/25 px-3 py-2 text-xs leading-snug text-foreground"
           id="okx-position-bar"
           hidden
           role="status"
           aria-live="polite"
-          title="来自 OKX GET /api/v5/account/positions（当前图表对应永续）；模拟盘请在模拟交易环境内查看。"
+          title="OKX 永续持仓与未成交挂单（收盘推送或刷新）；须启用永续并配置 API。"
         >
           <span className="shrink-0 text-[11px] font-semibold tracking-wide text-primary uppercase">
             OKX 持仓

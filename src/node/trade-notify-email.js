@@ -1,5 +1,5 @@
 /**
- * 交易状态机仓位变化时通过 SMTP 发邮件（默认适配 QQ 邮箱）。
+ * 预留：交易相关邮件通知（当前主流程不触发；默认适配 QQ 邮箱 SMTP）。
  * 需在 QQ 邮箱网页版开启 SMTP，并使用「授权码」作为密码，而非 QQ 登录密码。
  */
 const nodemailer = require("nodemailer");
@@ -40,7 +40,7 @@ function isNotablePositionChange(prev, next) {
 
 function buildPlainBody(detail) {
   const lines = [
-    "Argus 交易状态机：检测到仓位相关变化。",
+    "Argus 交易通知：",
     "",
     `品种: ${detail.tvSymbol ?? ""}`,
     `周期: ${detail.interval ?? ""}`,

@@ -50,12 +50,9 @@ async function captureTradingViewPng() {
  * 正式内容由本地库表 `prompt_strategies` 提供（内置种子见主进程 `builtin-prompts.js`）；策略在「策略中心」维护，在配置中心选用。
  */
 const FALLBACK_SYSTEM_PROMPT_CRYPTO =
-  "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
-  "先判断趋势、震荡或过渡，再分析本根收盘 K 线在当前位置是延续、测试、拒绝、突破、失败突破还是噪音。" +
-  "重点看价格行为本身，不机械复述原始 OHLCV；所有结论都基于概率，没有足够 edge 时优先保守。" +
-  "你必须严格服从状态机：只能从 allowed_intents 中选择一个 intent；若当前为 HOLDING_*，禁止重复开仓；若当前为 LOOKING_*，只有确认成立才允许 ENTER_*。" +
-  "若信号一般、位置不佳、盈亏比不清晰或只是震荡中部，优先 WAIT / HOLD / CANCEL_LOOKING。" +
-  "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
+  "你是资深加密市场价格行为分析助手。每轮会收到已收盘 K 线、可选图表截图，以及 OKX 永续持仓与挂单快照（若已配置 API）。" +
+  "需要交易时使用工具：open_position、close_position、cancel_order、amend_order；不要只写评论不下单。" +
+  "分析参考 Al Brooks 式价格行为，结论基于概率；信号不清时少调用工具。";
 
 /** 与主进程 `APP_SETTINGS_SEED` + 兜底系统提示词语义一致，供非 Electron 打开页面时兜底 */
 const FALLBACK_APP_CONFIG = {
@@ -93,17 +90,8 @@ const FALLBACK_APP_CONFIG = {
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
 let chartInterval = "5";
 
-/** 按 `品种|周期` 缓存最近一次交易状态机快照，切换品种时可从缓存恢复展示 */
-window.argusTradeStateCache = window.argusTradeStateCache || Object.create(null);
-
-const TRADE_STATE_LABELS = {
-  IDLE: "空仓观望",
-  LOOKING_LONG: "观察做多",
-  LOOKING_SHORT: "观察做空",
-  HOLDING_LONG: "模拟持多",
-  HOLDING_SHORT: "模拟持空",
-  COOLDOWN: "冷静期",
-};
+/** 按 `品种|周期` 缓存最近一次 OKX 快照（收盘推送），切换品种时可恢复展示 */
+window.argusExchangeContextCache = window.argusExchangeContextCache || Object.create(null);
 
 /**
  * 与主进程 llm-context.conversationKey 一致
@@ -125,85 +113,71 @@ function currentConversationKeyForUi() {
 
 /**
  * @param {string} key
- * @param {object | null | undefined} tradeState
+ * @param {object | null | undefined} ctx
  */
-function rememberTradeState(key, tradeState) {
-  if (!key || !tradeState || typeof tradeState !== "object") return;
-  window.argusTradeStateCache[key] = tradeState;
+function rememberExchangeContext(key, ctx) {
+  if (!key || !ctx || typeof ctx !== "object") return;
+  window.argusExchangeContextCache[key] = ctx;
 }
 
 /**
- * @param {object | null | undefined} ev
+ * @param {object | null | undefined} ctx 主进程 getOkxExchangeContextForBar
  */
-function formatTradeStateEventLine(ev) {
-  if (!ev || typeof ev !== "object") return "";
-  const side = ev.side === "SHORT" ? "空" : ev.side === "LONG" ? "多" : "";
-  const t = ev.type === "TAKE_PROFIT" ? "止盈" : ev.type === "STOP_LOSS" ? "止损" : "";
-  const p = ev.exitPrice != null ? String(ev.exitPrice) : "";
-  if (t && side && p) return `（本根触发${side}单${t} @ ${p}）`;
-  if (t && p) return `（本根触发${t} @ ${p}）`;
-  return "";
+function formatExchangeContextLine(ctx) {
+  if (!ctx || typeof ctx !== "object") return "—";
+  if (!ctx.enabled) {
+    if (ctx.reason === "okx_swap_disabled") {
+      return "未启用 OKX 永续；在配置中开启并填写 API 后可显示持仓与挂单。";
+    }
+    if (ctx.reason === "not_crypto_chart") return "当前品种非 OKX 加密图表。";
+    return "无 OKX 快照。";
+  }
+  if (!ctx.ok) return `快照失败：${ctx.message || "未知错误"}`;
+  const posLine = formatOkxPositionLine({
+    ok: true,
+    skipped: false,
+    simulated: ctx.simulated,
+    instId: ctx.instId,
+    hasPosition: ctx.position?.hasPosition,
+    posNum: ctx.position?.posNum,
+    absContracts: ctx.position?.absContracts,
+    posSide: ctx.position?.posSide,
+    fields: ctx.position?.fields,
+  });
+  const pend = Array.isArray(ctx.pending_orders) ? ctx.pending_orders : [];
+  const pendBit =
+    pend.length === 0
+      ? "挂单 0"
+      : `挂单 ${pend.length}：${pend
+          .slice(0, 4)
+          .map((p) => `${p.ordType || "?"} ${p.side || ""} @${p.px ?? "?"}`)
+          .join("；")}${pend.length > 4 ? "…" : ""}`;
+  return `${posLine} ｜ ${pendBit}`;
 }
 
-/**
- * @param {object | null | undefined} ts
- */
-function formatTradeStateLine(ts) {
-  if (!ts || typeof ts !== "object") {
-    return {
-      text: "暂无记录 · 待下一根 K 线收盘后更新",
-      title: "由应用内状态机维护，仅为分析纪律用，不代表真实持仓或成交。",
-    };
-  }
-  const state = String(ts.state || "IDLE");
-  const label = TRADE_STATE_LABELS[state] || state;
-  const parts = [label];
-
-  if (state === "LOOKING_LONG" || state === "LOOKING_SHORT") {
-    if (ts.keyLevel != null) parts.push(`关键位 ${ts.keyLevel}`);
-  }
-  if (state === "HOLDING_LONG" || state === "HOLDING_SHORT") {
-    if (ts.entryPrice != null) parts.push(`入 ${ts.entryPrice}`);
-    if (ts.stopLoss != null) parts.push(`损 ${ts.stopLoss}`);
-    if (ts.takeProfit != null) parts.push(`盈 ${ts.takeProfit}`);
-  }
-  if (state === "COOLDOWN" && ts.cooldownUntil) {
-    const t = new Date(ts.cooldownUntil).toLocaleTimeString("zh-CN", { hour12: false });
-    parts.push(`至 ${t}`);
-  }
-
-  const detail = [
-    ts.lastTransitionReason ? `原因: ${ts.lastTransitionReason}` : "",
-    ts.lastDecisionIntent ? `意图: ${ts.lastDecisionIntent}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  return {
-    text: parts.join(" · "),
-    title: detail || JSON.stringify(ts, null, 2),
-  };
-}
-
-/**
- * @param {object | null | undefined} tradeState
- * @param {object | null | undefined} tradeStateEvent
- */
-function updateTradeStateDisplay(tradeState, tradeStateEvent) {
-  const el = document.getElementById("llm-trade-state-text");
-  if (!el) return;
-  const { text, title } = formatTradeStateLine(tradeState);
-  const evLine = formatTradeStateEventLine(tradeStateEvent);
-  el.textContent = evLine ? `${text} ${evLine}` : text;
-  el.title = title;
-}
-
-function refreshTradeStateBarFromCache() {
+function updateOkxBarFromExchangeContext(ctx) {
+  const bar = document.getElementById("okx-position-bar");
+  const textEl = document.getElementById("okx-position-text");
   const sel = document.getElementById("symbol-select");
+  if (!bar || !textEl) return;
   const sym = sel?.value?.trim() || "";
-  const key = conversationKeyForUi(sym, chartInterval);
-  const cached = key ? window.argusTradeStateCache[key] : null;
-  updateTradeStateDisplay(cached, null);
+  if (!sym.startsWith("OKX:")) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  textEl.textContent = formatExchangeContextLine(ctx);
+  textEl.title = JSON.stringify(ctx, null, 2);
+}
+
+function refreshExchangeContextBarFromCache() {
+  const key = currentConversationKeyForUi();
+  const cached = key ? window.argusExchangeContextCache[key] : null;
+  if (cached) {
+    updateOkxBarFromExchangeContext(cached);
+  } else {
+    void refreshOkxPositionBar();
+  }
 }
 
 /** 当前最近一次收盘推送 id，用于忽略过期的流式片段 */
@@ -811,7 +785,7 @@ function initConfigCenter() {
           createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol, chartInterval);
           void refreshCurrentSystemPromptPreview();
           setLlmStatus("已恢复界面为内置默认（非 Electron 环境不会写入磁盘）");
-          refreshTradeStateBarFromCache();
+          refreshExchangeContextBarFromCache();
           return;
         }
         try {
@@ -823,7 +797,7 @@ function initConfigCenter() {
           createTradingViewWidget(saved.defaultSymbol, chartInterval);
           void refreshCurrentSystemPromptPreview();
           setLlmStatus("配置已恢复默认");
-          refreshTradeStateBarFromCache();
+          refreshExchangeContextBarFromCache();
         } catch (err) {
           console.error(err);
           setLlmStatus("恢复默认配置失败");
@@ -915,7 +889,7 @@ function initConfigCenter() {
             selAfter?.value?.trim() || defaultSymbol,
           );
           closeModal();
-          refreshTradeStateBarFromCache();
+          refreshExchangeContextBarFromCache();
           void refreshOkxPositionBar();
           return;
         }
@@ -948,7 +922,7 @@ function initConfigCenter() {
           createTradingViewWidget(saved.defaultSymbol, chartInterval);
           void refreshCurrentSystemPromptPreview();
           closeModal();
-          refreshTradeStateBarFromCache();
+          refreshExchangeContextBarFromCache();
           void refreshOkxPositionBar();
         } catch (err) {
           console.error(err);
@@ -1048,7 +1022,7 @@ function initSymbolSelect() {
     void (async () => {
       await persistChartPreferences({ defaultSymbol: sym });
       void refreshCurrentSystemPromptPreview();
-      refreshTradeStateBarFromCache();
+      refreshExchangeContextBarFromCache();
       void refreshOkxPositionBar();
     })();
   });
@@ -1066,7 +1040,7 @@ function initChartIntervalSelect() {
     void (async () => {
       await persistChartPreferences({ interval: iv });
       void refreshCurrentSystemPromptPreview();
-      refreshTradeStateBarFromCache();
+      refreshExchangeContextBarFromCache();
       void refreshOkxPositionBar();
     })();
   });
@@ -1244,10 +1218,10 @@ function bindMarketBarClose() {
       setLastChartScreenshot(payload.chartImage.dataUrl);
     }
 
-    if (payload?.conversationKey && payload?.tradeState) {
-      rememberTradeState(payload.conversationKey, payload.tradeState);
+    if (payload?.conversationKey && payload?.exchangeContext) {
+      rememberExchangeContext(payload.conversationKey, payload.exchangeContext);
       if (payload.conversationKey === currentConversationKeyForUi()) {
-        updateTradeStateDisplay(payload.tradeState, payload.tradeStateEvent ?? null);
+        updateOkxBarFromExchangeContext(payload.exchangeContext);
       }
     }
 
@@ -1305,7 +1279,7 @@ function bindLlmStream() {
   }
   if (typeof onLlmStreamEnd === "function") {
     onLlmStreamEnd(
-      ({ barCloseId, analysisText, reasoningText, conversationKey, tradeState, tradeStateEvent }) => {
+      ({ barCloseId, analysisText, reasoningText, conversationKey, exchangeContext }) => {
       const bubbleAsst = findAssistantBubbleForBar(barCloseId);
       if (bubbleAsst && analysisText != null) {
         bubbleAsst.textContent = normalizeAssistantDisplayText(analysisText);
@@ -1315,10 +1289,10 @@ function bindLlmStream() {
       if (bubbleReas && reasoningText != null) {
         bubbleReas.textContent = normalizeAssistantDisplayText(String(reasoningText));
       }
-      if (conversationKey && tradeState) {
-        rememberTradeState(conversationKey, tradeState);
+      if (conversationKey && exchangeContext) {
+        rememberExchangeContext(conversationKey, exchangeContext);
         if (conversationKey === currentConversationKeyForUi()) {
-          updateTradeStateDisplay(tradeState, tradeStateEvent ?? null);
+          updateOkxBarFromExchangeContext(exchangeContext);
         }
       }
       if (barCloseId !== latestBarCloseId) return;
@@ -1328,11 +1302,8 @@ function bindLlmStream() {
         window.argusLastBarClose.llm.streaming = false;
         window.argusLastBarClose.llm.error = null;
       }
-      if (window.argusLastBarClose && tradeState) {
-        window.argusLastBarClose.tradeState = tradeState;
-      }
-      if (window.argusLastBarClose && tradeStateEvent !== undefined) {
-        window.argusLastBarClose.tradeStateEvent = tradeStateEvent;
+      if (window.argusLastBarClose && exchangeContext) {
+        window.argusLastBarClose.exchangeContext = exchangeContext;
       }
       setLlmStatus("收盘 · LLM 已分析");
     },
@@ -1508,7 +1479,7 @@ export function initArgusApp() {
     bindMarketStatus();
     bindOkxSwapStatus();
     initOkxPositionBar();
-    refreshTradeStateBarFromCache();
+    refreshExchangeContextBarFromCache();
     void refreshOkxPositionBar();
   })();
   return __argusRendererInitPromise;

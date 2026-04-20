@@ -1,5 +1,5 @@
 /**
- * K 线收盘后：请求渲染进程截取左侧 TradingView，与行情数据组装为统一 payload（供后续多模态 LLM）。
+ * K 线收盘后：请求渲染进程截取左侧 TradingView，与行情数据组装为统一 payload（供后续多模态 LLM + OKX Agent）。
  */
 const crypto = require("crypto");
 const { ipcMain } = require("electron");
@@ -16,26 +16,11 @@ const {
   estimatePromptTokensFromMessages,
   keepOnlyLastUserImageInMessages,
 } = require("./llm");
-const { syncTradingStateBeforeLlm, getTradingState } = require("./trading-state");
-const { notifyTradePositionIfNeeded } = require("./trade-notify-email");
-const { maybeExecuteOkxSwapOrders, getOkxExchangeContextForBar } = require("./okx-perp");
+const { getOkxExchangeContextForBar } = require("./okx-perp");
 const { TRADING_AGENT_TOOLS } = require("./trading-agent-tools");
 const { createTradingToolExecutor } = require("./trading-agent-executor");
 
-function buildAgentContextUserText(marketText, tradeState, exchangeCtx) {
-  const sim = {
-    state: tradeState?.state || "IDLE",
-    pending_direction: tradeState?.pendingDirection ?? null,
-    position_side: tradeState?.positionSide ?? null,
-    key_level: tradeState?.keyLevel ?? null,
-    entry_price: tradeState?.entryPrice ?? null,
-    stop_loss: tradeState?.stopLoss ?? null,
-    take_profit: tradeState?.takeProfit ?? null,
-    cooldown_until:
-      tradeState?.cooldownUntil && tradeState.cooldownUntil > 0
-        ? new Date(tradeState.cooldownUntil).toISOString()
-        : null,
-  };
+function buildOkxContextUserText(marketText, exchangeCtx) {
   let exchangeBlock;
   if (exchangeCtx && exchangeCtx.enabled && exchangeCtx.ok) {
     exchangeBlock = {
@@ -48,15 +33,14 @@ function buildAgentContextUserText(marketText, tradeState, exchangeCtx) {
     exchangeBlock = { error: exchangeCtx.message || "交易所快照失败" };
   } else {
     exchangeBlock = {
-      note: exchangeCtx?.reason || "OKX 永续未启用或未配置，仅模拟仓。",
+      note: exchangeCtx?.reason || "OKX 永续未启用或未配置 API。",
     };
   }
-  const snapshot = { sim, exchange: exchangeBlock };
   return [
     marketText,
     "",
-    "交易上下文（模拟纪律 + 交易所；请用工具执行开平仓、改撤单与止损止盈调整）：",
-    JSON.stringify(snapshot, null, 2),
+    "OKX 永续快照（持仓 + 未成交挂单；请用工具下单，勿只写评论）：",
+    JSON.stringify(exchangeBlock, null, 2),
   ].join("\n");
 }
 
@@ -140,7 +124,6 @@ async function emitBarClose(winGetter, ctx) {
   };
 
   const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
-  const stateSync = syncTradingStateBeforeLlm(convKey, ctx.candle);
   const exchangeCtx = await getOkxExchangeContextForBar(cfg, ctx.tvSymbol);
 
   const payloadBase = {
@@ -155,8 +138,6 @@ async function emitBarClose(winGetter, ctx) {
     chartImage,
     chartCaptureError,
     textForLlm,
-    tradeState: stateSync.tradeState,
-    tradeStateEvent: stateSync.hardExit,
     exchangeContext: exchangeCtx,
     llm,
   };
@@ -168,32 +149,9 @@ async function emitBarClose(winGetter, ctx) {
     return;
   }
 
-  if (stateSync.skipLlm) {
-    llm.skippedReason = `未调用 LLM：${stateSync.skipReason}`;
-    win.webContents.send("market-bar-close", payloadBase);
-    if (stateSync.hardExit) {
-      void notifyTradePositionIfNeeded(cfg, {
-        tvSymbol: ctx.tvSymbol,
-        interval: ctx.interval,
-        prevState: null,
-        nextState: stateSync.tradeState,
-        hardExit: stateSync.hardExit,
-      }).catch((err) => console.error("[Argus] 仓位通知邮件失败:", err));
-      void maybeExecuteOkxSwapOrders(cfg, {
-        win,
-        tvSymbol: ctx.tvSymbol,
-        transition: "HARD_EXIT",
-        tradeStateBefore: null,
-        hardExit: stateSync.hardExit,
-        barCloseId,
-      }).catch((err) => console.error("[Argus] OKX 永续下单异常:", err));
-    }
-    return;
-  }
-
   const systemPrompt = resolveSystemPrompt(cfg);
   const history = getHistoryMessages(convKey);
-  const llmUserText = buildAgentContextUserText(textForLlm, stateSync.tradeState, exchangeCtx);
+  const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx);
   const currentUserContent = buildMultimodalUserContent(
     llmUserText,
     chartImage?.base64 ?? null,
@@ -226,10 +184,7 @@ async function emitBarClose(winGetter, ctx) {
     model: cfg.openaiModel,
   };
 
-  const tradeStateAtLlm = stateSync.tradeState;
   const executeTool = createTradingToolExecutor({
-    convKey,
-    candle: ctx.candle,
     cfg,
     tvSymbol: ctx.tvSymbol,
     barCloseId,
@@ -263,17 +218,8 @@ async function emitBarClose(winGetter, ctx) {
     llm.analysisText = [agentResult.text, traceStr].filter(Boolean).join("");
     llm.reasoningText = "";
     llm.streaming = false;
-    const nextTrade = getTradingState(convKey);
-    payloadBase.tradeState = nextTrade;
-    void notifyTradePositionIfNeeded(cfg, {
-      tvSymbol: ctx.tvSymbol,
-      interval: ctx.interval,
-      prevState: tradeStateAtLlm,
-      nextState: nextTrade,
-      transition: "AGENT",
-      reasoning: agentResult.text || traceStr || "",
-      hardExit: null,
-    }).catch((err) => console.error("[Argus] 仓位通知邮件失败:", err));
+    const exchangeAfter = await getOkxExchangeContextForBar(cfg, ctx.tvSymbol);
+    payloadBase.exchangeContext = exchangeAfter;
     appendSuccessfulTurn(
       convKey,
       buildUserTextForHistory(textForLlm, !!chartImage?.base64),
@@ -282,8 +228,7 @@ async function emitBarClose(winGetter, ctx) {
     win.webContents.send("llm-stream-end", {
       barCloseId,
       conversationKey: convKey,
-      tradeState: payloadBase.tradeState,
-      tradeStateEvent: null,
+      exchangeContext: exchangeAfter,
       analysisText: llm.analysisText,
       reasoningText: "",
     });

@@ -16,7 +16,6 @@ const { loadAppConfig, databasePath, resetAppConfig, saveMergedConfigPayload } =
 const promptStrategiesStore = require(path.join(nodeRoot, "prompt-strategies-store.js"));
 const { closeDatabase } = require(path.join(nodeRoot, "local-db", "index.js"));
 const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context.js"));
-const { wipeTradingStateStore } = require(path.join(nodeRoot, "trading-state.js"));
 const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp.js"));
 
 /**
@@ -148,6 +147,5 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   wipeConversationStore();
-  wipeTradingStateStore();
   closeDatabase();
 });

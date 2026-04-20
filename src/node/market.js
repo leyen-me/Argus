@@ -1,11 +1,10 @@
 /**
- * 左侧 TradingView 品种 → 仅支持 Binance / OKX WS 加密 K 线。
- * @returns {"crypto" | null} 可订阅行情时为 crypto，否则为 null
+ * 左侧 TradingView 品种 → 仅 OKX: 前缀可订阅 WS K 线。
+ * @returns {"crypto" | null} 可订阅时为 crypto（与主进程/合约模块约定），否则 null
  */
-function inferFeed(value, explicit) {
-  if (explicit === "crypto") return "crypto";
+function inferFeed(value) {
   const v = String(value || "").trim();
-  if (v.startsWith("BINANCE:") || v.startsWith("OKX:")) return "crypto";
+  if (v.startsWith("OKX:")) return "crypto";
   return null;
 }
 

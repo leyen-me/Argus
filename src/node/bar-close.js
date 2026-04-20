@@ -192,7 +192,7 @@ function requestChartCapture(webContents, timeoutMs = 18000) {
 /**
  * @param {() => import("electron").BrowserWindow | null} winGetter
  * @param {{
- *   source: "binance_ws" | "okx_ws",
+ *   source: "okx_ws",
  *   tvSymbol: string,
  *   interval: string,
  *   periodLabel: string,

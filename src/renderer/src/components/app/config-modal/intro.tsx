@@ -13,10 +13,10 @@ export function ConfigModalIntro() {
             <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
               TradingView
             </a>{" "}
-            一致（如 <code>BINANCE:BTCUSDT</code>、<code>OKX:BTCUSDT</code>）。
+            一致（如 <code>OKX:BTCUSDT</code>）。
           </p>
           <p className="m-0">
-            仅支持 <code>BINANCE:</code> 或 <code>OKX:</code> 前缀（交易所 WebSocket 订阅 K 线）。
+            行情订阅仅支持 <code>OKX:</code> 前缀（OKX WebSocket K 线）。
             <strong>interval</strong> 与图表周期、WS 一致。
           </p>
           <p className="m-0">

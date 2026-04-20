@@ -19,13 +19,12 @@ const { wipeTradingStateStore } = require(path.join(nodeRoot, "trading-state.js"
 const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp.js"));
 
 /**
- * 左侧当前品种：仅加密（Binance / OKX WS K 线）。
+ * 左侧当前品种：OKX WS K 线（OKX: 前缀）。
  */
 async function routeMarket(cfg, tvSymbol) {
   const interval = cfg.interval || "5";
   const sym = tvSymbol || cfg.defaultSymbol;
-  const entry = cfg.symbols.find((s) => s.value === sym);
-  const feed = inferFeed(sym, entry?.feed);
+  const feed = inferFeed(sym);
 
   if (feed === "crypto") {
     cryptoSched.start(() => mainWindow, sym, interval);
@@ -35,7 +34,7 @@ async function routeMarket(cfg, tvSymbol) {
   cryptoSched.stop();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("market-status", {
-      text: `当前仅支持 BINANCE: / OKX: 前缀的加密品种，无法为 ${sym} 订阅行情。请在配置中改为加密代码或切换到加密品种。`,
+      text: `当前品种需为 OKX: 前缀（如 OKX:BTCUSDT），无法为 ${sym} 订阅行情。请在配置中修改代码或切换到 OKX 品种。`,
     });
   }
 }

@@ -364,7 +364,7 @@ async function getOkxSwapPositionSnapshot(cfg, tvSymbol) {
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
     return { ok: true, skipped: true, reason: "okx_swap_disabled" };
   }
-  if (inferFeed(tvSymbol) !== "crypto" || !String(tvSymbol || "").startsWith("OKX:")) {
+  if (inferFeed(tvSymbol) !== "crypto") {
     return { ok: true, skipped: true, reason: "not_okx_chart" };
   }
   const instId = tvSymbolToSwapInstId(tvSymbol);
@@ -931,7 +931,7 @@ async function maybeExecuteOkxSwapOrders(cfg, args) {
 
   if (!cfg || cfg.okxSwapTradingEnabled !== true) return;
 
-  if (inferFeed(tvSymbol) !== "crypto" || !String(tvSymbol || "").startsWith("OKX:")) return;
+  if (inferFeed(tvSymbol) !== "crypto") return;
 
   const instId = tvSymbolToSwapInstId(tvSymbol);
   if (!instId) {

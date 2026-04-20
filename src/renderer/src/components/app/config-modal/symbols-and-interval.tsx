@@ -34,7 +34,7 @@ export function ConfigModalSymbolsAndInterval() {
         <select
           id="config-interval"
           className={cn("symbol-select config-interval-select", nativeSelectClass)}
-          title="与 TradingView、Binance/OKX WS 共用"
+          title="与 TradingView、OKX WS 共用"
         >
           <option value="1">1 分钟</option>
           <option value="3">3 分钟</option>

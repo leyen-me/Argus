@@ -226,14 +226,10 @@ function normalizeConfig(raw) {
   let symbols = Array.isArray(raw.symbols) ? raw.symbols : base.symbols;
   symbols = symbols
     .filter((s) => s && typeof s.label === "string" && typeof s.value === "string")
-    .map((s) => {
-      const row = {
-        label: s.label.trim(),
-        value: s.value.trim(),
-      };
-      if (s.feed === "crypto") row.feed = s.feed;
-      return row;
-    })
+    .map((s) => ({
+      label: s.label.trim(),
+      value: s.value.trim(),
+    }))
     .filter((s) => s.label && s.value);
   const seen = new Set();
   symbols = symbols.filter((s) => {

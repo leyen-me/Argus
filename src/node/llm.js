@@ -1,5 +1,5 @@
 /**
- * OpenAI 兼容 Chat Completions（官方 `openai` Node SDK + 任意兼容端点），供加密（Binance / OKX WS）K 线收盘分析共用。
+ * OpenAI 兼容 Chat Completions（官方 `openai` Node SDK + 任意兼容端点），供 OKX WS K 线收盘分析共用。
  * 启用条件：在配置中填写 openaiApiKey，或设置环境变量 OPENAI_API_KEY（配置优先）。
  */
 const { OpenAI, APIError, APIUserAbortError } = require("openai");

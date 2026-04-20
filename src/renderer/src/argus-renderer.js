@@ -213,19 +213,6 @@ let latestBarCloseId = null;
 const LLM_HISTORY_MAX_ROUNDS = 40;
 
 /**
- * 与 `market.inferFeed` 一致：是否为可订阅的加密品种。
- * @param {string} tvSymbol
- * @param {{ feed?: string } | undefined} symEntry 配置中该品种行
- * @returns {"crypto" | null}
- */
-function inferFeedForSymbol(tvSymbol, symEntry) {
-  if (symEntry?.feed === "crypto") return "crypto";
-  const v = String(tvSymbol || "").trim();
-  if (v.startsWith("BINANCE:") || v.startsWith("OKX:")) return "crypto";
-  return null;
-}
-
-/**
  * @param {object} cfg `loadAppConfig()` 结果
  */
 function resolveSystemPromptForUi(cfg) {
@@ -266,14 +253,10 @@ function updateCurrentSystemPromptPreview(cfg, tvSymbol) {
   root.replaceChildren();
   const sym = String(tvSymbol || "").trim() || "—";
   const c = cfg || FALLBACK_APP_CONFIG;
-  const symEntry = c.symbols?.find((s) => s.value === tvSymbol);
-  const feed = inferFeedForSymbol(tvSymbol, symEntry);
-  const routeLabel =
-    feed === "crypto" ? "加密（Binance / OKX WS）" : "非加密（无行情订阅，请改用 BINANCE:/OKX: 前缀）";
   const meta = document.createElement("div");
   meta.className = "llm-current-system-meta";
   const strat = String(c.promptStrategy || "default").trim() || "default";
-  meta.textContent = `当前图表：${sym} · 策略：${strat} · 路由：${routeLabel}`;
+  meta.textContent = `当前图表：${sym} · 策略：${strat}`;
   const text = String(resolveSystemPromptForUi(c) || "").trim();
   const row = buildSystemPromptRow(text);
   root.appendChild(meta);
@@ -1113,15 +1096,14 @@ function shortLlmStatusLabel(full) {
     [(s) => s.includes("收盘 · LLM 已分析"), "已分析"],
     [(s) => s.includes("收盘 · LLM 失败"), "分析失败"],
     [(s) => s.includes("K 线收盘已采集"), "已采集"],
-    [(s) => s.startsWith("加密 WS（") && s.includes("· K 收盘"), "WS收盘"],
+    [(s) => s.startsWith("OKX WS · K 收盘"), "WS收盘"],
     [(s) => s.startsWith("收盘处理失败"), "处理失败"],
     [(s) => s.includes("WS 断开") && s.includes("重连"), "WS重连"],
-    [(s) => s.includes("无效 BINANCE"), "代码无效"],
-    [(s) => s.includes("加密 WS（") && s.includes("已连接"), "WS已连"],
+    [(s) => s.startsWith("OKX WS 已连接"), "WS已连"],
     [(s) => s.includes("无效 OKX"), "代码无效"],
     [(s) => s.startsWith("OKX："), "OKX异常"],
-    [(s) => s.includes("请使用 BINANCE:") || (s.includes("BINANCE:") && s.includes("前缀")), "前缀无效"],
-    [(s) => s.includes("当前仅支持") && s.includes("加密品种"), "无行情"],
+    [(s) => s.includes("请使用 OKX:") || (s.includes("OKX:") && s.includes("前缀")), "前缀无效"],
+    [(s) => s.includes("需为 OKX:") && s.includes("订阅行情"), "无行情"],
     [(s) => s.includes("已恢复界面为内置默认"), "已恢复"],
     [(s) => s === "配置已恢复默认", "已恢复"],
     [(s) => s.includes("恢复默认配置失败"), "恢复失败"],

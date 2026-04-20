@@ -19,8 +19,7 @@ export function ConfigModalStrategySection() {
               <code>promptStrategy</code>。
             </p>
             <p className="m-0">
-              与行情一致：仅 <code>BINANCE:</code> / <code>OKX:</code> 或品种行 <code>feed: crypto</code>。改
-              txt 后保存配置或重启应用加载最新内容。
+              品种代码需为 <code>OKX:</code> 前缀（与左侧图表一致）。改 txt 后保存配置或重启应用加载最新内容。
             </p>
           </div>
         </ConfigHelpTooltip>

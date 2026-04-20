@@ -128,7 +128,7 @@ export default function App() {
             中一致（如 <code>BINANCE:BTCUSDT</code>、<code>OKX:BTCUSDT</code>）。本应用<strong>仅</strong>支持{" "}
             <code>BINANCE:</code> 或 <code>OKX:</code> 前缀的加密品种（交易所 WS 订阅 K 线）。
             <strong>interval</strong> 与图表周期、WS K 线周期一致。应用只使用<strong>一份</strong>配置文件{" "}
-            <code>config.json</code>（路径见下），首次启动会从安装目录旁模板生成；保存配置即写回该文件。
+            <code>config.json</code>（路径见下），首次启动会从内置模板 <code>src/config.json</code> 生成用户目录配置；保存配置即写回用户目录该文件。
           </p>
           <p className="modal-path" id="config-file-path" />
           <div className="config-table-head">
@@ -365,12 +365,12 @@ export default function App() {
             <select
               id="config-prompt-strategy"
               className="symbol-select config-interval-select"
-              title="每种策略对应 prompts 下的一个子文件夹"
+              title="每种策略对应 src/prompts 下的一个子文件夹"
             />
           </div>
           <p className="modal-hint modal-hint-llm">
-            每种策略对应应用目录 <code>{`prompts/<策略文件夹>/system-crypto.txt`}</code>
-            ；在下方选择要使用的策略，保存后写入 <code>config.json</code> 的
+            每种策略对应 <code>{`src/prompts/<策略文件夹>/system-crypto.txt`}</code>
+            ；在下方选择要使用的策略，保存后写入用户目录 <code>config.json</code> 的
             <code>promptStrategy</code>。与行情一致：仅 <code>BINANCE:</code> / <code>OKX:</code> 或品种行{" "}
             <code>feed: crypto</code>。修改 txt 后保存配置或重新打开应用即可加载最新内容。
           </p>
@@ -379,7 +379,7 @@ export default function App() {
               type="button"
               className="btn-secondary"
               id="btn-config-reset"
-              title="将用户目录 config.json 恢复为安装目录模板（或内置默认值），API Key 等将清空"
+              title="将用户目录 config.json 恢复为 src/config.json 模板（或内置默认值），API Key 等将清空"
             >
               恢复默认
             </button>

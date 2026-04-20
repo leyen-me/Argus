@@ -39,7 +39,7 @@
 
 const assert = require("node:assert");
 const { test } = require("node:test");
-const { smokeSwapOpenLong, smokeSwapClosePosition } = require("../okx-perp");
+const { smokeSwapOpenLong, smokeSwapClosePosition } = require("../src/node/okx-perp");
 
 const apiKey = process.env.OKX_API_KEY?.trim();
 const secretKey = process.env.OKX_SECRET_KEY?.trim();

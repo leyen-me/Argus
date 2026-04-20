@@ -47,7 +47,7 @@ async function captureTradingViewPng() {
 
 /**
  * 与 app-config 中 `MIN_FALLBACK_*` 一致：仅当非 Electron 打开页面时用于界面预览兜底。
- * 正式内容由应用目录 `prompts/<策略>/system-crypto.txt` 提供（策略在配置中心选择）。
+ * 正式内容由 `src/prompts/<策略>/system-crypto.txt` 提供（策略在配置中心选择）。
  */
 const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
@@ -57,7 +57,7 @@ const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "若信号一般、位置不佳、盈亏比不清晰或只是震荡中部，优先 WAIT / HOLD / CANCEL_LOOKING。" +
   "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
 
-/** 与仓库 config.json 一致，供非 Electron 打开页面时兜底 */
+/** 与内置模板 src/config.json 语义一致，供非 Electron 打开页面时兜底 */
 const FALLBACK_APP_CONFIG = {
   symbols: [
     { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
@@ -661,7 +661,7 @@ function initConfigCenter() {
   });
   btnReset?.addEventListener("click", async () => {
     const ok = window.confirm(
-      "将用户目录下的 config.json 恢复为安装目录模板（或内置默认值）。API Key、SMTP 等将清空为默认，是否继续？",
+      "将用户目录下的 config.json 恢复为 src/config.json 模板（或内置默认值）。API Key、SMTP 等将清空为默认，是否继续？",
     );
     if (!ok) return;
 

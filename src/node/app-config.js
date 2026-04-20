@@ -8,10 +8,12 @@ const path = require("path");
  *
  * 系统提示词按策略分目录：`prompts/<策略名>/system-crypto.txt`；当前策略 ID 写在 `config.json` 的 `promptStrategy`。
  */
-const BUNDLED_CONFIG = path.join(__dirname, "config.json");
+/** 内置模板与 prompts 所在目录（本文件在 src/node，资源在 src/） */
+const SRC_ROOT = path.join(__dirname, "..");
+const BUNDLED_CONFIG = path.join(SRC_ROOT, "config.json");
 const LEGACY_USER_CONFIG_NAME = "argus-config.json";
 
-const PROMPTS_DIR = path.join(__dirname, "prompts");
+const PROMPTS_DIR = path.join(SRC_ROOT, "prompts");
 const STRATEGY_PROMPT_BASENAME = "system-crypto.txt";
 const DEFAULT_PROMPT_STRATEGY = "default";
 
@@ -164,7 +166,7 @@ function userConfigPath() {
 }
 
 /**
- * 与首次启动种子一致：优先使用安装目录旁 `config.json` 模板，否则用内置默认再 `normalizeConfig`。
+ * 与首次启动种子一致：优先使用 `src/config.json` 模板，否则用内置默认再 `normalizeConfig`。
  * @returns {ReturnType<typeof normalizeConfig>}
  */
 function buildInitialConfigFromBundled() {
@@ -196,7 +198,7 @@ function resetAppConfig() {
 }
 
 /**
- * 确保 userData/config.json 存在：优先迁移旧 argus-config.json，否则从仓库旁 config.json 或内置默认写入。
+ * 确保 userData/config.json 存在：优先迁移旧 argus-config.json，否则从 `src/config.json` 模板或内置默认写入。
  */
 function ensureConfigFile() {
   const p = configPath();

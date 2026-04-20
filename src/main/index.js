@@ -7,18 +7,20 @@ import { createRequire } from "module";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-const cryptoSched = require("../../crypto-scheduler.js");
-const { inferFeed } = require("../../market.js");
+/** 构建后位于 out/main，需经 ../../src/node 指向源码目录中的模块 */
+const nodeRoot = path.join(__dirname, "..", "..", "src", "node");
+const cryptoSched = require(path.join(nodeRoot, "crypto-scheduler.js"));
+const { inferFeed } = require(path.join(nodeRoot, "market.js"));
 const {
   loadAppConfig,
   normalizeConfig,
   configPath,
   stripSystemPromptsForPersistence,
   resetAppConfig,
-} = require("../../app-config.js");
-const { wipeConversationStore } = require("../../llm-context.js");
-const { wipeTradingStateStore } = require("../../trading-state.js");
-const { getOkxSwapPositionSnapshot } = require("../../okx-perp.js");
+} = require(path.join(nodeRoot, "app-config.js"));
+const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context.js"));
+const { wipeTradingStateStore } = require(path.join(nodeRoot, "trading-state.js"));
+const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp.js"));
 
 /**
  * 左侧当前品种：仅加密（Binance / OKX WS K 线）。

@@ -483,6 +483,23 @@ function floorToLot(sz, lotSz) {
 }
 
 /**
+ * 与 {@link executeAgentPerpOpen} 相同张数公式（按 last 价预估值，不含手续费）。
+ * @param {number} avail USDT 可用权益
+ * @param {number} marginFrac
+ * @param {number} lever
+ * @param {{ ctVal: number, lotSz: number, minSz: number }} inst
+ * @param {number} px 计价用现价（与开仓算张数时 fetchTickerLast 一致）
+ */
+function estimateAgentOpenContracts(avail, marginFrac, lever, inst, px) {
+  if (!Number.isFinite(avail) || avail <= 0 || !Number.isFinite(px) || px <= 0) return 0;
+  if (!Number.isFinite(marginFrac) || marginFrac <= 0 || !Number.isFinite(lever) || lever < 1) return 0;
+  const margin = avail * marginFrac;
+  const notional = margin * lever;
+  let sz = notional / (inst.ctVal * px);
+  return floorToLot(sz, inst.lotSz);
+}
+
+/**
  * @param {"hedge" | "net"} posMode
  * @param {{ posNum: number, absPos: number, posSide: string }} detail
  */
@@ -1116,6 +1133,48 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol) {
     const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
     const position = await fetchSwapPositionSnapshot(client, instId);
     const { pending_orders, pending_algo_orders } = await fetchSwapPendingOrderSummaries(client, instId);
+
+    /** @type {number | null} */
+    let usdt_avail_eq = null;
+    /** @type {{ ct_val: number, lot_sz: number, min_sz: number, tick_sz: number, last_px: number } | null} */
+    let contract_sizing = null;
+    /** @type {{ margin_fraction: number, leverage: number, estimated_contracts: number, meets_min_sz: boolean }[] | null} */
+    let sizing_examples = null;
+    let sizing_note =
+      "开仓张数由本机按 OKX 规则计算：保证金≈usdt_avail_eq×margin_fraction，名义≈保证金×leverage，张数=floor_step(名义/(ct_val×last_px), lot_sz)，且须≥min_sz；下表为按当前 last_px 的参考值，实际以下单时为准。";
+
+    try {
+      const [avail, inst, lastPx] = await Promise.all([
+        fetchUsdtAvailEq(client),
+        fetchSwapInstrument(instId),
+        fetchTickerLast(instId),
+      ]);
+      usdt_avail_eq = avail;
+      contract_sizing = {
+        ct_val: inst.ctVal,
+        lot_sz: inst.lotSz,
+        min_sz: inst.minSz,
+        tick_sz: inst.tickSz,
+        last_px: lastPx,
+      };
+      const presets = [
+        { margin_fraction: 0.25, leverage: 10 },
+        { margin_fraction: 0.1, leverage: 5 },
+        { margin_fraction: 0.5, leverage: 3 },
+      ];
+      sizing_examples = presets.map((row) => {
+        const est = estimateAgentOpenContracts(avail, row.margin_fraction, row.leverage, inst, lastPx);
+        return {
+          margin_fraction: row.margin_fraction,
+          leverage: row.leverage,
+          estimated_contracts: est,
+          meets_min_sz: est >= inst.minSz,
+        };
+      });
+    } catch (sizeErr) {
+      sizing_note = `${sizing_note} 本轮未能拉取资金/合约/行情用于预估：${sizeErr instanceof Error ? sizeErr.message : String(sizeErr)}`;
+    }
+
     return {
       ok: true,
       enabled: true,
@@ -1124,6 +1183,10 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol) {
       position,
       pending_orders,
       pending_algo_orders,
+      usdt_avail_eq,
+      contract_sizing,
+      sizing_examples,
+      sizing_note,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -1324,6 +1387,63 @@ async function executeAgentPerpOpen(cfg, args) {
 }
 
 /**
+ * Agent：仅估算开仓张数（不下单、不设杠杆）。与 {@link executeAgentPerpOpen} 使用同一套公式，便于在 open_position 前试算。
+ * @param {object} cfg
+ * @param {{ tvSymbol: string, leverage?: unknown, margin_fraction?: unknown, margin_mode?: unknown }} args
+ */
+async function executeAgentPerpPreviewOpen(cfg, args) {
+  const tvSymbol = args?.tvSymbol;
+  if (!cfg || cfg.okxSwapTradingEnabled !== true) {
+    return { ok: false, skipped: true, message: "OKX 永续未启用" };
+  }
+  if (inferFeed(tvSymbol) !== "crypto") {
+    return { ok: false, message: "非加密图表，跳过 OKX" };
+  }
+  const instId = tvSymbolToSwapInstId(tvSymbol);
+  if (!instId) return { ok: false, message: "无效 OKX 品种" };
+
+  const apiKey = typeof cfg.okxApiKey === "string" ? cfg.okxApiKey.trim() : "";
+  const secretKey = typeof cfg.okxSecretKey === "string" ? cfg.okxSecretKey.trim() : "";
+  const passphrase = typeof cfg.okxPassphrase === "string" ? cfg.okxPassphrase.trim() : "";
+  if (!apiKey || !secretKey || !passphrase) {
+    return { ok: false, message: "OKX API 未配置完整" };
+  }
+
+  const { lever, marginFrac, tdMode } = resolveOpenRiskParams(cfg, args);
+  const simulated = cfg.okxSimulated !== false;
+  const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
+
+  const [avail, inst, lastPx] = await Promise.all([
+    fetchUsdtAvailEq(client),
+    fetchSwapInstrument(instId),
+    fetchTickerLast(instId),
+  ]);
+
+  const margin = avail * marginFrac;
+  const notional = margin * lever;
+  const est = estimateAgentOpenContracts(avail, marginFrac, lever, inst, lastPx);
+
+  return {
+    ok: true,
+    inst_id: instId,
+    usdt_avail_eq: avail,
+    margin_fraction: marginFrac,
+    leverage: lever,
+    margin_mode: tdMode,
+    margin_usdt: margin,
+    notional_usdt_approx: notional,
+    last_px: lastPx,
+    ct_val: inst.ctVal,
+    lot_sz: inst.lotSz,
+    min_sz: inst.minSz,
+    tick_sz: inst.tickSz,
+    estimated_contracts: est,
+    meets_min_sz: est >= inst.minSz,
+    note: "与真实开仓同一公式；下单瞬间行情可能变化，以成交为准。",
+  };
+}
+
+/**
  * Agent：市价/限价全平。
  * @param {object} cfg
  * @param {{ tvSymbol: string, orderType: "market"|"limit", limitPrice?: number }} args
@@ -1405,6 +1525,7 @@ module.exports = {
   amendSwapOrder,
   getOkxExchangeContextForBar,
   executeAgentPerpOpen,
+  executeAgentPerpPreviewOpen,
   executeAgentPerpClose,
   getOkxSwapPositionSnapshot,
   fetchTickerLast,

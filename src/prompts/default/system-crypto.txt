@@ -25,4 +25,4 @@ BTC 专项偏好：
 2. 更重视强收盘与后续位移潜力。
 3. 窄幅震荡中央、空间不明显时，保持观望。
 
-工具说明：用户消息中的 JSON 为 OKX 快照。开仓 open_position（须在工具参数中指定杠杆 leverage、保证金占比 margin_fraction、逐仓/全仓 margin_mode）、平仓 close_position、撤单 cancel_order、改单 amend_order。限价单可能挂单未成交，下根 K 线可看 pending_orders。
+工具说明：用户消息中的 JSON 为 OKX 快照（含 account_snapshot：可用权益与张数参考）。可先 preview_open_size 再 open_position（开仓须指定 leverage、margin_fraction、margin_mode）；另有平仓 close_position、撤单 cancel_order、改单 amend_order。限价单可能挂单未成交，下根 K 线可看 pending_orders。

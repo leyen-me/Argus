@@ -28,6 +28,12 @@ function buildOkxContextUserText(marketText, exchangeCtx) {
       position: exchangeCtx.position,
       pending_orders: exchangeCtx.pending_orders,
       pending_algo_orders: exchangeCtx.pending_algo_orders,
+      account_snapshot: {
+        usdt_avail_eq: exchangeCtx.usdt_avail_eq,
+        contract_sizing: exchangeCtx.contract_sizing,
+        sizing_examples: exchangeCtx.sizing_examples,
+        sizing_note: exchangeCtx.sizing_note,
+      },
     };
   } else if (exchangeCtx && exchangeCtx.enabled && !exchangeCtx.ok) {
     exchangeBlock = { error: exchangeCtx.message || "交易所快照失败" };
@@ -39,7 +45,7 @@ function buildOkxContextUserText(marketText, exchangeCtx) {
   return [
     marketText,
     "",
-    "OKX 永续快照（持仓 + 普通挂单 + 算法挂单；请用工具下单，勿只写评论）：",
+    "OKX 永续快照（含 account_snapshot 账户与张数参考 + 持仓 + 挂单；另可用工具 preview_open_size 对指定参数实时试算；请用工具下单，勿只写评论）：",
     JSON.stringify(exchangeBlock, null, 2),
   ].join("\n");
 }

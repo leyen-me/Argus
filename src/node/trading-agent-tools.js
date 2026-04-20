@@ -6,9 +6,36 @@ const TRADING_AGENT_TOOLS = [
   {
     type: "function",
     function: {
+      name: "preview_open_size",
+      description:
+        "不下单：按当前 API 拉取 USDT 可用权益与行情，用给定或缺省的杠杆/保证金占比/保证金模式，计算预估张数、保证金、名义价值等（与真实开仓公式一致）。用户消息里已有 account_snapshot 可参考；若需针对你拟定的参数再算一遍或核对 meets_min_sz，可先调用本工具再 open_position。",
+      parameters: {
+        type: "object",
+        properties: {
+          leverage: {
+            type: "integer",
+            description: "可选，1–125；省略则用应用配置缺省。",
+          },
+          margin_fraction: {
+            type: "number",
+            description: "可选，0.01–1；省略则用应用配置缺省。",
+          },
+          margin_mode: {
+            type: "string",
+            enum: ["isolated", "cross"],
+            description: "可选；省略则用应用配置缺省。",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "open_position",
       description:
-        "开仓：市价或限价。须在配置中启用 OKX 永续并填写 API。杠杆、保证金占比、逐仓/全仓由你根据本轮风险与仓位管理自行指定。限价单提交后未成交则持仓不变；下根 K 线可从挂单列表再判断。建议同时填写止盈/止损触发价：主单全部成交后 OKX 按触发价挂市价平仓（attachAlgoOrds）。",
+        "开仓：市价或限价。须在配置中启用 OKX 永续并填写 API。杠杆、保证金占比、逐仓/全仓由你根据本轮风险与仓位管理自行指定；可先 preview_open_size 再下单。限价单提交后未成交则持仓不变；下根 K 线可从挂单列表再判断。建议同时填写止盈/止损触发价：主单全部成交后 OKX 按触发价挂市价平仓（attachAlgoOrds）。",
       parameters: {
         type: "object",
         properties: {
@@ -20,7 +47,8 @@ const TRADING_AGENT_TOOLS = [
           },
           margin_fraction: {
             type: "number",
-            description: "占用当前 USDT 可用权益的比例（建议 0.01–1），用于计算保证金与张数。",
+            description:
+              "占用当前 USDT 可用权益的比例（建议 0.01–1）。请结合用户消息里 account_snapshot 选择；张数由程序按交易所规则计算。",
           },
           margin_mode: {
             type: "string",

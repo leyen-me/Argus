@@ -75,6 +75,50 @@ test("requireOkx：通过", () => {
   assert.equal(r.ok, true);
 });
 
+test("preview_open_size：未启用 OKX 直接拒绝", async () => {
+  const exec = createTradingToolExecutor(
+    {
+      cfg: baseCfg({ okxSwapTradingEnabled: false }),
+      tvSymbol: TV_OKX,
+      barCloseId: BAR_ID,
+      win: null,
+    },
+    depsWith({
+      executeAgentPerpPreviewOpen: async () => {
+        throw new Error("不应调用交易所");
+      },
+    }),
+  );
+  const out = await exec("preview_open_size", { leverage: 10 });
+  assert.equal(out.ok, false);
+  assert.match(out.message, /启用/);
+});
+
+test("preview_open_size：参数传入 executeAgentPerpPreviewOpen", async () => {
+  let seen = null;
+  const exec = createTradingToolExecutor(
+    { cfg: baseCfg(), tvSymbol: TV_OKX, barCloseId: BAR_ID, win: null },
+    depsWith({
+      executeAgentPerpPreviewOpen: async (c, a) => {
+        seen = a;
+        return { ok: true, estimated_contracts: 0.01, meets_min_sz: true, usdt_avail_eq: 500 };
+      },
+    }),
+  );
+  const out = await exec("preview_open_size", {
+    leverage: 7,
+    margin_fraction: 0.15,
+    margin_mode: "cross",
+  });
+  assert.equal(out.ok, true);
+  assert.equal(out.estimated_contracts, 0.01);
+  assert.ok(seen);
+  assert.equal(seen.tvSymbol, TV_OKX);
+  assert.equal(seen.leverage, 7);
+  assert.equal(seen.margin_fraction, 0.15);
+  assert.equal(seen.margin_mode, "cross");
+});
+
 test("open_position：未启用 OKX 直接拒绝", async () => {
   const exec = createTradingToolExecutor(
     {

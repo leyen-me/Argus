@@ -651,16 +651,21 @@ body,
   background: color-mix(in oklch, var(--primary) 88%, var(--background));
 }
 
-/* 摸鱼模式：全屏遮挡，避免他人看到主界面内容 */
+/* 隐私遮挡：全屏遮盖主界面 */
 .fish-mode-overlay {
   position: fixed;
   inset: 0;
   z-index: 10050;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  padding: 20px 24px 28px;
-  background: var(--card);
+  padding: 24px;
+  background:
+    radial-gradient(
+      ellipse 75% 55% at 50% 38%,
+      color-mix(in oklch, var(--card) 88%, var(--background)),
+      color-mix(in oklch, var(--background) 96%, var(--muted))
+    );
   -webkit-app-region: no-drag;
 }
 
@@ -668,14 +673,72 @@ body,
   display: none;
 }
 
-.fish-mode-hint {
-  margin: 0;
+.fish-mode-card {
+  width: min(420px, 100%);
+  padding: 32px 28px 28px;
+  border-radius: calc(var(--radius) + 4px);
+  border: 1px solid color-mix(in oklch, var(--border) 90%, transparent);
+  background: color-mix(in oklch, var(--card) 94%, var(--background));
+  box-shadow:
+    0 28px 64px -20px color-mix(in oklch, var(--foreground) 22%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--foreground) 5%, transparent);
+  text-align: center;
+}
+
+.fish-mode-card-icon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
+  color: var(--muted-foreground);
+}
+
+.fish-mode-title {
+  margin: 0 0 10px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--foreground);
+}
+
+.fish-mode-desc {
+  margin: 0 0 22px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.fish-mode-hint-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 22px;
   font-size: 12px;
   color: var(--muted-foreground);
 }
 
+.fish-mode-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1rem;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--muted) 55%, var(--background));
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.fish-mode-dismiss {
+  min-width: 160px;
+}
+
 .titlebar-config--fish-active {
   border-color: var(--ring) !important;
-  background: color-mix(in oklch, var(--primary) 12%, var(--background)) !important;
+  background: color-mix(in oklch, var(--primary) 14%, var(--background)) !important;
   color: var(--primary) !important;
 }

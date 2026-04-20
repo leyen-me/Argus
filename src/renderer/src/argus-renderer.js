@@ -606,19 +606,31 @@ function initDevToolsButton() {
 function initFishMode() {
   const btn = document.getElementById("btn-fish-mode");
   const overlay = document.getElementById("fish-mode-overlay");
+  const dismiss = document.getElementById("fish-mode-dismiss");
   if (!btn || !overlay) return;
+
+  const setLabel = (on) => {
+    const label = document.getElementById("btn-fish-mode-label");
+    const next = on ? "恢复显示" : "隐私遮挡";
+    if (label) label.textContent = next;
+    else btn.textContent = next;
+  };
 
   const setActive = (on) => {
     overlay.hidden = !on;
     overlay.setAttribute("aria-hidden", on ? "false" : "true");
     btn.setAttribute("aria-pressed", on ? "true" : "false");
     btn.classList.toggle("titlebar-config--fish-active", on);
-    btn.textContent = on ? "摸鱼中…" : "摸鱼模式";
+    setLabel(on);
   };
 
   btn.addEventListener("click", () => {
     setActive(overlay.hidden);
   });
+
+  if (dismiss) {
+    dismiss.addEventListener("click", () => setActive(false));
+  }
 
   window.addEventListener(
     "keydown",

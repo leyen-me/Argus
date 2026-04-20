@@ -1,14 +1,17 @@
 /**
  * 交易 Agent 工具：仅执行 OKX 永续 REST，无本地模拟仓。
  */
-const {
-  createOkxClient,
-  tvSymbolToSwapInstId,
-  cancelSwapOrder,
-  amendSwapOrder,
-  executeAgentPerpOpen,
-  executeAgentPerpClose,
-} = require("./okx-perp");
+const okxPerp = require("./okx-perp");
+
+/** 供单测注入 mock；生产路径使用默认实现。 */
+const TRADING_EXECUTOR_DEFAULT_DEPS = Object.freeze({
+  createOkxClient: okxPerp.createOkxClient,
+  tvSymbolToSwapInstId: okxPerp.tvSymbolToSwapInstId,
+  cancelSwapOrder: okxPerp.cancelSwapOrder,
+  amendSwapOrder: okxPerp.amendSwapOrder,
+  executeAgentPerpOpen: okxPerp.executeAgentPerpOpen,
+  executeAgentPerpClose: okxPerp.executeAgentPerpClose,
+});
 
 function requireOkx(cfg) {
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
@@ -29,9 +32,18 @@ function requireOkx(cfg) {
  * @param {string} ctx.tvSymbol
  * @param {string} ctx.barCloseId
  * @param {import("electron").BrowserWindow | null} [ctx.win]
+ * @param {typeof TRADING_EXECUTOR_DEFAULT_DEPS} [deps]
  */
-function createTradingToolExecutor(ctx) {
+function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
   const { cfg, tvSymbol, barCloseId, win } = ctx;
+  const {
+    createOkxClient,
+    tvSymbolToSwapInstId,
+    cancelSwapOrder,
+    amendSwapOrder,
+    executeAgentPerpOpen,
+    executeAgentPerpClose,
+  } = deps;
 
   const sendOkxStatus = (payload) => {
     if (win && !win.isDestroyed()) {
@@ -139,4 +151,8 @@ function createTradingToolExecutor(ctx) {
   };
 }
 
-module.exports = { createTradingToolExecutor };
+module.exports = {
+  createTradingToolExecutor,
+  TRADING_EXECUTOR_DEFAULT_DEPS,
+  requireOkx,
+};

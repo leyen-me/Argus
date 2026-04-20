@@ -21,8 +21,8 @@ export function ConfigModalStrategySection() {
               ；此处仅选择 <code className="rounded bg-muted px-1 text-[11px]">promptStrategy</code> id。
             </p>
             <p className="m-0">
-              可用「同步内置」将仓库自带的 <code className="rounded bg-muted px-1 text-[11px]">src/prompts</code>{" "}
-              模板写入或覆盖同名策略正文。
+              可用策略中心里的「同步内置」将代码中的 <code className="rounded bg-muted px-1 text-[11px]">default</code>{" "}
+              与 <code className="rounded bg-muted px-1 text-[11px]">ema20</code> 模板正文写回数据库（覆盖同名 id）。
             </p>
           </div>
         </ConfigHelpTooltip>

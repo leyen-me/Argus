@@ -1,4 +1,5 @@
 const localDb = require("./local-db");
+const { BUILTIN_DEFAULT_BODY } = require("./builtin-prompts");
 const promptStrategiesStore = require("./prompt-strategies-store");
 
 /**
@@ -48,14 +49,8 @@ const APP_SETTINGS_SEED = Object.freeze({
 const DEFAULT_OPENAI_BASE_URL = APP_SETTINGS_SEED.openaiBaseUrl;
 const DEFAULT_OPENAI_MODEL = APP_SETTINGS_SEED.openaiModel;
 
-/** 仅当策略文件缺失或为空时的极简兜底（与 renderer 非 Electron 兜底语义一致） */
-const MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO =
-  "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
-  "先判断趋势、震荡或过渡，再分析本根收盘 K 线在当前位置是延续、测试、拒绝、突破、失败突破还是噪音。" +
-  "重点看价格行为本身，不机械复述原始 OHLCV；所有结论都基于概率，没有足够 edge 时优先保守。" +
-  "你必须严格服从状态机：只能从 allowed_intents 中选择一个 intent；若当前为 HOLDING_*，禁止重复开仓；若当前为 LOOKING_*，只有确认成立才允许 ENTER_*。" +
-  "若信号一般、位置不佳、盈亏比不清晰或只是震荡中部，优先 WAIT / HOLD / CANCEL_LOOKING。" +
-  "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
+/** 极端情况下正文仍为空时的兜底（与 {@link BUILTIN_DEFAULT_BODY} 一致） */
+const MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO = BUILTIN_DEFAULT_BODY;
 
 function normalizeSystemPromptField(raw, fallback) {
   if (typeof raw !== "string") return fallback;

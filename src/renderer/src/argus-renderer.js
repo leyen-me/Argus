@@ -47,7 +47,7 @@ async function captureTradingViewPng() {
 
 /**
  * 与 app-config 中 `MIN_FALLBACK_*` 一致：仅当非 Electron 打开页面时用于界面预览兜底。
- * 正式内容由本地库表 `prompt_strategies` 提供（策略在「策略中心」维护，在配置中心选用）。
+ * 正式内容由本地库表 `prompt_strategies` 提供（内置种子见主进程 `builtin-prompts.js`）；策略在「策略中心」维护，在配置中心选用。
  */
 const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
@@ -65,7 +65,7 @@ const FALLBACK_APP_CONFIG = {
   ],
   defaultSymbol: "OKX:BTCUSDT",
   promptStrategy: "default",
-  promptStrategies: ["default"],
+  promptStrategies: ["default", "ema20"],
   interval: "5",
   openaiBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   openaiModel: "qwen3.5-plus",

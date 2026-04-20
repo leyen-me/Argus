@@ -1,66 +1,17 @@
-const fs = require("fs");
-const path = require("path");
-
 const localDb = require("./local-db");
+const { BUILTIN_DEFAULT_BODY, BUILTIN_SEED_ROWS } = require("./builtin-prompts");
 
-const SRC_ROOT = path.join(__dirname, "..");
-const PROMPTS_DIR = path.join(SRC_ROOT, "prompts");
-const STRATEGY_PROMPT_BASENAME = "system-crypto.txt";
 const DEFAULT_PROMPT_STRATEGY = "default";
 
 const ID_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
-/**
- * 与 app-config 中兜底文案一致（表为空且磁盘也无内容时用）。
- */
-const MIN_FALLBACK_BODY =
-  "你是资深加密市场价格行为分析助手，核心方法参考 Al Brooks，但输出必须服务于一个由代码维护的交易状态机。" +
-  "先判断趋势、震荡或过渡，再分析本根收盘 K 线在当前位置是延续、测试、拒绝、突破、失败突破还是噪音。" +
-  "重点看价格行为本身，不机械复述原始 OHLCV；所有结论都基于概率，没有足够 edge 时优先保守。" +
-  "你必须严格服从状态机：只能从 allowed_intents 中选择一个 intent；若当前为 HOLDING_*，禁止重复开仓；若当前为 LOOKING_*，只有确认成立才允许 ENTER_*。" +
-  "若信号一般、位置不佳、盈亏比不清晰或只是震荡中部，优先 WAIT / HOLD / CANCEL_LOOKING。" +
-  "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释。";
+/** 库损坏或极端情况下的兜底（与内置 default 正文一致） */
+const MIN_FALLBACK_BODY = BUILTIN_DEFAULT_BODY;
 
 function normalizeBody(raw, fallback) {
   if (typeof raw !== "string") return fallback;
   const t = raw.trim();
   return t.length ? t : fallback;
-}
-
-/**
- * 枚举内置目录下可用的策略 id 与正文（不读库）。
- * @returns {{ id: string, body: string }[]}
- */
-function readBundledStrategiesFromDisk() {
-  const out = [];
-  try {
-    if (!fs.existsSync(PROMPTS_DIR)) return [];
-    const entries = fs.readdirSync(PROMPTS_DIR, { withFileTypes: true });
-    for (const e of entries) {
-      if (!e.isDirectory() || e.name.startsWith(".")) continue;
-      const id = e.name;
-      const f = path.join(PROMPTS_DIR, id, STRATEGY_PROMPT_BASENAME);
-      if (!fs.existsSync(f)) continue;
-      let body = "";
-      try {
-        body = fs.readFileSync(f, "utf8");
-      } catch {
-        body = "";
-      }
-      out.push({
-        id,
-        body: normalizeBody(body, MIN_FALLBACK_BODY),
-      });
-    }
-  } catch {
-    return [];
-  }
-  out.sort((a, b) => {
-    if (a.id === DEFAULT_PROMPT_STRATEGY) return -1;
-    if (b.id === DEFAULT_PROMPT_STRATEGY) return 1;
-    return a.id.localeCompare(b.id);
-  });
-  return out;
 }
 
 function strategyCount() {
@@ -71,42 +22,69 @@ function strategyCount() {
   return row ? Number(row.n) || 0 : 0;
 }
 
-/**
- * 首次空表时从内置 prompts 各策略子目录的 system-crypto.txt 导入。
- */
-function seedFromDiskIfEmpty() {
-  localDb.getDatabase();
-  if (strategyCount() > 0) return;
-  const bundled = readBundledStrategiesFromDisk();
-  if (bundled.length === 0) {
-    const ins = localDb
-      .getDatabase()
-      .prepare(
-        `INSERT INTO prompt_strategies (id, label, body, sort_order, updated_at)
-         VALUES (?, ?, ?, ?, datetime('now'))`,
-      );
-    ins.run(DEFAULT_PROMPT_STRATEGY, DEFAULT_PROMPT_STRATEGY, MIN_FALLBACK_BODY, 0);
-    return;
-  }
+function insertSeedRows() {
   const ins = localDb
     .getDatabase()
     .prepare(
       `INSERT INTO prompt_strategies (id, label, body, sort_order, updated_at)
        VALUES (?, ?, ?, ?, datetime('now'))`,
     );
-  bundled.forEach((row, i) => {
-    ins.run(row.id, row.id, row.body, i);
+  BUILTIN_SEED_ROWS.forEach((row, i) => {
+    ins.run(row.id, row.label, row.body, i);
   });
 }
 
+/** 若库中缺少 default 行则补回（保证始终可选用 default） */
+function ensureDefaultRow() {
+  const db = localDb.getDatabase();
+  const has = db.prepare(`SELECT 1 AS ok FROM prompt_strategies WHERE id = ?`).get(DEFAULT_PROMPT_STRATEGY);
+  if (has) return;
+  const row = BUILTIN_SEED_ROWS.find((r) => r.id === DEFAULT_PROMPT_STRATEGY);
+  const body = row ? row.body : MIN_FALLBACK_BODY;
+  const maxRow = db.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM prompt_strategies`).get();
+  const sort_order = (maxRow?.m ?? -1) + 1;
+  db.prepare(
+    `INSERT INTO prompt_strategies (id, label, body, sort_order, updated_at)
+     VALUES (?, ?, ?, ?, datetime('now'))`,
+  ).run(DEFAULT_PROMPT_STRATEGY, DEFAULT_PROMPT_STRATEGY, body, sort_order);
+}
+
+/** 补全缺失的内置 id（不覆盖已有正文） */
+function ensureMissingBuiltinRows() {
+  const db = localDb.getDatabase();
+  const insert = db.prepare(
+    `INSERT INTO prompt_strategies (id, label, body, sort_order, updated_at)
+     VALUES (?, ?, ?, ?, datetime('now'))`,
+  );
+  for (const row of BUILTIN_SEED_ROWS) {
+    const exists = db.prepare(`SELECT 1 AS ok FROM prompt_strategies WHERE id = ?`).get(row.id);
+    if (exists) continue;
+    const maxRow = db.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM prompt_strategies`).get();
+    const sort_order = (maxRow?.m ?? -1) + 1;
+    insert.run(row.id, row.label, row.body, sort_order);
+  }
+}
+
 /**
- * 用内置目录覆盖各 id 的 body；新 id 会插入，已有 id 仅更新正文与 updated_at。
+ * 空表时写入内置 default + ema20；否则补全 default 与缺失的内置策略行。
+ */
+function seedFromDiskIfEmpty() {
+  localDb.getDatabase();
+  if (strategyCount() === 0) {
+    insertSeedRows();
+    return;
+  }
+  ensureDefaultRow();
+  ensureMissingBuiltinRows();
+}
+
+/**
+ * 用代码内置正文覆盖 default、ema20；缺失则插入。不读文件系统。
  * @returns {{ imported: number }}
  */
 function importBundledBodies() {
   localDb.getDatabase();
   seedFromDiskIfEmpty();
-  const bundled = readBundledStrategiesFromDisk();
   const db = localDb.getDatabase();
   const update = db.prepare(
     `UPDATE prompt_strategies SET body = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -116,14 +94,14 @@ function importBundledBodies() {
      VALUES (?, ?, ?, ?, datetime('now'))`,
   );
   let n = 0;
-  for (const row of bundled) {
+  for (const row of BUILTIN_SEED_ROWS) {
     const exists = db.prepare(`SELECT 1 AS ok FROM prompt_strategies WHERE id = ?`).get(row.id);
     if (exists) {
       update.run(row.body, row.id);
     } else {
       const maxRow = db.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM prompt_strategies`).get();
       const sort_order = (maxRow?.m ?? -1) + 1;
-      insert.run(row.id, row.id, row.body, sort_order);
+      insert.run(row.id, row.label, row.body, sort_order);
     }
     n += 1;
   }
@@ -224,6 +202,9 @@ function deleteStrategy(strategyId) {
   seedFromDiskIfEmpty();
   const id = typeof strategyId === "string" ? strategyId.trim() : "";
   if (!id) throw new Error("缺少策略 ID。");
+  if (id === DEFAULT_PROMPT_STRATEGY) {
+    throw new Error("内置策略 default 不可删除。");
+  }
   if (strategyCount() <= 1) {
     throw new Error("至少保留一条策略。");
   }
@@ -239,7 +220,6 @@ module.exports = {
   MIN_FALLBACK_BODY,
   seedFromDiskIfEmpty,
   importBundledBodies,
-  readBundledStrategiesFromDisk,
   listStrategyIds,
   getStrategyBody,
   listStrategiesMeta,

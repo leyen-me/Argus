@@ -186,7 +186,7 @@ export function StrategyCenterModal() {
     const api = getArgus();
     if (!api?.importBundledPromptStrategies) return;
     const ok = window.confirm(
-      "将用应用内置的 src/prompts 目录同步：同名策略的正文会被覆盖，磁盘上有而库中没有的会新增；仅存在于库中的自定义策略不受影响。是否继续？",
+      "将用代码内置模板写回数据库：default 与 ema20 的正文会被覆盖为发行版默认内容；若缺少这两条会新建。其他自定义策略不受影响。是否继续？",
     );
     if (!ok) return;
     setBusy(true);

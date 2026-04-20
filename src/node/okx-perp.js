@@ -506,6 +506,9 @@ async function placeMarket(client, p) {
   if (p.posSide === "long" || p.posSide === "short") {
     bodyObj.posSide = p.posSide;
   }
+  if (Array.isArray(p.attachAlgoOrds) && p.attachAlgoOrds.length > 0) {
+    bodyObj.attachAlgoOrds = p.attachAlgoOrds;
+  }
   const json = await client.request("POST", "/api/v5/trade/order", JSON.stringify(bodyObj));
   assertOkxTradeOrderAccepted(json);
   return json;
@@ -532,6 +535,7 @@ async function placeSwapMarketPosSideFallback(client, base, attempts) {
         ...base,
         posSide: ps,
         clOrdId: clOrdIdFrom(crypto.randomUUID(), `r${i}`),
+        attachAlgoOrds: base.attachAlgoOrds,
       });
     } catch (e) {
       last = e;
@@ -566,6 +570,9 @@ async function placeLimit(client, p) {
   if (p.posSide === "long" || p.posSide === "short") {
     bodyObj.posSide = p.posSide;
   }
+  if (Array.isArray(p.attachAlgoOrds) && p.attachAlgoOrds.length > 0) {
+    bodyObj.attachAlgoOrds = p.attachAlgoOrds;
+  }
   const json = await client.request("POST", "/api/v5/trade/order", JSON.stringify(bodyObj));
   assertOkxTradeOrderAccepted(json);
   return json;
@@ -586,6 +593,7 @@ async function placeSwapLimitPosSideFallback(client, base, px, attempts) {
         posSide: ps,
         px,
         clOrdId: clOrdIdFrom(crypto.randomUUID(), `l${i}`),
+        attachAlgoOrds: base.attachAlgoOrds,
       });
     } catch (e) {
       last = e;
@@ -1025,12 +1033,70 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol) {
 }
 
 /**
+ * 构造 attachAlgoOrds：主单完全成交后按触发价市价止盈/止损（tpOrdPx/slOrdPx = -1）。
+ * @param {object} o
+ * @param {boolean} o.isLong
+ * @param {number} o.entryRef 校验用参考价：市价≈最新价，限价≈委托价
+ * @param {{ tickSz: number }} o.inst
+ * @param {number | undefined} o.tpTriggerPx
+ * @param {number | undefined} o.slTriggerPx
+ * @param {"last"|"mark"|"index"} [o.triggerPxType="last"]
+ * @returns {{ ok: true, attachAlgoOrds: object[] | null } | { ok: false, message: string }}
+ */
+function buildAttachAlgoOrdsForAgentOpen(o) {
+  const { isLong, entryRef, inst, tpTriggerPx, slTriggerPx } = o;
+  let triggerPxType = o.triggerPxType;
+  if (triggerPxType !== "mark" && triggerPxType !== "index") triggerPxType = "last";
+
+  const tpRaw = tpTriggerPx != null ? Number(tpTriggerPx) : NaN;
+  const slRaw = slTriggerPx != null ? Number(slTriggerPx) : NaN;
+  const hasTp = Number.isFinite(tpRaw) && tpRaw > 0;
+  const hasSl = Number.isFinite(slRaw) && slRaw > 0;
+  if (!hasTp && !hasSl) {
+    return { ok: true, attachAlgoOrds: null };
+  }
+  if (!Number.isFinite(entryRef) || entryRef <= 0) {
+    return { ok: false, message: "止盈/止损校验需要有效入场参考价" };
+  }
+  if (hasTp) {
+    if (isLong && !(tpRaw > entryRef)) {
+      return { ok: false, message: "多头止盈触发价须高于入场参考价" };
+    }
+    if (!isLong && !(tpRaw < entryRef)) {
+      return { ok: false, message: "空头止盈触发价须低于入场参考价" };
+    }
+  }
+  if (hasSl) {
+    if (isLong && !(slRaw < entryRef)) {
+      return { ok: false, message: "多头止损触发价须低于入场参考价" };
+    }
+    if (!isLong && !(slRaw > entryRef)) {
+      return { ok: false, message: "空头止损触发价须高于入场参考价" };
+    }
+  }
+
+  const algo = {};
+  if (hasTp) {
+    algo.tpTriggerPx = formatOkxPx(tpRaw, inst.tickSz);
+    algo.tpOrdPx = "-1";
+    algo.tpTriggerPxType = triggerPxType;
+  }
+  if (hasSl) {
+    algo.slTriggerPx = formatOkxPx(slRaw, inst.tickSz);
+    algo.slOrdPx = "-1";
+    algo.slTriggerPxType = triggerPxType;
+  }
+  return { ok: true, attachAlgoOrds: [algo] };
+}
+
+/**
  * Agent：市价/限价开仓（按配置保证金比例与张数规则）。
  * @param {object} cfg
- * @param {{ tvSymbol: string, side: "long"|"short", orderType: "market"|"limit", limitPrice?: number, barCloseId: string }} args
+ * @param {{ tvSymbol: string, side: "long"|"short", orderType: "market"|"limit", limitPrice?: number, barCloseId: string, tpTriggerPx?: number, slTriggerPx?: number, tpSlTriggerPxType?: "last"|"mark"|"index" }} args
  */
 async function executeAgentPerpOpen(cfg, args) {
-  const { tvSymbol, side, orderType, limitPrice, barCloseId } = args;
+  const { tvSymbol, side, orderType, limitPrice, barCloseId, tpTriggerPx, slTriggerPx, tpSlTriggerPxType } =
+    args;
   const isLong = side === "long";
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
     return { ok: false, skipped: true, message: "OKX 永续未启用" };
@@ -1109,14 +1175,32 @@ async function executeAgentPerpOpen(cfg, args) {
     sz: String(sz),
     reduceOnly: false,
   };
-  const attempts = posSideAttemptsOpen(isLong);
-  let ord;
+  let entryRef = px;
   if (orderType === "limit") {
     const lp = Number(limitPrice);
     if (!Number.isFinite(lp) || lp <= 0) {
       return { ok: false, message: "限价开仓需要有效 limit_price" };
     }
-    const pxStr = formatOkxPx(lp, inst.tickSz);
+    entryRef = lp;
+  }
+  const attachBuilt = buildAttachAlgoOrdsForAgentOpen({
+    isLong,
+    entryRef,
+    inst,
+    tpTriggerPx,
+    slTriggerPx,
+    triggerPxType: tpSlTriggerPxType,
+  });
+  if (!attachBuilt.ok) {
+    return { ok: false, message: attachBuilt.message };
+  }
+  if (attachBuilt.attachAlgoOrds) {
+    openBase.attachAlgoOrds = attachBuilt.attachAlgoOrds;
+  }
+  const attempts = posSideAttemptsOpen(isLong);
+  let ord;
+  if (orderType === "limit") {
+    const pxStr = formatOkxPx(entryRef, inst.tickSz);
     ord = await placeSwapLimitPosSideFallback(client, openBase, pxStr, attempts);
   } else {
     ord = await placeSwapMarketPosSideFallback(client, openBase, attempts);
@@ -1222,6 +1306,7 @@ module.exports = {
   fetchTickerLast,
   fetchSwapInstrument,
   formatOkxPx,
+  buildAttachAlgoOrdsForAgentOpen,
   smokeSwapOpenLong,
   smokeSwapClosePosition,
   smokeSwapOpenLongThenClose,

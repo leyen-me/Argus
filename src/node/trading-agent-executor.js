@@ -75,12 +75,26 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
           if (!gate.ok) return { ok: false, message: gate.message };
           const side = String(a.side || "").toLowerCase() === "short" ? "short" : "long";
           const orderType = String(a.order_type || "market").toLowerCase() === "limit" ? "limit" : "market";
+          const pickPx = (v) => {
+            if (v == null) return undefined;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : undefined;
+          };
+          const tpTriggerPx = pickPx(a.take_profit_trigger_price ?? a.tp_trigger_price);
+          const slTriggerPx = pickPx(a.stop_loss_trigger_price ?? a.sl_trigger_price);
+          let tpSlTriggerPxType = String(a.tp_sl_trigger_price_type || "last").toLowerCase();
+          if (tpSlTriggerPxType !== "mark" && tpSlTriggerPxType !== "index") {
+            tpSlTriggerPxType = "last";
+          }
           const ex = await executeAgentPerpOpen(cfg, {
             tvSymbol,
             side,
             orderType,
             limitPrice: a.limit_price,
             barCloseId,
+            tpTriggerPx,
+            slTriggerPx,
+            tpSlTriggerPxType,
           });
           if (!ex.ok) {
             sendOkxStatus({ ok: false, message: ex.message || "开仓失败" });

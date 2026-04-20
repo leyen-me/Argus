@@ -153,6 +153,51 @@ test("open_position：限价成功文案", async () => {
   assert.match(out.message, /限价/);
 });
 
+test("open_position：止盈止损与触发类型传入 executeAgentPerpOpen", async () => {
+  let argsSeen = null;
+  const exec = createTradingToolExecutor(
+    { cfg: baseCfg(), tvSymbol: TV_OKX, barCloseId: BAR_ID, win: null },
+    depsWith({
+      executeAgentPerpOpen: async (_c, a) => {
+        argsSeen = a;
+        return { ok: true, ordId: "ord-tp" };
+      },
+    }),
+  );
+  const out = await exec("open_position", {
+    side: "long",
+    order_type: "market",
+    take_profit_trigger_price: 100_000,
+    stop_loss_trigger_price: 90_000,
+    tp_sl_trigger_price_type: "mark",
+  });
+  assert.equal(out.ok, true);
+  assert.ok(argsSeen);
+  assert.equal(argsSeen.tpTriggerPx, 100_000);
+  assert.equal(argsSeen.slTriggerPx, 90_000);
+  assert.equal(argsSeen.tpSlTriggerPxType, "mark");
+});
+
+test("open_position：tp_sl_trigger_price_type 非法时回退 last", async () => {
+  let argsSeen = null;
+  const exec = createTradingToolExecutor(
+    { cfg: baseCfg(), tvSymbol: TV_OKX, barCloseId: BAR_ID, win: null },
+    depsWith({
+      executeAgentPerpOpen: async (_c, a) => {
+        argsSeen = a;
+        return { ok: true, ordId: "x" };
+      },
+    }),
+  );
+  await exec("open_position", {
+    side: "long",
+    order_type: "market",
+    take_profit_trigger_price: 99_000,
+    tp_sl_trigger_price_type: "bogus",
+  });
+  assert.equal(argsSeen.tpSlTriggerPxType, "last");
+});
+
 test("open_position：side 默认 long；非法字符串视为 long", async () => {
   let sideSeen = null;
   const exec = createTradingToolExecutor(

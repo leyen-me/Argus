@@ -8,13 +8,26 @@ const TRADING_AGENT_TOOLS = [
     function: {
       name: "open_position",
       description:
-        "开仓：市价或限价。须在配置中启用 OKX 永续并填写 API。限价单提交后未成交则持仓不变；下根 K 线可从挂单列表再判断。",
+        "开仓：市价或限价。须在配置中启用 OKX 永续并填写 API。限价单提交后未成交则持仓不变；下根 K 线可从挂单列表再判断。建议同时填写止盈/止损触发价：主单全部成交后 OKX 按触发价挂市价平仓（attachAlgoOrds）。",
       parameters: {
         type: "object",
         properties: {
           side: { type: "string", enum: ["long", "short"] },
           order_type: { type: "string", enum: ["market", "limit"] },
           limit_price: { type: "number", description: "order_type=limit 时必填" },
+          take_profit_trigger_price: {
+            type: "number",
+            description: "止盈触发价（可选）。多头须高于入场参考价，空头须低于。触发后市价平仓。",
+          },
+          stop_loss_trigger_price: {
+            type: "number",
+            description: "止损触发价（可选）。多头须低于参考价，空头须高于。触发后市价平仓。",
+          },
+          tp_sl_trigger_price_type: {
+            type: "string",
+            enum: ["last", "mark", "index"],
+            description: "止盈/止损触发基准，默认 last（最新价）",
+          },
         },
         required: ["side", "order_type"],
       },

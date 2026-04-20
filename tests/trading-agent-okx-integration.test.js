@@ -1,7 +1,7 @@
 /**
  * Agent 工具 → 真实 OKX 永续 API（与 smoke 测试共用环境变量）。
  *
- * 顺序：先尝试平仓清持仓 → 市价开多 → 市价平 → 挂远价限价多单（不成交）→ 改价 → 撤单。
+ * 顺序：先尝试平仓清持仓 → 市价开多（附带 attachAlgo 止盈止损）→ 市价平 → 挂远价限价多单（不成交）→ 改价 → 撤单。
  *
  * 前置（与 tests/okx-swap-open-close.test.js 一致）：
  *   export OKX_API_KEY="..."
@@ -94,11 +94,20 @@ test(
       }
     });
 
-    await t.test("open_position 市价：开多", async () => {
-      const r = await exec("open_position", { side: "long", order_type: "market" });
+    await t.test("open_position 市价：开多（附带止盈止损 attachAlgoOrds）", async () => {
+      const last = await fetchTickerLast(instId);
+      const inst = await fetchSwapInstrument(instId);
+      const tp = parseFloat(formatOkxPx(last * 1.06, inst.tickSz));
+      const sl = parseFloat(formatOkxPx(last * 0.94, inst.tickSz));
+      const r = await exec("open_position", {
+        side: "long",
+        order_type: "market",
+        take_profit_trigger_price: tp,
+        stop_loss_trigger_price: sl,
+      });
       assert.strictEqual(r.ok, true, r.message || JSON.stringify(r));
       assert.ok(r.exchange?.ordId, "应有 ordId");
-      console.log("[agent-int] open market", r);
+      console.log("[agent-int] open market + tp/sl", { tp, sl, r });
     });
 
     await t.test("close_position 市价：全平", async () => {

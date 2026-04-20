@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ChartSymbolSelect } from "@/components/chart-symbol-select";
 import { initArgusApp } from "./argus-renderer";
 
 export default function App() {
@@ -34,7 +35,7 @@ export default function App() {
           <section className="panel panel-chart" aria-label="TradingView 图表">
             <div className="panel-header">
               <span className="panel-label">行情</span>
-              <select id="symbol-select" className="symbol-select" title="交易对" />
+              <ChartSymbolSelect />
             </div>
             <div className="chart-wrap">
               <div id="tradingview_chart" className="tradingview-chart" />

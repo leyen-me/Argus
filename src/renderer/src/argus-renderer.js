@@ -453,6 +453,14 @@ function applySymbolSelect(config) {
       ? config.defaultSymbol
       : config.symbols[0]?.value || "OKX:BTCUSDT";
   sel.value = def;
+  window.dispatchEvent(
+    new CustomEvent("argus:symbol-select-sync", {
+      detail: {
+        symbols: config.symbols.map((s) => ({ label: s.label, value: s.value })),
+        value: def,
+      },
+    }),
+  );
 }
 
 function collectSymbolsFromConfigRows() {

@@ -237,6 +237,8 @@ async function emitBarClose(winGetter, ctx) {
         toolTrace: llm.toolTrace,
         exchangeAfter,
         agentOk: true,
+        systemPrompt,
+        messagesOut: agentResult.messagesOut,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -274,6 +276,8 @@ async function emitBarClose(winGetter, ctx) {
         exchangeAfter: null,
         agentOk: false,
         agentError: agentResult.text,
+        systemPrompt,
+        messagesOut: agentResult.messagesOut,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

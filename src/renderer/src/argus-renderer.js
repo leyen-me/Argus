@@ -472,15 +472,246 @@ function findToolBubbleForBar(barCloseId) {
 
 /**
  * @param {string} barCloseId
- * @returns {HTMLDetailsElement | null}
+ * @returns {HTMLElement | null}
  */
-function findLlmRoundDetailsForBar(barCloseId) {
+function findLlmRoundRoot(barCloseId) {
   if (!barCloseId) return null;
   const id = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(barCloseId) : barCloseId;
-  const el = document.querySelector(
-    `#llm-chat-history .llm-round[data-bar-close-id="${id}"] .llm-round-details`,
-  );
-  return el instanceof HTMLDetailsElement ? el : null;
+  const el = document.querySelector(`#llm-chat-history .llm-round[data-bar-close-id="${id}"]`);
+  return el instanceof HTMLElement ? el : null;
+}
+
+/**
+ * @param {object} payload
+ * @param {object} llm
+ * @returns {"running" | "done" | "error"}
+ */
+function getLlmRoundStatusKind(payload, llm) {
+  if (llm.streaming === true) return "running";
+  if (llm.error) return "error";
+  return "done";
+}
+
+/**
+ * @param {"running" | "done" | "error"} kind
+ * @returns {HTMLElement}
+ */
+function buildLlmRoundStatusEl(kind) {
+  const wrap = document.createElement("span");
+  wrap.className = "llm-round-status-wrap";
+  const st = document.createElement("span");
+  st.className = `llm-round-status llm-round-status--${kind}`;
+  if (kind === "running") {
+    const sp = document.createElement("span");
+    sp.className = "llm-round-spinner";
+    sp.setAttribute("aria-hidden", "true");
+    st.appendChild(sp);
+    st.appendChild(document.createTextNode("决策中"));
+  } else if (kind === "error") {
+    st.textContent = "失败";
+  } else {
+    st.textContent = "已完成";
+  }
+  wrap.appendChild(st);
+  return wrap;
+}
+
+/**
+ * Agent 结束后刷新列表项：解锁明细、更新角标。
+ * @param {string} barCloseId
+ * @param {"ok" | "err"} outcome
+ */
+function updateLlmRoundAfterAgentFinished(barCloseId, outcome) {
+  const root = findLlmRoundRoot(barCloseId);
+  if (!root) return;
+  root.dataset.detailLocked = "0";
+  const card = root.querySelector(".llm-round-card");
+  if (card instanceof HTMLElement) {
+    card.classList.remove("llm-round-card--locked");
+    card.setAttribute("aria-disabled", "false");
+  }
+  const btn = root.querySelector(".llm-round-detail-btn");
+  if (btn instanceof HTMLButtonElement) btn.disabled = false;
+  const hint = root.querySelector(".llm-round-detail-hint");
+  if (hint) hint.textContent = "点击查看多轮对话与工具明细";
+  const statusWrap = root.querySelector(".llm-round-status-wrap");
+  if (statusWrap) {
+    const kind = outcome === "err" ? "error" : "done";
+    statusWrap.replaceWith(buildLlmRoundStatusEl(kind));
+  }
+}
+
+/**
+ * @param {unknown} content
+ * @returns {string}
+ */
+function formatSessionMsgContent(content) {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  try {
+    return JSON.stringify(content, null, 2);
+  } catch {
+    return String(content);
+  }
+}
+
+/**
+ * @param {object} m
+ * @returns {string}
+ */
+function formatSessionMessageRowBody(m) {
+  const parts = [];
+  if (m.content != null && m.content !== "") {
+    parts.push(formatSessionMsgContent(m.content));
+  }
+  if (Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
+    parts.push(`tool_calls:\n${JSON.stringify(m.toolCalls, null, 2)}`);
+  }
+  if (m.toolCallId) parts.push(`tool_call_id: ${m.toolCallId}`);
+  if (m.name) parts.push(`name: ${m.name}`);
+  return parts.join("\n\n").trim() || "（空）";
+}
+
+/**
+ * @param {string} role
+ * @returns {string}
+ */
+function sanitizeSessionMsgRoleClass(role) {
+  const s = String(role || "unknown").replace(/[^a-z0-9_-]/gi, "");
+  return s || "unknown";
+}
+
+/**
+ * @param {HTMLElement} container
+ * @param {object[]} msgs
+ */
+function renderSessionMessagesInto(container, msgs) {
+  container.replaceChildren();
+  for (const m of msgs) {
+    const row = document.createElement("div");
+    row.className = `llm-session-msg llm-session-msg--${sanitizeSessionMsgRoleClass(m.role)}`;
+    row.setAttribute("role", "listitem");
+    const roleEl = document.createElement("div");
+    roleEl.className = "llm-session-msg-role";
+    const seq = m.seq != null ? ` · #${m.seq}` : "";
+    roleEl.textContent = `${m.role || "?"}${seq}`;
+    const pre = document.createElement("pre");
+    pre.className = "llm-session-msg-pre";
+    pre.textContent = formatSessionMessageRowBody(m);
+    row.append(roleEl, pre);
+    container.appendChild(row);
+  }
+}
+
+async function openLlmSessionDetailModal(barCloseId) {
+  const modal = document.getElementById("llm-session-detail-modal");
+  const bodyEl = document.getElementById("llm-session-detail-body");
+  const loading = document.getElementById("llm-session-detail-loading");
+  const errEl = document.getElementById("llm-session-detail-error");
+  const subtitle = document.getElementById("llm-session-detail-subtitle");
+  const title = document.getElementById("llm-session-detail-title");
+  const chartWrap = document.getElementById("llm-session-detail-chart-wrap");
+  if (!modal || !bodyEl) return;
+
+  const root = findLlmRoundRoot(barCloseId);
+  const sym = root?.dataset.tvSymbol?.trim() || "";
+  const cap = root?.dataset.capturedAt || "";
+  const timeLine = cap ? new Date(cap).toLocaleString("zh-CN", { hour12: false }) : "";
+
+  if (subtitle) {
+    const sub = [sym, timeLine].filter(Boolean).join(" · ");
+    subtitle.textContent = sub;
+    subtitle.hidden = !sub;
+  }
+  if (title) title.textContent = "Agent 多轮对话";
+
+  bodyEl.replaceChildren();
+  if (errEl) {
+    errEl.textContent = "";
+    errEl.hidden = true;
+  }
+  if (chartWrap) {
+    chartWrap.hidden = true;
+    chartWrap.replaceChildren();
+  }
+  if (loading) loading.hidden = false;
+  modal.hidden = false;
+
+  if (!window.argus || typeof window.argus.getAgentSessionMessages !== "function") {
+    if (loading) loading.hidden = true;
+    if (errEl) {
+      errEl.textContent = "当前环境无法读取会话明细";
+      errEl.hidden = false;
+    }
+    return;
+  }
+
+  try {
+    const msgs = await window.argus.getAgentSessionMessages(barCloseId);
+    let chartData = null;
+    if (typeof window.argus.getAgentBarTurnChart === "function") {
+      try {
+        chartData = await window.argus.getAgentBarTurnChart(barCloseId);
+      } catch {
+        chartData = null;
+      }
+    }
+    if (loading) loading.hidden = true;
+    if (chartData?.dataUrl && chartWrap) {
+      chartWrap.hidden = false;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "llm-round-card-thumb";
+      btn.title = "放大查看本轮截图";
+      btn.setAttribute("aria-label", "放大预览图表截图");
+      const img = document.createElement("img");
+      img.src = chartData.dataUrl;
+      img.alt = "";
+      img.decoding = "async";
+      btn.appendChild(img);
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openLlmChartPreview(chartData.dataUrl);
+      });
+      chartWrap.appendChild(btn);
+    }
+    if (!Array.isArray(msgs) || msgs.length === 0) {
+      if (errEl) {
+        errEl.textContent = "暂无消息记录（可能尚未落库）";
+        errEl.hidden = false;
+      }
+      return;
+    }
+    renderSessionMessagesInto(bodyEl, msgs);
+  } catch (e) {
+    if (loading) loading.hidden = true;
+    const msg = e instanceof Error ? e.message : String(e);
+    if (errEl) {
+      errEl.textContent = `加载失败：${msg}`;
+      errEl.hidden = false;
+    }
+  }
+}
+
+function closeLlmSessionDetailModal() {
+  const modal = document.getElementById("llm-session-detail-modal");
+  if (modal) modal.hidden = true;
+}
+
+function initLlmSessionDetailModal() {
+  const modal = document.getElementById("llm-session-detail-modal");
+  const btn = document.getElementById("btn-llm-session-detail-close");
+  if (!modal) return;
+  const close = () => closeLlmSessionDetailModal();
+  btn?.addEventListener("click", close);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) close();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (modal.hidden) return;
+    close();
+  });
 }
 
 /**
@@ -529,7 +760,7 @@ function resolveAssistantAndToolDisplay(llm) {
 }
 
 /**
- * 构建单轮 DOM（实时收盘与库分页复用）。
+ * 构建单轮 DOM（实时收盘与库分页复用）：卡片列表 + 弹窗明细；流式更新依赖隐藏的 bubble。
  * @returns {HTMLElement} `.llm-round` 根节点
  */
 function buildLlmRoundElement(payload) {
@@ -539,87 +770,77 @@ function buildLlmRoundElement(payload) {
     throw new Error("buildLlmRoundElement: 无效 payload");
   }
   const display = resolveAssistantAndToolDisplay(llm);
+  const statusKind = getLlmRoundStatusKind(payload, llm);
+  const locked = llm.streaming === true;
 
   const round = document.createElement("div");
   round.className = "llm-round";
   round.dataset.barCloseId = barCloseId;
+  round.dataset.tvSymbol = payload.tvSymbol || "";
+  round.dataset.capturedAt = payload.capturedAt || "";
+  round.dataset.detailLocked = locked ? "1" : "0";
 
-  const details = document.createElement("details");
-  details.className = "llm-round-details";
-  details.open = llm.streaming === true;
-
-  const summary = document.createElement("summary");
-  summary.className = "llm-round-summary";
   const cap = payload.capturedAt
     ? new Date(payload.capturedAt).toLocaleString("zh-CN", { hour12: false })
     : "";
-  const summaryInner = document.createElement("span");
-  summaryInner.className = "llm-round-summary-inner";
-  const summaryHead = document.createElement("span");
-  summaryHead.className = "llm-round-summary-head";
+
+  const card = document.createElement("div");
+  card.className = "llm-round-card";
+  if (locked) card.classList.add("llm-round-card--locked");
+  card.setAttribute("role", "button");
+  card.tabIndex = 0;
+  card.setAttribute("aria-disabled", locked ? "true" : "false");
+  card.setAttribute(
+    "aria-label",
+    locked ? "Agent 决策进行中，请稍后再查看明细" : "查看本轮 Agent 多轮对话明细",
+  );
+
+  const inner = document.createElement("div");
+  inner.className = "llm-round-card-inner";
+
+  const top = document.createElement("div");
+  top.className = "llm-round-card-top";
+
+  const head = document.createElement("div");
+  head.className = "llm-round-card-head";
   const summaryTitle = document.createElement("span");
   summaryTitle.className = "llm-round-summary-title";
   summaryTitle.textContent = payload.tvSymbol || "未命名标的";
   const summaryTag = document.createElement("span");
   summaryTag.className = "llm-round-summary-tag";
   summaryTag.textContent = "单轮 Agent";
-  summaryHead.append(summaryTitle, summaryTag);
-  const summaryMeta = document.createElement("span");
-  summaryMeta.className = "llm-round-summary-meta";
-  if (cap) {
-    const time = document.createElement("span");
-    time.className = "llm-round-summary-chip";
-    time.textContent = cap;
-    summaryMeta.appendChild(time);
-  }
-  if (payload.fromHistory) {
-    const hist = document.createElement("span");
-    hist.className = "llm-round-summary-chip llm-round-summary-chip--history";
-    hist.textContent = "历史记录";
-    summaryMeta.appendChild(hist);
-  }
-  const hint = document.createElement("span");
-  hint.className = "llm-round-summary-hint";
-  hint.textContent = details.open ? "点击收起" : "点击展开";
-  summaryInner.append(summaryHead, summaryMeta, hint);
-  summary.appendChild(summaryInner);
-
-  const body = document.createElement("div");
-  body.className = "llm-round-body";
+  head.append(summaryTitle, summaryTag);
 
   const chartDataUrl = payload?.chartImage?.dataUrl;
-  let thumbRow = null;
   if (chartDataUrl) {
-    thumbRow = document.createElement("div");
-    thumbRow.className = "llm-round-thumb-row";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "llm-round-thumb";
-    btn.title = "点击放大查看本轮截图";
-    btn.setAttribute("aria-label", "放大预览本轮图表截图");
+    const tbtn = document.createElement("button");
+    tbtn.type = "button";
+    tbtn.className = "llm-round-card-thumb";
+    tbtn.title = "放大查看本轮截图";
+    tbtn.setAttribute("aria-label", "放大预览本轮图表截图");
     const img = document.createElement("img");
     img.src = chartDataUrl;
     img.alt = "";
     img.decoding = "async";
-    btn.appendChild(img);
-    btn.addEventListener("click", () => openLlmChartPreview(chartDataUrl));
-    thumbRow.appendChild(btn);
+    tbtn.appendChild(img);
+    tbtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openLlmChartPreview(chartDataUrl);
+    });
+    head.appendChild(tbtn);
   } else if (payload.chartCaptureError) {
-    thumbRow = document.createElement("div");
-    thumbRow.className = "llm-round-thumb-row";
-    const hint = document.createElement("div");
+    const hint = document.createElement("span");
     hint.className = "llm-round-chart-hint";
     hint.textContent = `截图：${payload.chartCaptureError}`;
-    thumbRow.appendChild(hint);
+    head.appendChild(hint);
   } else if (payload.chartDeferred && payload.barCloseId && window.argus?.getAgentBarTurnChart) {
-    thumbRow = document.createElement("div");
-    thumbRow.className = "llm-round-thumb-row";
     const loadBtn = document.createElement("button");
     loadBtn.type = "button";
     loadBtn.className = "llm-round-thumb llm-round-thumb--load";
     loadBtn.textContent = "加载截图";
     loadBtn.title = "从本地库加载该轮图表";
-    loadBtn.addEventListener("click", async () => {
+    loadBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
       loadBtn.disabled = true;
       try {
         const imgData = await window.argus.getAgentBarTurnChart(payload.barCloseId);
@@ -627,26 +848,87 @@ function buildLlmRoundElement(payload) {
           loadBtn.textContent = "无截图";
           return;
         }
-        thumbRow.replaceChildren();
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "llm-round-thumb";
-        btn.title = "点击放大查看本轮截图";
+        loadBtn.remove();
+        const tbtn = document.createElement("button");
+        tbtn.type = "button";
+        tbtn.className = "llm-round-card-thumb";
+        tbtn.title = "放大查看本轮截图";
         const im = document.createElement("img");
         im.src = imgData.dataUrl;
         im.alt = "";
         im.decoding = "async";
-        btn.appendChild(im);
-        btn.addEventListener("click", () => openLlmChartPreview(imgData.dataUrl));
-        thumbRow.appendChild(btn);
+        tbtn.appendChild(im);
+        tbtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          openLlmChartPreview(imgData.dataUrl);
+        });
+        head.appendChild(tbtn);
       } catch {
         loadBtn.textContent = "加载失败";
       } finally {
         loadBtn.disabled = false;
       }
     });
-    thumbRow.appendChild(loadBtn);
+    head.appendChild(loadBtn);
   }
+
+  top.append(head, buildLlmRoundStatusEl(statusKind));
+
+  const meta = document.createElement("div");
+  meta.className = "llm-round-card-meta";
+  if (cap) {
+    const time = document.createElement("span");
+    time.className = "llm-round-summary-chip";
+    time.textContent = cap;
+    meta.appendChild(time);
+  }
+  if (payload.fromHistory) {
+    const hist = document.createElement("span");
+    hist.className = "llm-round-summary-chip llm-round-summary-chip--history";
+    hist.textContent = "历史记录";
+    meta.appendChild(hist);
+  }
+
+  inner.append(top, meta);
+
+  const actions = document.createElement("div");
+  actions.className = "llm-round-card-actions";
+  const hint = document.createElement("span");
+  hint.className = "llm-round-detail-hint";
+  hint.textContent = locked ? "决策完成后可查看多轮对话与工具明细" : "点击查看多轮对话与工具明细";
+  const detailBtn = document.createElement("button");
+  detailBtn.type = "button";
+  detailBtn.className = "llm-round-detail-btn";
+  detailBtn.textContent = "查看明细";
+  detailBtn.disabled = locked;
+  actions.append(hint, detailBtn);
+  card.appendChild(inner);
+  card.appendChild(actions);
+
+  const openIfUnlocked = () => {
+    if (round.dataset.detailLocked === "1") return;
+    void openLlmSessionDetailModal(barCloseId);
+  };
+  card.addEventListener("click", (e) => {
+    const t = /** @type {HTMLElement | null} */ (e.target);
+    if (t?.closest?.(".llm-round-card-thumb") || t?.closest?.(".llm-round-thumb--load")) return;
+    openIfUnlocked();
+  });
+  card.addEventListener("keydown", (e) => {
+    if (round.dataset.detailLocked === "1") return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openIfUnlocked();
+    }
+  });
+  detailBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!detailBtn.disabled) void openLlmSessionDetailModal(barCloseId);
+  });
+
+  const streamTarget = document.createElement("div");
+  streamTarget.className = "llm-round-stream-target";
+  streamTarget.setAttribute("aria-hidden", "true");
 
   const rowUser = document.createElement("div");
   rowUser.className = "llm-chat-row llm-chat-row--user";
@@ -714,13 +996,13 @@ function buildLlmRoundElement(payload) {
 
   rowUser.appendChild(bubbleUser);
   rowAsst.appendChild(bubbleAsst);
-  if (thumbRow) body.appendChild(thumbRow);
-  body.appendChild(rowUser);
-  if (rowReasoning) body.appendChild(rowReasoning);
-  body.appendChild(rowTool);
-  body.appendChild(rowAsst);
-  details.append(summary, body);
-  round.appendChild(details);
+  streamTarget.appendChild(rowUser);
+  if (rowReasoning) streamTarget.appendChild(rowReasoning);
+  streamTarget.appendChild(rowTool);
+  streamTarget.appendChild(rowAsst);
+
+  round.appendChild(card);
+  round.appendChild(streamTarget);
   return round;
 }
 
@@ -1618,10 +1900,7 @@ function bindLlmStream() {
           updateOkxBarFromExchangeContext(exchangeContext);
         }
       }
-      const roundDetails = findLlmRoundDetailsForBar(barCloseId);
-      if (roundDetails) {
-        roundDetails.open = false;
-      }
+      updateLlmRoundAfterAgentFinished(barCloseId, "ok");
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.analysisText = analysisText;
@@ -1652,10 +1931,7 @@ function bindLlmStream() {
           bubbleTool.parentElement.parentElement.hidden = !toolText;
         }
       }
-      const roundDetailsErr = findLlmRoundDetailsForBar(barCloseId);
-      if (roundDetailsErr) {
-        roundDetailsErr.open = false;
-      }
+      updateLlmRoundAfterAgentFinished(barCloseId, "err");
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.error = message;
@@ -1824,6 +2100,7 @@ export function initArgusApp() {
     initDevToolsButton();
     initFishMode();
     initLlmChartPreview();
+    initLlmSessionDetailModal();
     await reloadLlmHistoryFromStore();
     bindMarketBarClose();
     bindLlmStream();

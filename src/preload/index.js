@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld("argus", {
   getOkxSwapPosition: (tvSymbol) => ipcRenderer.invoke("okx:swap-position", tvSymbol),
   listAgentBarTurnsPage: (args) => ipcRenderer.invoke("agent-bar-turns:list-page", args),
   getAgentBarTurnChart: (barCloseId) => ipcRenderer.invoke("agent-bar-turns:get-chart", barCloseId),
+  getAgentSessionMessages: (barCloseId) =>
+    ipcRenderer.invoke("agent-bar-turns:get-session-messages", barCloseId),
   listPromptStrategiesMeta: () => ipcRenderer.invoke("prompt-strategies:list"),
   getPromptStrategy: (id) => ipcRenderer.invoke("prompt-strategies:get", id),
   savePromptStrategy: (payload) => ipcRenderer.invoke("prompt-strategies:save", payload),

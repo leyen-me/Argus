@@ -20,6 +20,7 @@ const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp.js"
 const {
   listAgentBarTurnsPage,
   getAgentBarTurnChart,
+  getAgentSessionMessages,
 } = require(path.join(nodeRoot, "agent-bar-turns-store.js"));
 
 /**
@@ -76,6 +77,10 @@ ipcMain.handle("okx:swap-position", async (_event, tvSymbol) => {
 ipcMain.handle("agent-bar-turns:list-page", (_event, args) => listAgentBarTurnsPage(args ?? {}));
 
 ipcMain.handle("agent-bar-turns:get-chart", (_event, barCloseId) => getAgentBarTurnChart(barCloseId));
+
+ipcMain.handle("agent-bar-turns:get-session-messages", (_event, barCloseId) =>
+  getAgentSessionMessages(barCloseId),
+);
 
 ipcMain.handle("prompt-strategies:list", () => promptStrategiesStore.listStrategiesMeta());
 

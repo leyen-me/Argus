@@ -1,7 +1,63 @@
 /**
- * 每根 K 线收盘 Agent 单轮：完整用户提示（含 OKX 快照）与图表落库（SQLite）。
+ * 每根 K 线收盘 Agent：`agent_sessions`（会话元数据 + 图）+ `agent_session_messages`（有序 API 消息，便于排查）。
+ * 历史表 `agent_bar_turns` 仅迁移保留，新数据不再写入该表。
  */
 const { getDatabase } = require("./local-db");
+
+/**
+ * 多模态 user 中的 data: 大图不落 messages 表，避免与 chart_png 重复；排查时对照 session 行。
+ * @param {unknown} content
+ * @returns {unknown}
+ */
+function redactContentForStorage(content) {
+  if (content == null) return null;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return content;
+  return content.map((part) => {
+    if (!part || typeof part !== "object") return part;
+    const p = /** @type {{ type?: string, image_url?: { url?: string } }} */ (part);
+    if (p.type === "image_url" && p.image_url && typeof p.image_url.url === "string") {
+      const u = p.image_url.url;
+      if (u.startsWith("data:image")) {
+        return {
+          type: "image_url",
+          image_url: {
+            url: "<omitted: chart_png in agent_sessions for this bar_close_id>",
+          },
+        };
+      }
+    }
+    return part;
+  });
+}
+
+/**
+ * @param {unknown} m
+ * @param {number} seq
+ */
+function messageToRow(m, seq) {
+  const msg = m && typeof m === "object" ? m : {};
+  const role = String(/** @type {{ role?: string }} */ (msg).role || "");
+  let contentJson = null;
+  if ("content" in msg && msg.content !== undefined && msg.content !== null) {
+    contentJson = JSON.stringify(redactContentForStorage(/** @type {unknown} */ (msg.content)));
+  }
+  let toolCallsJson = null;
+  const tcs = /** @type {{ tool_calls?: unknown[] }} */ (msg).tool_calls;
+  if (Array.isArray(tcs) && tcs.length > 0) {
+    toolCallsJson = JSON.stringify(tcs);
+  }
+  const toolCallId = /** @type {{ tool_call_id?: string }} */ (msg).tool_call_id;
+  const name = /** @type {{ name?: string }} */ (msg).name;
+  return {
+    seq,
+    role,
+    content_json: contentJson,
+    tool_calls_json: toolCallsJson,
+    tool_call_id: toolCallId != null ? String(toolCallId) : null,
+    name: name != null ? String(name) : null,
+  };
+}
 
 /**
  * @param {object} row
@@ -21,6 +77,8 @@ const { getDatabase } = require("./local-db");
  * @param {object | null} [row.exchangeAfter]
  * @param {boolean} [row.agentOk]
  * @param {string | null} [row.agentError]
+ * @param {string | null} [row.systemPrompt] 当次请求使用的 system 全文快照
+ * @param {unknown[] | null} [row.messagesOut] runTradingAgentTurn 返回的完整 messages 线程
  */
 function persistAgentBarTurn(row) {
   const db = getDatabase();
@@ -35,45 +93,79 @@ function persistAgentBarTurn(row) {
       pngBuf = null;
     }
   }
-  const stmt = db.prepare(`
-    INSERT INTO agent_bar_turns (
+  const barCloseId = String(row.barCloseId || "");
+  const systemPrompt =
+    row.systemPrompt != null && String(row.systemPrompt).trim() !== ""
+      ? String(row.systemPrompt)
+      : null;
+
+  const messagesRaw = Array.isArray(row.messagesOut) ? row.messagesOut : [];
+  const messageRows = messagesRaw.map((m, i) => messageToRow(m, i));
+
+  const insertSession = db.prepare(`
+    INSERT INTO agent_sessions (
       bar_close_id, tv_symbol, interval, period_label, captured_at,
       text_for_llm, llm_user_full_text, exchange_context_json,
       chart_mime, chart_png, chart_capture_error,
       assistant_text, tool_trace_json, exchange_after_json, agent_ok, agent_error,
-      estimated_prompt_tokens, context_window_tokens, updated_at
+      estimated_prompt_tokens, context_window_tokens, updated_at, system_prompt_text
     ) VALUES (
       @bar_close_id, @tv_symbol, @interval, @period_label, @captured_at,
       @text_for_llm, @llm_user_full_text, @exchange_context_json,
       @chart_mime, @chart_png, @chart_capture_error,
       @assistant_text, @tool_trace_json, @exchange_after_json, @agent_ok, @agent_error,
-      @estimated_prompt_tokens, @context_window_tokens, datetime('now')
+      @estimated_prompt_tokens, @context_window_tokens, datetime('now'), @system_prompt_text
     )
   `);
-  stmt.run({
-    bar_close_id: String(row.barCloseId || ""),
-    tv_symbol: String(row.tvSymbol || ""),
-    interval: String(row.interval || ""),
-    period_label: String(row.periodLabel || ""),
-    captured_at: String(row.capturedAt || ""),
-    text_for_llm: String(row.textForLlm || ""),
-    llm_user_full_text: String(row.llmUserFullText || ""),
-    exchange_context_json: encBefore,
-    chart_mime: row.chartMime != null ? String(row.chartMime) : null,
-    chart_png: pngBuf,
-    chart_capture_error:
-      row.chartCaptureError != null && String(row.chartCaptureError).trim() !== ""
-        ? String(row.chartCaptureError)
-        : null,
-    assistant_text: row.assistantText != null ? String(row.assistantText) : null,
-    tool_trace_json: encToolTrace,
-    exchange_after_json: encAfter,
-    agent_ok: row.agentOk !== false ? 1 : 0,
-    agent_error:
-      row.agentError != null && String(row.agentError).trim() !== "" ? String(row.agentError) : null,
-    estimated_prompt_tokens: null,
-    context_window_tokens: null,
+  const insertMsg = db.prepare(`
+    INSERT INTO agent_session_messages (
+      bar_close_id, seq, role, content_json, tool_calls_json, tool_call_id, name
+    ) VALUES (
+      @bar_close_id, @seq, @role, @content_json, @tool_calls_json, @tool_call_id, @name
+    )
+  `);
+
+  const run = db.transaction(() => {
+    insertSession.run({
+      bar_close_id: barCloseId,
+      tv_symbol: String(row.tvSymbol || ""),
+      interval: String(row.interval || ""),
+      period_label: String(row.periodLabel || ""),
+      captured_at: String(row.capturedAt || ""),
+      text_for_llm: String(row.textForLlm || ""),
+      llm_user_full_text: String(row.llmUserFullText || ""),
+      exchange_context_json: encBefore,
+      chart_mime: row.chartMime != null ? String(row.chartMime) : null,
+      chart_png: pngBuf,
+      chart_capture_error:
+        row.chartCaptureError != null && String(row.chartCaptureError).trim() !== ""
+          ? String(row.chartCaptureError)
+          : null,
+      assistant_text: row.assistantText != null ? String(row.assistantText) : null,
+      tool_trace_json: encToolTrace,
+      exchange_after_json: encAfter,
+      agent_ok: row.agentOk !== false ? 1 : 0,
+      agent_error:
+        row.agentError != null && String(row.agentError).trim() !== ""
+          ? String(row.agentError)
+          : null,
+      estimated_prompt_tokens: null,
+      context_window_tokens: null,
+      system_prompt_text: systemPrompt,
+    });
+    for (const mr of messageRows) {
+      insertMsg.run({
+        bar_close_id: barCloseId,
+        seq: mr.seq,
+        role: mr.role,
+        content_json: mr.content_json,
+        tool_calls_json: mr.tool_calls_json,
+        tool_call_id: mr.tool_call_id,
+        name: mr.name,
+      });
+    }
   });
+  run();
 }
 
 /**
@@ -108,7 +200,7 @@ function listAgentBarTurnsPage(args = {}) {
       chart_mime, chart_capture_error,
       assistant_text, tool_trace_json, exchange_after_json, agent_ok, agent_error,
       CASE WHEN chart_png IS NOT NULL AND length(chart_png) > 0 THEN 1 ELSE 0 END AS has_chart
-    FROM agent_bar_turns
+    FROM agent_sessions
     WHERE tv_symbol = ? AND interval = ?
   `;
   /** @type {(string | number)[]} */
@@ -167,7 +259,7 @@ function getAgentBarTurnChart(barCloseId) {
   const id = String(barCloseId || "").trim();
   if (!id) return null;
   const row = getDatabase()
-    .prepare(`SELECT chart_mime, chart_png FROM agent_bar_turns WHERE bar_close_id = ?`)
+    .prepare(`SELECT chart_mime, chart_png FROM agent_sessions WHERE bar_close_id = ?`)
     .get(id);
   if (!row || !row.chart_png) return null;
   const mime = typeof row.chart_mime === "string" && row.chart_mime.trim() ? row.chart_mime : "image/png";
@@ -176,8 +268,61 @@ function getAgentBarTurnChart(barCloseId) {
   return { mimeType: mime, base64: b64, dataUrl: `data:${mime};base64,${b64}` };
 }
 
+/**
+ * 按 seq 返回当次会话的 API 消息行（content / tool_calls 已 JSON 解析），用于排查。
+ * @param {string} barCloseId
+ * @returns {Array<{
+ *   seq: number,
+ *   role: string,
+ *   content: unknown,
+ *   toolCalls: unknown[] | null,
+ *   toolCallId: string | null,
+ *   name: string | null,
+ * }>}
+ */
+function getAgentSessionMessages(barCloseId) {
+  const id = String(barCloseId || "").trim();
+  if (!id) return [];
+  const db = getDatabase();
+  const raw = db
+    .prepare(
+      `SELECT seq, role, content_json, tool_calls_json, tool_call_id, name
+       FROM agent_session_messages WHERE bar_close_id = ? ORDER BY seq ASC`,
+    )
+    .all(id);
+  return raw.map((r) => {
+    let content = null;
+    if (typeof r.content_json === "string" && r.content_json.length > 0) {
+      try {
+        content = JSON.parse(r.content_json);
+      } catch {
+        content = r.content_json;
+      }
+    }
+    let toolCalls = null;
+    if (typeof r.tool_calls_json === "string" && r.tool_calls_json.trim()) {
+      try {
+        const p = JSON.parse(r.tool_calls_json);
+        toolCalls = Array.isArray(p) ? p : null;
+      } catch {
+        toolCalls = null;
+      }
+    }
+    return {
+      seq: r.seq,
+      role: String(r.role || ""),
+      content,
+      toolCalls,
+      toolCallId: r.tool_call_id != null ? String(r.tool_call_id) : null,
+      name: r.name != null ? String(r.name) : null,
+    };
+  });
+}
+
 module.exports = {
   persistAgentBarTurn,
   listAgentBarTurnsPage,
   getAgentBarTurnChart,
+  getAgentSessionMessages,
+  redactContentForStorage,
 };

@@ -1,5 +1,6 @@
 import { BookOpen, EyeOff, Settings, Terminal } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 
 export function TitleBar() {
@@ -53,6 +54,14 @@ export function TitleBar() {
           <Settings className="size-3.5 opacity-80" aria-hidden />
           配置
         </Button>
+        <Badge
+          id="llm-status"
+          variant="outline"
+          className="panel-badge panel-badge--status h-7 min-w-14 max-w-[84px] shrink-0 truncate rounded-lg border border-emerald-500/35 bg-emerald-500/8 px-2.5 text-emerald-500 shadow-sm"
+          title=""
+        >
+          就绪
+        </Badge>
       </div>
     </header>
   )

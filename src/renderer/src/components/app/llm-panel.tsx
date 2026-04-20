@@ -1,37 +1,10 @@
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardDescription,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 export function LlmPanel() {
   return (
     <Card className="bg-background flex min-h-0 min-w-0 flex-[0.75] gap-0 rounded-none border-0 py-0 shadow-none ring-0">
-      <CardHeader className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border/80 px-3 py-3">
-        <div className="min-w-0">
-          <CardTitle className="text-xs leading-none font-semibold tracking-[0.18em] text-muted-foreground uppercase">
-            LLM 分析
-          </CardTitle>
-          <CardDescription className="mt-1 text-[11px] leading-4 text-muted-foreground/80">
-            收盘摘要与推理结果
-          </CardDescription>
-        </div>
-        <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 p-1">
-          <Badge
-            id="llm-status"
-            variant="outline"
-            className="panel-badge panel-badge--status h-7 min-w-14 max-w-[84px] truncate rounded-lg border border-emerald-500/35 bg-emerald-500/8 px-2.5 text-emerald-500 shadow-sm"
-            title=""
-          >
-            就绪
-          </Badge>
-        </div>
-      </CardHeader>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
         <div
           className="shrink-0 px-3 pt-3"

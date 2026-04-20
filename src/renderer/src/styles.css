@@ -230,6 +230,30 @@ body,
   object-fit: contain;
 }
 
+.llm-round-thumb--load {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--primary);
+  background: var(--muted);
+}
+
+.llm-round-chart-hint {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  line-height: 1.4;
+  max-width: 220px;
+  text-align: right;
+}
+
+.llm-history-sentinel {
+  padding: 10px 4px 6px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  text-align: center;
+  user-select: none;
+}
+
 .llm-chart-preview-backdrop {
   z-index: 1001;
   padding: 20px;

@@ -81,6 +81,14 @@ function applyMigrations(database) {
       CREATE INDEX idx_agent_bar_turns_tv_captured ON agent_bar_turns (tv_symbol, captured_at DESC);
     `);
     database.pragma("user_version = 3");
+    v = 3;
+  }
+  if (v < 4) {
+    database.exec(`
+      CREATE INDEX idx_agent_bar_turns_list ON agent_bar_turns (tv_symbol, interval, captured_at DESC, bar_close_id DESC);
+      DROP INDEX IF EXISTS idx_agent_bar_turns_tv_captured;
+    `);
+    database.pragma("user_version = 4");
   }
 }
 

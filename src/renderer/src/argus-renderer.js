@@ -231,8 +231,216 @@ function refreshExchangeContextBarFromCache() {
 /** 当前最近一次收盘推送 id，用于忽略过期的流式片段 */
 let latestBarCloseId = null;
 
-/** 右侧保留的「收盘 + LLM」轮数上限，避免 DOM 无限增长 */
-const LLM_HISTORY_MAX_ROUNDS = 40;
+/** 从库分页拉取时每页条数 */
+const LLM_HISTORY_PAGE_SIZE = 20;
+
+/** 实时收盘插入后，DOM 中最多保留的轮数（最旧靠近列表底部会被删掉） */
+const LLM_HISTORY_MAX_DOM_ROUNDS = 80;
+
+/** @type {{ capturedAt: string, barCloseId: string } | null} */
+let llmHistoryCursor = null;
+let llmHistoryExhausted = false;
+let llmHistoryLoading = false;
+/** @type {IntersectionObserver | null} */
+let llmHistoryScrollObserver = null;
+
+/**
+ * @returns {HTMLElement | null}
+ */
+function getLlmScrollViewport() {
+  const history = document.getElementById("llm-chat-history");
+  if (!history) return null;
+  const root = history.closest('[data-slot="scroll-area"]');
+  const vp = root?.querySelector('[data-slot="scroll-area-viewport"]');
+  return vp instanceof HTMLElement ? vp : null;
+}
+
+function scrollLlmHistoryToTop() {
+  const vp = getLlmScrollViewport();
+  if (vp) vp.scrollTop = 0;
+}
+
+function updateLlmHistorySentinelText(text) {
+  const s = document.getElementById("llm-history-load-more");
+  if (s) s.textContent = text;
+}
+
+function observeLlmHistorySentinel() {
+  const sent = document.getElementById("llm-history-load-more");
+  const root = getLlmScrollViewport();
+  if (!sent || !root) return;
+  if (llmHistoryScrollObserver) {
+    llmHistoryScrollObserver.disconnect();
+  }
+  llmHistoryScrollObserver = new IntersectionObserver(
+    (entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      void loadNextLlmHistoryPage();
+    },
+    { root, rootMargin: "64px", threshold: 0 },
+  );
+  llmHistoryScrollObserver.observe(sent);
+}
+
+/**
+ * 确保列表底部有分页哨兵（最新一条始终在列表最上方）。
+ * @param {HTMLElement} history
+ */
+function ensureLlmHistorySentinel(history) {
+  let s = document.getElementById("llm-history-load-more");
+  if (s && s.parentElement === history) {
+    observeLlmHistorySentinel();
+    return s;
+  }
+  s = document.createElement("div");
+  s.id = "llm-history-load-more";
+  s.className = "llm-history-sentinel";
+  s.textContent = "加载中…";
+  history.appendChild(s);
+  observeLlmHistorySentinel();
+  return s;
+}
+
+function trimLlmHistoryDom(maxRounds) {
+  const history = document.getElementById("llm-chat-history");
+  const sent = document.getElementById("llm-history-load-more");
+  if (!history || !sent) return;
+  /** @type {HTMLElement[]} */
+  const rounds = [...history.querySelectorAll(".llm-round")];
+  if (rounds.length <= maxRounds) return;
+  let removeCount = rounds.length - maxRounds;
+  while (removeCount-- > 0) {
+    const oldest = sent.previousElementSibling;
+    if (oldest instanceof HTMLElement && oldest.classList.contains("llm-round")) {
+      oldest.remove();
+    } else {
+      break;
+    }
+  }
+}
+
+/**
+ * @param {object} row listAgentBarTurnsPage 返回的条目
+ */
+function agentBarTurnRowToPayload(row) {
+  return {
+    kind: "bar_close",
+    barCloseId: row.barCloseId,
+    tvSymbol: row.tvSymbol,
+    capturedAt: row.capturedAt,
+    textForLlm: row.textForLlm,
+    fullUserPromptForDisplay: row.llmUserFullText,
+    chartImage: null,
+    chartDeferred: row.hasChart === true,
+    chartCaptureError: row.chartCaptureError || null,
+    fromHistory: true,
+    usage:
+      row.estimatedPromptTokens != null
+        ? {
+            estimatedPromptTokens: row.estimatedPromptTokens,
+            contextWindowTokens: row.contextWindowTokens,
+          }
+        : undefined,
+    llm: {
+      enabled: true,
+      reasoningEnabled: false,
+      streaming: false,
+      analysisText: row.agentOk ? row.assistantText || "" : null,
+      error: row.agentOk ? null : row.agentError || "Agent 失败",
+      reasoningText: null,
+    },
+  };
+}
+
+async function loadNextLlmHistoryPage() {
+  const history = document.getElementById("llm-chat-history");
+  if (!history || !window.argus?.listAgentBarTurnsPage) return;
+  if (llmHistoryLoading || llmHistoryExhausted) return;
+
+  const sel = document.getElementById("symbol-select");
+  const tvSymbol = sel?.value?.trim() || "";
+  const interval = chartInterval || "5";
+  if (!tvSymbol) {
+    updateLlmHistorySentinelText("请先选择交易品种");
+    return;
+  }
+
+  llmHistoryLoading = true;
+  updateLlmHistorySentinelText("加载中…");
+  try {
+    const res = await window.argus.listAgentBarTurnsPage({
+      tvSymbol,
+      interval,
+      limit: LLM_HISTORY_PAGE_SIZE,
+      cursor: llmHistoryCursor,
+    });
+
+    const sentinel = document.getElementById("llm-history-load-more");
+    if (!sentinel) {
+      ensureLlmHistorySentinel(history);
+    }
+
+    for (const row of res.rows) {
+      const payload = agentBarTurnRowToPayload(row);
+      const roundEl = buildLlmRoundElement(payload);
+      history.insertBefore(roundEl, document.getElementById("llm-history-load-more"));
+    }
+
+    llmHistoryCursor = res.nextCursor;
+    if (!res.hasMore || res.rows.length === 0) {
+      llmHistoryExhausted = true;
+      if (res.rows.length === 0 && !llmHistoryCursor) {
+        updateLlmHistorySentinelText("暂无历史记录");
+      } else {
+        updateLlmHistorySentinelText("已加载全部");
+      }
+    } else {
+      updateLlmHistorySentinelText("继续下滑加载更早记录");
+    }
+  } catch (e) {
+    llmHistoryExhausted = true;
+    const msg = e instanceof Error ? e.message : String(e);
+    updateLlmHistorySentinelText(`加载失败：${msg}（点击重试）`);
+    const sent = document.getElementById("llm-history-load-more");
+    if (sent) {
+      sent.onclick = () => {
+        sent.onclick = null;
+        llmHistoryExhausted = false;
+        void loadNextLlmHistoryPage();
+      };
+    }
+  } finally {
+    llmHistoryLoading = false;
+    observeLlmHistorySentinel();
+  }
+}
+
+/**
+ * 切换品种/周期或应用启动时：清空并重新拉第一页（最新在上）。
+ */
+async function reloadLlmHistoryFromStore() {
+  const history = document.getElementById("llm-chat-history");
+  if (!history || !window.argus?.listAgentBarTurnsPage) return;
+
+  if (llmHistoryScrollObserver) {
+    llmHistoryScrollObserver.disconnect();
+    llmHistoryScrollObserver = null;
+  }
+
+  history.replaceChildren();
+  llmHistoryCursor = null;
+  llmHistoryExhausted = false;
+  llmHistoryLoading = false;
+
+  const sentinel = document.createElement("div");
+  sentinel.id = "llm-history-load-more";
+  sentinel.className = "llm-history-sentinel";
+  sentinel.textContent = "加载中…";
+  history.appendChild(sentinel);
+  history.hidden = false;
+
+  await loadNextLlmHistoryPage();
+}
 
 /**
  * @param {string} barCloseId
@@ -272,14 +480,15 @@ function findLlmRoundDetailsForBar(barCloseId) {
 }
 
 /**
- * 每根 K 线收盘且启用 LLM 时追加一轮（左模型回复 / 右用户与推送摘要），流式时先占位「…」。
- * @returns {HTMLElement | null} 本轮助手气泡，便于调试
+ * 构建单轮 DOM（实时收盘与库分页复用）。
+ * @returns {HTMLElement} `.llm-round` 根节点
  */
-function appendLlmRound(payload) {
-  const history = document.getElementById("llm-chat-history");
+function buildLlmRoundElement(payload) {
   const llm = payload?.llm;
   const barCloseId = payload?.barCloseId;
-  if (!history || !barCloseId || !llm?.enabled) return null;
+  if (!barCloseId || !llm?.enabled) {
+    throw new Error("buildLlmRoundElement: 无效 payload");
+  }
 
   const round = document.createElement("div");
   round.className = "llm-round";
@@ -297,7 +506,8 @@ function appendLlmRound(payload) {
   const tok = payload.usage?.estimatedPromptTokens;
   const tokBit =
     tok != null && Number.isFinite(Number(tok)) ? ` · 约 ${Math.round(Number(tok))} tokens` : "";
-  summary.textContent = `${payload.tvSymbol || ""} · ${cap}${tokBit} · 单轮 Agent（点击展开）`;
+  const histBit = payload.fromHistory ? " · 历史" : "";
+  summary.textContent = `${payload.tvSymbol || ""} · ${cap}${tokBit}${histBit} · 单轮 Agent（点击展开）`;
 
   const body = document.createElement("div");
   body.className = "llm-round-body";
@@ -319,6 +529,48 @@ function appendLlmRound(payload) {
     btn.appendChild(img);
     btn.addEventListener("click", () => openLlmChartPreview(chartDataUrl));
     thumbRow.appendChild(btn);
+  } else if (payload.chartCaptureError) {
+    thumbRow = document.createElement("div");
+    thumbRow.className = "llm-round-thumb-row";
+    const hint = document.createElement("div");
+    hint.className = "llm-round-chart-hint";
+    hint.textContent = `截图：${payload.chartCaptureError}`;
+    thumbRow.appendChild(hint);
+  } else if (payload.chartDeferred && payload.barCloseId && window.argus?.getAgentBarTurnChart) {
+    thumbRow = document.createElement("div");
+    thumbRow.className = "llm-round-thumb-row";
+    const loadBtn = document.createElement("button");
+    loadBtn.type = "button";
+    loadBtn.className = "llm-round-thumb llm-round-thumb--load";
+    loadBtn.textContent = "加载截图";
+    loadBtn.title = "从本地库加载该轮图表";
+    loadBtn.addEventListener("click", async () => {
+      loadBtn.disabled = true;
+      try {
+        const imgData = await window.argus.getAgentBarTurnChart(payload.barCloseId);
+        if (!imgData?.dataUrl) {
+          loadBtn.textContent = "无截图";
+          return;
+        }
+        thumbRow.replaceChildren();
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "llm-round-thumb";
+        btn.title = "点击放大查看本轮截图";
+        const im = document.createElement("img");
+        im.src = imgData.dataUrl;
+        im.alt = "";
+        im.decoding = "async";
+        btn.appendChild(im);
+        btn.addEventListener("click", () => openLlmChartPreview(imgData.dataUrl));
+        thumbRow.appendChild(btn);
+      } catch {
+        loadBtn.textContent = "加载失败";
+      } finally {
+        loadBtn.disabled = false;
+      }
+    });
+    thumbRow.appendChild(loadBtn);
   }
 
   const rowUser = document.createElement("div");
@@ -379,14 +631,31 @@ function appendLlmRound(payload) {
   body.appendChild(rowAsst);
   details.append(summary, body);
   round.appendChild(details);
-  history.appendChild(round);
-  history.hidden = false;
+  return round;
+}
 
-  while (history.children.length > LLM_HISTORY_MAX_ROUNDS) {
-    history.removeChild(history.firstChild);
+/**
+ * 每根 K 线收盘且启用 LLM 时插入一轮：**最新在最上方**。
+ * @returns {HTMLElement | null} 本轮助手气泡
+ */
+function appendLlmRound(payload) {
+  const history = document.getElementById("llm-chat-history");
+  const llm = payload?.llm;
+  const barCloseId = payload?.barCloseId;
+  if (!history || !barCloseId || !llm?.enabled) return null;
+
+  const round = buildLlmRoundElement(payload);
+  ensureLlmHistorySentinel(history);
+  const anchor = history.firstChild;
+  if (anchor) {
+    history.insertBefore(round, anchor);
+  } else {
+    history.appendChild(round);
   }
-  history.scrollTop = history.scrollHeight;
-  return bubbleAsst;
+  history.hidden = false;
+  trimLlmHistoryDom(LLM_HISTORY_MAX_DOM_ROUNDS);
+  scrollLlmHistoryToTop();
+  return round.querySelector(".llm-bubble--assistant");
 }
 
 async function loadAppConfig() {
@@ -997,6 +1266,7 @@ function initSymbolSelect() {
     createTradingViewWidget(sym, chartInterval);
     void (async () => {
       await persistChartPreferences({ defaultSymbol: sym });
+      await reloadLlmHistoryFromStore();
       refreshExchangeContextBarFromCache();
       void refreshOkxPositionBar();
     })();
@@ -1014,6 +1284,7 @@ function initChartIntervalSelect() {
     createTradingViewWidget(sym, iv);
     void (async () => {
       await persistChartPreferences({ interval: iv });
+      await reloadLlmHistoryFromStore();
       refreshExchangeContextBarFromCache();
       void refreshOkxPositionBar();
     })();
@@ -1463,6 +1734,7 @@ export function initArgusApp() {
     initDevToolsButton();
     initFishMode();
     initLlmChartPreview();
+    await reloadLlmHistoryFromStore();
     bindMarketBarClose();
     bindLlmStream();
     bindMarketStatus();

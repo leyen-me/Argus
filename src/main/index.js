@@ -17,6 +17,10 @@ const promptStrategiesStore = require(path.join(nodeRoot, "prompt-strategies-sto
 const { closeDatabase } = require(path.join(nodeRoot, "local-db", "index.js"));
 const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context.js"));
 const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp.js"));
+const {
+  listAgentBarTurnsPage,
+  getAgentBarTurnChart,
+} = require(path.join(nodeRoot, "agent-bar-turns-store.js"));
 
 /**
  * 左侧当前品种：OKX WS K 线（OKX: 前缀）。
@@ -68,6 +72,10 @@ ipcMain.handle("market:set-context", async (_event, tvSymbol) => {
 ipcMain.handle("okx:swap-position", async (_event, tvSymbol) => {
   return getOkxSwapPositionSnapshot(loadAppConfig(), tvSymbol);
 });
+
+ipcMain.handle("agent-bar-turns:list-page", (_event, args) => listAgentBarTurnsPage(args ?? {}));
+
+ipcMain.handle("agent-bar-turns:get-chart", (_event, barCloseId) => getAgentBarTurnChart(barCloseId));
 
 ipcMain.handle("prompt-strategies:list", () => promptStrategiesStore.listStrategiesMeta());
 

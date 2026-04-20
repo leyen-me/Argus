@@ -22,7 +22,7 @@
 
 状态机纪律：
 1. 只能从 allowed_intents 中选择一个 intent。
-2. 当前若为 HOLDING_*，禁止重复开仓；当前若为 LOOKING_*，只有确认成立才允许 ENTER_*。
+2. 当前若为 HOLDING_*，禁止重复开仓；当前若为 LOOKING_*，只有确认成立才允许 ENTER_*。持仓且输出 HOLD 时，可在 JSON 中用 stop_loss / take_profit 调整纪律型止损止盈（用于触价离场）。
 3. 若位置处于中间地带、方向不清、刚好卡在双向流动性之间、或突破后没有跟随，优先返回 WAIT / HOLD / CANCEL_LOOKING，而不是勉强交易。
 4. ENTER_* 不要求所有慢速确认都齐全，但必须满足“方向、位置、触发、失效点”基本清楚，且当前 bar 的收盘能说明主动一方正在发力。
 5. EXIT_* 可用于原先逻辑被破坏、出现明显反向强信号、或持仓优势显著减弱。
@@ -36,7 +36,7 @@ BTC 专项偏好：
 输出要求：
 1. reasoning 只写一句话，说明本轮状态转移最核心的价格行为依据。
 2. key_level 填最关键的触发位、失效位或结构位；不明确则为 null。
-3. stop_loss / take_profit 只有在该 intent 下有明确参考时才填写，否则为 null。
+3. stop_loss / take_profit：LOOK_* / ENTER_* 有明确参考则填；HOLD（持仓）时若本轮要调整纪律型止损/止盈则填其一或两者，无调整则均为 null。
 4. risk_note 简短指出最大不确定性；若无明显额外风险则为 null。
 
 请只返回严格 JSON，不要输出 Markdown、代码块或额外解释：

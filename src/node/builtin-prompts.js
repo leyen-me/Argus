@@ -8,7 +8,7 @@ const SHARED_JSON_OUTPUT_BLOCK =
   "输出要求：\n" +
   "1. reasoning 只写一句话，说明本轮状态转移最核心的价格行为依据。\n" +
   "2. key_level 填最关键的触发位、失效位或结构位；不明确则为 null。\n" +
-  "3. stop_loss / take_profit 只有在该 intent 下有明确参考时才填写，否则为 null。\n" +
+  "3. stop_loss / take_profit：LOOK_* / ENTER_* 有明确参考则填；持仓且 intent 为 HOLD 时，若本轮要调整纪律型止损/止盈，可填其一或两者（会更新状态机内触价离场价位），无调整则均为 null。\n" +
   "4. risk_note 简短指出最大不确定性；若无明显额外风险则为 null。\n" +
   "\n" +
   "请只返回严格 JSON，不要输出 Markdown、代码块或额外解释：\n" +

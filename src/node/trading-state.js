@@ -12,6 +12,8 @@ const EARLY_EXIT_COOLDOWN_MS = 60 * 1000;
 const MIN_LOOK_CONFIDENCE = 80;
 const MIN_ENTER_CONFIDENCE = 80;
 const MIN_EXIT_CONFIDENCE = 90;
+/** 持仓 intent 为 HOLD 时，用 JSON 中的止损/止盈更新纪律价位的最低置信度 */
+const MIN_HOLD_RISK_ADJUST_CONFIDENCE = 80;
 
 let store = Object.create(null);
 
@@ -384,8 +386,31 @@ function applyTradingDecision(key, candle, decision, now = Date.now()) {
         };
       }
       if (intent === "HOLD") {
-        touchTransition(state, now, "holding_long_keep", intent);
-        return { applied: true, transition: "HOLDING_LONG->HOLDING_LONG", tradeState: cloneState(state) };
+        const entry = toPrice(state.entryPrice);
+        let riskAdjusted = false;
+        if (confidence >= MIN_HOLD_RISK_ADJUST_CONFIDENCE && entry != null) {
+          if (stopLoss != null) {
+            state.stopLoss = normalizeStopLoss("LONG", stopLoss, entry);
+            riskAdjusted = true;
+          }
+          if (takeProfit != null) {
+            state.takeProfit = normalizeTakeProfit("LONG", takeProfit, entry);
+            riskAdjusted = true;
+          }
+        }
+        touchTransition(
+          state,
+          now,
+          riskAdjusted ? "holding_long_risk_adjust" : "holding_long_keep",
+          intent,
+        );
+        return {
+          applied: true,
+          transition: riskAdjusted
+            ? "HOLDING_LONG->HOLDING_LONG [risk]"
+            : "HOLDING_LONG->HOLDING_LONG",
+          tradeState: cloneState(state),
+        };
       }
       return {
         applied: false,
@@ -403,8 +428,31 @@ function applyTradingDecision(key, candle, decision, now = Date.now()) {
         };
       }
       if (intent === "HOLD") {
-        touchTransition(state, now, "holding_short_keep", intent);
-        return { applied: true, transition: "HOLDING_SHORT->HOLDING_SHORT", tradeState: cloneState(state) };
+        const entry = toPrice(state.entryPrice);
+        let riskAdjusted = false;
+        if (confidence >= MIN_HOLD_RISK_ADJUST_CONFIDENCE && entry != null) {
+          if (stopLoss != null) {
+            state.stopLoss = normalizeStopLoss("SHORT", stopLoss, entry);
+            riskAdjusted = true;
+          }
+          if (takeProfit != null) {
+            state.takeProfit = normalizeTakeProfit("SHORT", takeProfit, entry);
+            riskAdjusted = true;
+          }
+        }
+        touchTransition(
+          state,
+          now,
+          riskAdjusted ? "holding_short_risk_adjust" : "holding_short_keep",
+          intent,
+        );
+        return {
+          applied: true,
+          transition: riskAdjusted
+            ? "HOLDING_SHORT->HOLDING_SHORT [risk]"
+            : "HOLDING_SHORT->HOLDING_SHORT",
+          tradeState: cloneState(state),
+        };
       }
       return {
         applied: false,
@@ -429,6 +477,7 @@ module.exports = {
   TradingState,
   DEFAULT_COOLDOWN_MS,
   EARLY_EXIT_COOLDOWN_MS,
+  MIN_HOLD_RISK_ADJUST_CONFIDENCE,
   getAllowedIntentsForState,
   getTradingState,
   syncTradingStateBeforeLlm,

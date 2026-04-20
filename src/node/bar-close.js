@@ -151,7 +151,7 @@ function buildStateAwareUserText(marketText, tradeState) {
     "补充规则：",
     "1. 只能从 allowed_intents 中选择一个 intent。",
     "2. 若当前为 LOOKING_*，只有确认条件成立才输出 ENTER_*；否则输出 CANCEL_LOOKING 或 WAIT。",
-    "3. 若当前为 HOLDING_*，禁止重复开仓，只能 HOLD 或 EXIT_*。",
+    "3. 若当前为 HOLDING_*，禁止重复开仓，只能 HOLD 或 EXIT_*；若 intent 为 HOLD 且需移动止损或目标位，在 JSON 中给出新的 stop_loss / take_profit（置信度足够时才会更新纪律价位）。",
     "4. 仅返回严格 JSON，不要输出 Markdown 代码块或额外解释。",
   ].join("\n");
 }

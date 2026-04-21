@@ -173,9 +173,12 @@ function DashboardSectionCard({
   return (
     <Card
       size="sm"
-      className={cn("gap-0 overflow-hidden py-0 shadow-none ring-border/60", className)}
+      className={cn(
+        "gap-0 overflow-hidden py-0 shadow-none ring-border/60 data-[size=sm]:gap-0 data-[size=sm]:py-0",
+        className,
+      )}
     >
-      <CardHeader className="border-b border-border/50 bg-muted/25 px-3 pb-2.5 pt-3">
+      <CardHeader className="rounded-none border-b border-border/60 bg-muted/45 px-3 pb-2.5 pt-3">
         <div className="flex items-start gap-2.5">
           {Icon ? (
             <div
@@ -266,10 +269,13 @@ function DashboardToolbarCard({
     ? "bg-emerald-500/12 text-emerald-700 ring-emerald-500/20 dark:text-emerald-400"
     : "bg-muted/70 text-muted-foreground ring-border/40"
   return (
-    <Card size="sm" className="gap-0 overflow-hidden py-0 shadow-none ring-border/60">
+    <Card
+      size="sm"
+      className="gap-0 overflow-hidden py-0 shadow-none ring-border/60 data-[size=sm]:gap-0 data-[size=sm]:py-0"
+    >
       <CardHeader
         className={cn(
-          "grid auto-rows-min grid-cols-1 items-center gap-2 border-b border-border/50 bg-muted/25 px-3 pb-3 pt-3 sm:grid-cols-[1fr_auto]",
+          "grid auto-rows-min grid-cols-1 items-center gap-2 rounded-none border-b border-border/60 bg-muted/45 px-3 pb-3 pt-3 sm:grid-cols-[1fr_auto]",
           embedded && "has-data-[slot=card-action]:grid-cols-1",
         )}
       >
@@ -730,7 +736,7 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
       {err ? (
         <Card
           size="sm"
-          className="gap-0 overflow-hidden border-destructive/35 py-0 shadow-none ring-destructive/20"
+          className="gap-0 overflow-hidden border-destructive/35 py-0 shadow-none ring-destructive/20 data-[size=sm]:gap-0 data-[size=sm]:py-0"
         >
           <CardContent className="flex gap-2.5 px-3 py-2.5" role="alert" aria-live="polite">
             <div

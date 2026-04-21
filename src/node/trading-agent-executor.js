@@ -171,10 +171,17 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
             });
           }
           sendOkxStatus({ ok: true, message: `Agent 平仓 ${orderType} ordId=${ex.ordId || ""}` });
+          const closedSide =
+            ex.preCloseHoldingState === "HOLDING_SHORT"
+              ? "short"
+              : ex.preCloseHoldingState === "HOLDING_LONG"
+                ? "long"
+                : null;
           return {
             ok: true,
             message: `平仓单已提交，ordId=${ex.ordId}`,
             exchange: { ordId: ex.ordId, closeSz: ex.closeSz },
+            closedSide,
           };
         }
         case "cancel_order": {

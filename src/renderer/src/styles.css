@@ -161,6 +161,162 @@ body,
   opacity: 0.92;
 }
 
+/* 历史列表：成功开仓轮次 — 与纯分析卡片区分 */
+.llm-round-card--has-open {
+  border-width: 1px;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 6%, transparent),
+    0 12px 36px rgba(15, 23, 42, 0.08);
+}
+
+.llm-round-card--open-long {
+  border-color: color-mix(in oklch, var(--chart-2, #22c55e) 42%, var(--border));
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--chart-2, #22c55e) 12%, var(--card)) 0%,
+    color-mix(in oklch, var(--card) 88%, var(--background)) 48%,
+    color-mix(in oklch, var(--card) 92%, var(--background)) 100%
+  );
+}
+
+.llm-round-card--open-short {
+  border-color: color-mix(in oklch, var(--chart-1, #f43f5e) 40%, var(--border));
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--chart-1, #f43f5e) 11%, var(--card)) 0%,
+    color-mix(in oklch, var(--card) 88%, var(--background)) 48%,
+    color-mix(in oklch, var(--card) 92%, var(--background)) 100%
+  );
+}
+
+/* 最后一笔为平仓时（仅平、或平→…→仍以平结束） */
+.llm-round-card--trade-close {
+  border-color: color-mix(in oklch, var(--chart-3, #6366f1) 38%, var(--border));
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--chart-3, #6366f1) 10%, var(--card)) 0%,
+    color-mix(in oklch, var(--card) 88%, var(--background)) 48%,
+    color-mix(in oklch, var(--card) 92%, var(--background)) 100%
+  );
+}
+
+.llm-round-trade-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0 0;
+}
+
+.llm-round-open-trade {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in oklch, var(--border) 75%, transparent);
+  background: color-mix(in oklch, var(--background) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.llm-round-open-trade--long {
+  border-color: color-mix(in oklch, var(--chart-2, #22c55e) 28%, var(--border));
+}
+
+.llm-round-open-trade--short {
+  border-color: color-mix(in oklch, var(--chart-1, #f43f5e) 26%, var(--border));
+}
+
+.llm-round-close-trade {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in oklch, var(--border) 75%, transparent);
+  background: color-mix(in oklch, var(--background) 72%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.llm-round-close-trade--long {
+  border-color: color-mix(in oklch, var(--chart-3, #6366f1) 30%, var(--border));
+}
+
+.llm-round-close-trade--short {
+  border-color: color-mix(in oklch, var(--chart-4, #a855f7) 28%, var(--border));
+}
+
+.llm-round-close-trade--unknown {
+  border-color: color-mix(in oklch, var(--muted-foreground) 22%, var(--border));
+}
+
+.llm-round-close-trade--long .llm-round-open-trade-side {
+  color: var(--chart-3, #4f46e5);
+}
+
+.llm-round-close-trade--short .llm-round-open-trade-side {
+  color: var(--chart-4, #9333ea);
+}
+
+.llm-round-close-trade--unknown .llm-round-open-trade-side {
+  color: var(--muted-foreground);
+}
+
+.llm-round-open-trade-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.llm-round-open-trade-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: color-mix(in oklch, var(--primary) 16%, var(--muted));
+  color: var(--foreground);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 22%, transparent);
+}
+
+.llm-round-open-trade-side {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.llm-round-open-trade--long .llm-round-open-trade-side {
+  color: var(--chart-2, #16a34a);
+}
+
+.llm-round-open-trade--short .llm-round-open-trade-side {
+  color: var(--chart-1, #e11d48);
+}
+
+.llm-round-open-trade-dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.llm-round-open-trade-dl dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.llm-round-open-trade-dl dd {
+  margin: 0;
+  font-weight: 500;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+
 .llm-round-card-inner {
   display: flex;
   flex-direction: column;

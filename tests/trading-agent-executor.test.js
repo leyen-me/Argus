@@ -367,13 +367,19 @@ test("close_position：成功", async () => {
       executeAgentPerpClose: async (_c, a) => {
         assert.equal(a.orderType, "limit");
         assert.equal(a.limitPrice, 97_000);
-        return { ok: true, ordId: "c-1", closeSz: "0.01" };
+        return {
+          ok: true,
+          ordId: "c-1",
+          closeSz: "0.01",
+          preCloseHoldingState: "HOLDING_LONG",
+        };
       },
     }),
   );
   const out = await exec("close_position", { order_type: "limit", limit_price: 97_000 });
   assert.equal(out.ok, true);
   assert.equal(out.exchange.ordId, "c-1");
+  assert.equal(out.closedSide, "long");
 });
 
 test("close_position：order_type 默认 market", async () => {

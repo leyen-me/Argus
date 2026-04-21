@@ -474,8 +474,9 @@ function buildRecentCandlesMarkdownSection(recent) {
     r.turnover != null && r.turnover !== "" ? r.turnover : "—",
     formatPromptNumber(sliceEma[j]),
   ]);
-  const emaNote =
-    `EMA20：基于收盘价；第 ${EMA20_PERIOD} 根起有效（首条为前 ${EMA20_PERIOD} 根 SMA）；已用本次拉取的 ${rows.length} 根预热，表内为最近 ${show} 根（旧→新）。`;
+  const emaNote = `表：最近 ${show} 根（旧→新）。\`EMA20\`：收盘 EMA(${EMA20_PERIOD})，第 1–${
+    EMA20_PERIOD - 1
+  } 根无该列；本轮拉取 ${rows.length} 根参与计算。`;
   return [
     "",
     `${title}${meta}`,

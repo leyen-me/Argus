@@ -3,12 +3,12 @@ import { Button } from "@/components/ui/button"
 
 type EquityPoint = { t: string; equity: number }
 
-type WinStats = {
-  wins: number
-  losses: number
-  totalClosed: number
-  winRate: number | null
-  sampleLimit: number
+type AgentToolStats = {
+  openOk: number
+  openFail: number
+  closeOk: number
+  closeFail: number
+  sessionsWithTrace: number
 }
 
 type PositionRow = {
@@ -33,7 +33,8 @@ type DashboardPayload = {
   baselineEquityUsdt?: number | null
   pnlVsBaselineUsdt?: number | null
   positions?: PositionRow[]
-  winStats?: WinStats | null
+  agentToolStats?: AgentToolStats
+  dashboardAgentToolStatsSince?: string | null
   equitySeries?: EquityPoint[]
 }
 
@@ -43,11 +44,6 @@ function fmtUsd(n: number | null | undefined, digits = 2) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   })
-}
-
-function fmtPct(n: number | null | undefined) {
-  if (n == null || !Number.isFinite(n)) return "—"
-  return `${(n * 100).toFixed(1)}%`
 }
 
 function EquitySparkline({ series }: { series: EquityPoint[] }) {
@@ -134,10 +130,29 @@ export function TradingDashboardCard() {
     }
   }, [load])
 
+  const setAgentStatsSinceNow = useCallback(async () => {
+    try {
+      await window.argus?.saveConfig?.({ dashboardAgentToolStatsSince: new Date().toISOString() })
+      void load()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }, [load])
+
+  const clearAgentStatsSince = useCallback(async () => {
+    try {
+      await window.argus?.saveConfig?.({ dashboardAgentToolStatsSince: null })
+      void load()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }, [load])
+
   const skipped = snap?.skipped === true
   const series = Array.isArray(snap?.equitySeries) ? snap!.equitySeries! : []
   const positions = Array.isArray(snap?.positions) ? snap!.positions! : []
-  const ws = snap?.winStats
+  const at = snap?.agentToolStats
+  const statsSince = snap?.dashboardAgentToolStatsSince
   const showLive = !skipped && snap?.ok === true
 
   return (
@@ -177,6 +192,27 @@ export function TradingDashboardCard() {
           </Button>
           <Button
             type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2.5 text-[11px] shadow-none"
+            disabled={loading}
+            title="仅统计此时间点之后的 Agent 回合（换策略时可重置，不含手动单）"
+            onClick={() => void setAgentStatsSinceNow()}
+          >
+            Agent 统计起点
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-[11px] text-muted-foreground shadow-none"
+            disabled={loading}
+            onClick={() => void clearAgentStatsSince()}
+          >
+            清除统计起点
+          </Button>
+          <Button
+            type="button"
             variant="secondary"
             size="sm"
             className="h-7 px-2.5 text-[11px] shadow-none"
@@ -192,26 +228,50 @@ export function TradingDashboardCard() {
 
       {skipped ? (
         <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-          请在配置中心启用「OKX 永续」并填写 API，即可查看胜率、资金与持仓。本地仍会保留已采样的资金曲线。
+          请在配置中心启用「OKX 永续」并填写 API，即可查看资金与持仓。本地仍会保留已采样的资金曲线；下方 Agent 统计不依赖 OKX。
         </p>
+      ) : null}
+
+      {at ? (
+        <div className="mt-2 space-y-1.5 rounded-md border border-border/70 bg-muted/15 px-2.5 py-2 text-[11px]">
+          <div className="font-medium text-foreground">Agent 工具结果（仅本项目）</div>
+          <p className="m-0 text-[10px] leading-relaxed text-muted-foreground">
+            来自本机 SQLite 中各次收盘 Agent 的{" "}
+            <code className="rounded bg-muted px-0.5">open_position</code> /{" "}
+            <code className="rounded bg-muted px-0.5">close_position</code>{" "}
+            返回值，不包含您在 OKX 其他端的手动单，也<strong>不是</strong>按盈亏定义的胜率。
+          </p>
+          <div className="text-[10px] text-muted-foreground">
+            {statsSince
+              ? `统计范围：自 ${statsSince.replace("T", " ").slice(0, 19)} UTC 起`
+              : "统计范围：全部历史回合"}
+            {" · "}
+            含工具 trace 的回合 {at.sessionsWithTrace} 个
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div>
+              <div className="text-muted-foreground">开仓 · 成功</div>
+              <div className="font-medium tabular-nums">{at.openOk}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">开仓 · 失败</div>
+              <div className="font-medium tabular-nums">{at.openFail}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">平仓 · 成功</div>
+              <div className="font-medium tabular-nums">{at.closeOk}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">平仓 · 失败</div>
+              <div className="font-medium tabular-nums">{at.closeFail}</div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {showLive ? (
         <div className="mt-2 space-y-2">
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] sm:grid-cols-3">
-            <div>
-              <div className="text-muted-foreground">胜率（估算）</div>
-              <div className="font-medium tabular-nums text-foreground">
-                {ws && ws.totalClosed > 0 ? fmtPct(ws.winRate) : "—"}
-              </div>
-              {ws && ws.totalClosed > 0 ? (
-                <div className="text-[10px] text-muted-foreground">
-                  近 {ws.sampleLimit} 条平仓 · 盈 {ws.wins} / 亏 {ws.losses}
-                </div>
-              ) : (
-                <div className="text-[10px] text-muted-foreground">需 OKX 历史平仓数据</div>
-              )}
-            </div>
             <div>
               <div className="text-muted-foreground">总盈亏（相对基准）</div>
               <div
@@ -234,6 +294,10 @@ export function TradingDashboardCard() {
               <div className="font-medium tabular-nums text-foreground">{fmtUsd(snap.uplUsdt ?? null)}</div>
             </div>
             <div>
+              <div className="text-muted-foreground">当前权益（USDT）</div>
+              <div className="font-medium tabular-nums text-foreground">{fmtUsd(snap.equityUsdt ?? null)}</div>
+            </div>
+            <div>
               <div className="text-muted-foreground">可用资金</div>
               <div className="font-medium tabular-nums text-foreground">{fmtUsd(snap.availEqUsdt ?? null)}</div>
             </div>
@@ -243,10 +307,6 @@ export function TradingDashboardCard() {
                 {fmtUsd(snap.marginUsedUsdt ?? null)}
               </div>
               <div className="text-[10px] text-muted-foreground">imr 或 权益−可用</div>
-            </div>
-            <div className="col-span-2 sm:col-span-1">
-              <div className="text-muted-foreground">当前权益（USDT）</div>
-              <div className="font-medium tabular-nums text-foreground">{fmtUsd(snap.equityUsdt ?? null)}</div>
             </div>
           </div>
 

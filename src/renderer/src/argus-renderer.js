@@ -87,6 +87,7 @@ const FALLBACK_APP_CONFIG = {
   okxSwapMarginFraction: 0.25,
   okxTdMode: "isolated",
   dashboardBaselineEquityUsdt: null,
+  dashboardAgentToolStatsSince: null,
 };
 
 /** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */

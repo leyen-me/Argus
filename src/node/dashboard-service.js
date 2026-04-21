@@ -1,5 +1,6 @@
 const okxPerp = require("./okx-perp");
 const dashboardStore = require("./dashboard-store");
+const { aggregateAgentToolStats } = require("./agent-tool-stats");
 
 /**
  * @param {object} metrics {@link okxPerp.fetchUsdtAccountMetrics}
@@ -41,6 +42,18 @@ async function getDashboardSnapshot(cfg) {
       ? baselineRaw
       : null;
 
+  const statsSinceRaw = cfg?.dashboardAgentToolStatsSince;
+  const dashboardAgentToolStatsSince =
+    typeof statsSinceRaw === "string" && statsSinceRaw.trim() && Number.isFinite(Date.parse(statsSinceRaw.trim()))
+      ? statsSinceRaw.trim()
+      : null;
+  const agentToolStats = aggregateAgentToolStats(dashboardAgentToolStatsSince);
+
+  const agentPack = {
+    agentToolStats,
+    dashboardAgentToolStatsSince,
+  };
+
   const emptySeries = dashboardStore.listRecentEquitySamples(400);
 
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
@@ -50,6 +63,7 @@ async function getDashboardSnapshot(cfg) {
       reason: "okx_swap_disabled",
       baselineEquityUsdt,
       equitySeries: emptySeries,
+      ...agentPack,
     };
   }
 
@@ -62,6 +76,7 @@ async function getDashboardSnapshot(cfg) {
       message: "OKX API 未配置完整",
       baselineEquityUsdt,
       equitySeries: emptySeries,
+      ...agentPack,
     };
   }
 
@@ -69,10 +84,9 @@ async function getDashboardSnapshot(cfg) {
   const client = okxPerp.createOkxClient({ apiKey, secretKey, passphrase, simulated });
 
   try {
-    const [metrics, positions, winStats] = await Promise.all([
+    const [metrics, positions] = await Promise.all([
       okxPerp.fetchUsdtAccountMetrics(client),
       okxPerp.fetchOpenSwapPositionsAll(client),
-      okxPerp.fetchSwapPositionsHistoryWinStats(client, 100).catch(() => null),
     ]);
 
     const equityUsdt = pickDisplayEquityUsdt(metrics);
@@ -100,8 +114,8 @@ async function getDashboardSnapshot(cfg) {
       baselineEquityUsdt,
       pnlVsBaselineUsdt: pnlVsBaseline,
       positions,
-      winStats,
       equitySeries,
+      ...agentPack,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -110,6 +124,7 @@ async function getDashboardSnapshot(cfg) {
       message: msg,
       baselineEquityUsdt,
       equitySeries: dashboardStore.listRecentEquitySamples(400),
+      ...agentPack,
     };
   }
 }

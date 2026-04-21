@@ -354,38 +354,6 @@ async function fetchOpenSwapPositionsAll(client) {
 }
 
 /**
- * 基于历史平仓记录的胜率估计（OKX positions-history，最近若干条）。
- * @param {ReturnType<createOkxClient>} client
- * @param {number} [limit=100]
- */
-async function fetchSwapPositionsHistoryWinStats(client, limit = 100) {
-  const lim = Math.min(100, Math.max(1, Math.floor(limit)));
-  const j = await client.request(
-    "GET",
-    `/api/v5/account/positions-history?instType=SWAP&limit=${lim}`,
-    "",
-  );
-  const rows = Array.isArray(j.data) ? j.data : [];
-  let wins = 0;
-  let losses = 0;
-  for (const r of rows) {
-    const raw = r?.pnl ?? r?.realizedPnl ?? "";
-    const pnl = parseFloat(raw);
-    if (!Number.isFinite(pnl) || pnl === 0) continue;
-    if (pnl > 0) wins += 1;
-    else losses += 1;
-  }
-  const total = wins + losses;
-  return {
-    wins,
-    losses,
-    totalClosed: total,
-    winRate: total > 0 ? wins / total : null,
-    sampleLimit: lim,
-  };
-}
-
-/**
  * 持仓接口同时返回 pos / availPos（见 OKX GET /api/v5/account/positions 响应字段说明）。
  * @param {object} r
  */
@@ -1739,7 +1707,6 @@ module.exports = {
   getOkxSwapPositionSnapshot,
   fetchUsdtAccountMetrics,
   fetchOpenSwapPositionsAll,
-  fetchSwapPositionsHistoryWinStats,
   fetchTickerLast,
   fetchSwapInstrument,
   formatOkxPx,

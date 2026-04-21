@@ -48,6 +48,8 @@ const APP_SETTINGS_SEED = Object.freeze({
   okxTdMode: "isolated",
   /** 仪表盘「初始资金」基准（USDT 权益）；null 表示未设定，可在界面一键写入当前权益。 */
   dashboardBaselineEquityUsdt: null,
+  /** 仪表盘「Agent 工具统计」起点：仅统计 captured_at 不早于此 ISO 时间的回合；null 表示自始累计。 */
+  dashboardAgentToolStatsSince: null,
 });
 
 const DEFAULT_OPENAI_BASE_URL = APP_SETTINGS_SEED.openaiBaseUrl;
@@ -295,6 +297,18 @@ function normalizeConfig(raw) {
     }
   }
 
+  let dashboardAgentToolStatsSince = base.dashboardAgentToolStatsSince;
+  if ("dashboardAgentToolStatsSince" in raw) {
+    const v = raw.dashboardAgentToolStatsSince;
+    if (v === null || v === "") dashboardAgentToolStatsSince = null;
+    else if (typeof v === "string" && v.trim()) {
+      const t = Date.parse(v.trim());
+      dashboardAgentToolStatsSince = Number.isFinite(t) ? v.trim() : null;
+    } else {
+      dashboardAgentToolStatsSince = null;
+    }
+  }
+
   return {
     symbols,
     defaultSymbol,
@@ -324,6 +338,7 @@ function normalizeConfig(raw) {
     okxSwapMarginFraction,
     okxTdMode,
     dashboardBaselineEquityUsdt,
+    dashboardAgentToolStatsSince,
   };
 }
 

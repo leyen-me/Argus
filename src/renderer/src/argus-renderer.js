@@ -1211,6 +1211,7 @@ function initFishMode() {
 const ARGUS_CONFIG_MODAL_OPEN = "argus:config-modal-open";
 const ARGUS_CONFIG_MODAL_CLOSE = "argus:config-modal-close";
 const ARGUS_STRATEGY_MODAL_OPEN = "argus:strategy-modal-open";
+const ARGUS_DASHBOARD_MODAL_OPEN = "argus:dashboard-modal-open";
 const ARGUS_PROMPT_STRATEGIES_CHANGED = "argus:prompt-strategies-changed";
 
 /**
@@ -1521,6 +1522,14 @@ function initStrategyCenter() {
   if (!btn) return;
   btn.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent(ARGUS_STRATEGY_MODAL_OPEN));
+  });
+}
+
+function initDashboardModal() {
+  const btn = document.getElementById("btn-open-dashboard");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    window.dispatchEvent(new CustomEvent(ARGUS_DASHBOARD_MODAL_OPEN));
   });
 }
 
@@ -2063,6 +2072,7 @@ export function initArgusApp() {
     initChartIntervalSelect();
     initChartCaptureBridge();
     initConfigCenter();
+    initDashboardModal();
     initStrategyCenter();
     initDevToolsButton();
     initFishMode();

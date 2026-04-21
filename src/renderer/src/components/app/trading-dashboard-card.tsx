@@ -84,7 +84,7 @@ function EquitySparkline({ series }: { series: EquityPoint[] }) {
   )
 }
 
-export function TradingDashboardCard() {
+export function TradingDashboardCard({ embedded = false }: { embedded?: boolean }) {
   const [snap, setSnap] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -155,20 +155,41 @@ export function TradingDashboardCard() {
   const statsSince = snap?.dashboardAgentToolStatsSince
   const showLive = !skipped && snap?.ok === true
 
+  const simBadge =
+    snap?.simulated === true ? (
+      <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+        模拟盘
+      </span>
+    ) : null
+
   return (
-    <div className="shrink-0 border-b border-border/60 px-3 pt-3 pb-2">
+    <div
+      className={
+        embedded
+          ? "shrink-0 px-1 pt-0 pb-2"
+          : "shrink-0 border-b border-border/60 px-3 pt-3 pb-2"
+      }
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-            仪表盘
-          </span>
-          {snap?.simulated === true ? (
-            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-              模拟盘
-            </span>
-          ) : null}
+        <div className="flex min-w-0 items-center gap-2">
+          {!embedded ? (
+            <>
+              <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                仪表盘
+              </span>
+              {simBadge}
+            </>
+          ) : (
+            simBadge
+          )}
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div
+          className={
+            embedded && snap?.simulated !== true
+              ? "ml-auto flex flex-wrap items-center gap-1.5"
+              : "flex flex-wrap items-center gap-1.5"
+          }
+        >
           <Button
             type="button"
             variant="outline"

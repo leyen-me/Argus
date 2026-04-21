@@ -1,4 +1,4 @@
-import { BookOpen, EyeOff, Settings, Terminal } from "lucide-react"
+import { BookOpen, EyeOff, LayoutDashboard, Settings, Terminal } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -31,6 +31,17 @@ export function TitleBar() {
         >
           <Terminal className="size-3.5 opacity-80" aria-hidden />
           控制台
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="titlebar-config h-7 gap-1.5 px-2.5 text-xs font-semibold shadow-none"
+          id="btn-open-dashboard"
+          title="交易仪表盘：资金、持仓与 Agent 统计"
+        >
+          <LayoutDashboard className="size-3.5 opacity-80" aria-hidden />
+          仪表盘
         </Button>
         <Button
           type="button"

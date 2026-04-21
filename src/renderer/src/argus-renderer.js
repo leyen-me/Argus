@@ -331,9 +331,6 @@ function agentBarTurnRowToPayload(row) {
     textForLlm: row.textForLlm,
     fullUserPromptForDisplay: row.llmUserFullText,
     chartImage: null,
-    chartDeferred: row.hasChart === true,
-    chartCaptureError: row.chartCaptureError || null,
-    fromHistory: true,
     llm: {
       enabled: true,
       reasoningEnabled: false,
@@ -530,10 +527,8 @@ function updateLlmRoundAfterAgentFinished(barCloseId, outcome) {
   const btn = root.querySelector(".llm-round-detail-btn");
   if (btn instanceof HTMLButtonElement) {
     btn.disabled = false;
-    btn.setAttribute("aria-label", "在弹窗中查看多轮对话与工具明细");
+    btn.setAttribute("aria-label", "在弹窗中查看多轮对话明细");
   }
-  const hint = root.querySelector(".llm-round-detail-hint");
-  if (hint) hint.textContent = "点击查看多轮对话与工具明细";
   const statusWrap = root.querySelector(".llm-round-status-wrap");
   if (statusWrap) {
     const kind = outcome === "err" ? "error" : "done";
@@ -799,96 +794,15 @@ function buildLlmRoundElement(payload) {
   const summaryTitle = document.createElement("span");
   summaryTitle.className = "llm-round-summary-title";
   summaryTitle.textContent = payload.tvSymbol || "未命名标的";
-  const summaryTag = document.createElement("span");
-  summaryTag.className = "llm-round-summary-tag";
-  summaryTag.textContent = "单轮 Agent";
-  head.append(summaryTitle, summaryTag);
-
-  const chartDataUrl = payload?.chartImage?.dataUrl;
-  if (chartDataUrl) {
-    const tbtn = document.createElement("button");
-    tbtn.type = "button";
-    tbtn.className = "llm-round-card-thumb";
-    tbtn.title = "放大查看本轮截图";
-    tbtn.setAttribute("aria-label", "放大预览本轮图表截图");
-    const img = document.createElement("img");
-    img.src = chartDataUrl;
-    img.alt = "";
-    img.decoding = "async";
-    tbtn.appendChild(img);
-    tbtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openLlmChartPreview(chartDataUrl);
-    });
-    head.appendChild(tbtn);
-  } else if (payload.chartCaptureError) {
-    const hint = document.createElement("span");
-    hint.className = "llm-round-chart-hint";
-    hint.textContent = `截图：${payload.chartCaptureError}`;
-    head.appendChild(hint);
-  } else if (payload.chartDeferred && payload.barCloseId && window.argus?.getAgentBarTurnChart) {
-    const loadBtn = document.createElement("button");
-    loadBtn.type = "button";
-    loadBtn.className = "llm-round-thumb llm-round-thumb--load";
-    loadBtn.textContent = "加载截图";
-    loadBtn.title = "从本地库加载该轮图表";
-    loadBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      loadBtn.disabled = true;
-      try {
-        const imgData = await window.argus.getAgentBarTurnChart(payload.barCloseId);
-        if (!imgData?.dataUrl) {
-          loadBtn.textContent = "无截图";
-          return;
-        }
-        loadBtn.remove();
-        const tbtn = document.createElement("button");
-        tbtn.type = "button";
-        tbtn.className = "llm-round-card-thumb";
-        tbtn.title = "放大查看本轮截图";
-        const im = document.createElement("img");
-        im.src = imgData.dataUrl;
-        im.alt = "";
-        im.decoding = "async";
-        tbtn.appendChild(im);
-        tbtn.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          openLlmChartPreview(imgData.dataUrl);
-        });
-        head.appendChild(tbtn);
-      } catch {
-        loadBtn.textContent = "加载失败";
-      } finally {
-        loadBtn.disabled = false;
-      }
-    });
-    head.appendChild(loadBtn);
-  }
+  head.appendChild(summaryTitle);
 
   top.append(head, buildLlmRoundStatusEl(statusKind));
 
-  const meta = document.createElement("div");
-  meta.className = "llm-round-card-meta";
-  if (cap) {
-    const time = document.createElement("span");
-    time.className = "llm-round-summary-chip";
-    time.textContent = cap;
-    meta.appendChild(time);
-  }
-  if (payload.fromHistory) {
-    const hist = document.createElement("span");
-    hist.className = "llm-round-summary-chip llm-round-summary-chip--history";
-    hist.textContent = "历史记录";
-    meta.appendChild(hist);
-  }
-
-  inner.append(top, meta);
-
-  const actions = document.createElement("div");
-  actions.className = "llm-round-card-actions";
-  const hint = document.createElement("span");
-  hint.className = "llm-round-detail-hint";
-  hint.textContent = locked ? "决策完成后可查看多轮对话与工具明细" : "点击查看多轮对话与工具明细";
+  const sub = document.createElement("div");
+  sub.className = "llm-round-card-sub";
+  const timeEl = document.createElement("span");
+  timeEl.className = "llm-round-card-time";
+  timeEl.textContent = cap;
   const detailBtn = document.createElement("button");
   detailBtn.type = "button";
   detailBtn.className = "llm-round-detail-btn";
@@ -896,11 +810,11 @@ function buildLlmRoundElement(payload) {
   detailBtn.disabled = locked;
   detailBtn.setAttribute(
     "aria-label",
-    locked ? "决策完成后可查看多轮对话明细" : "在弹窗中查看多轮对话与工具明细",
+    locked ? "决策完成后可查看明细" : "在弹窗中查看多轮对话明细",
   );
-  actions.append(hint, detailBtn);
+  sub.append(timeEl, detailBtn);
+  inner.append(top, sub);
   card.appendChild(inner);
-  card.appendChild(actions);
 
   const openIfUnlocked = () => {
     if (round.dataset.detailLocked === "1") return;
@@ -909,7 +823,6 @@ function buildLlmRoundElement(payload) {
   card.addEventListener("click", (e) => {
     const t = /** @type {HTMLElement | null} */ (e.target);
     if (t?.closest?.(".llm-round-detail-btn")) return;
-    if (t?.closest?.(".llm-round-card-thumb") || t?.closest?.(".llm-round-thumb--load")) return;
     openIfUnlocked();
   });
   detailBtn.addEventListener("click", (e) => {

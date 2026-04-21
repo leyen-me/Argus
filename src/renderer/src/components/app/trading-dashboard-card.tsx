@@ -382,14 +382,16 @@ function DashboardToolbarCard({
 function SwapCloseWinRateCard({
   stats,
   sinceIso,
+  sinceValid,
 }: {
   stats: SwapCloseFillStats | null | undefined
   sinceIso: string | null | undefined
+  sinceValid: boolean
 }) {
   const sinceHint =
-    typeof sinceIso === "string" && sinceIso.length > 0
-      ? `自 ${fmtSampleTime(sinceIso) ?? sinceIso} 起`
-      : "未限定策略起点（OKX 近约三个月内全部平仓成交）"
+    sinceValid && typeof sinceIso === "string" && sinceIso.length > 0
+      ? `仅统计 ${fmtSampleTime(sinceIso) ?? sinceIso} 之后（与资金曲线、开平仓次数起点一致）。`
+      : null
   const decided = (stats?.wins ?? 0) + (stats?.losses ?? 0)
 
   return (
@@ -397,7 +399,8 @@ function SwapCloseWinRateCard({
       title="平仓胜率（OKX 成交）"
       description={
         <>
-          按永续平仓成交统计，含模型平仓与止盈/止损触发；分批平仓记为多笔。胜率 = 盈利笔数 /（盈利 + 亏损）；保本单独列出。{sinceHint}
+          按永续平仓成交统计，含模型平仓与止盈/止损触发；分批平仓记为多笔。胜率 = 盈利笔数 /（盈利 + 亏损）；保本单独列出。
+          {sinceHint ? <span className="mt-1 block">{sinceHint}</span> : null}
           {stats?.capped ? (
             <span className="mt-1 block text-amber-700/90 dark:text-amber-300/90">
               已拉取分页上限，更早记录未计入。
@@ -407,7 +410,11 @@ function SwapCloseWinRateCard({
       }
       icon={Percent}
     >
-      {!stats ? (
+      {!sinceValid ? (
+        <div className="rounded-lg border border-dashed border-border/60 bg-muted/15 px-3 py-3 text-[11px] leading-snug text-muted-foreground">
+          请先通过上方工具栏「开始策略范围」设置基准时间与统计起点；胜率仅统计该时点之后的平仓成交，不会纳入更早历史。
+        </div>
+      ) : !stats ? (
         <div className="rounded-lg border border-dashed border-border/60 bg-muted/15 px-3 py-3 text-[11px] leading-snug text-muted-foreground">
           暂无法拉取成交明细，请稍后刷新。
         </div>
@@ -719,15 +726,29 @@ function fmtSampleTime(t: string | undefined) {
   }
 }
 
-function EquityCurveCard({ series }: { series: EquityPoint[] }) {
+function EquityCurveCard({
+  series,
+  scopedToStatsSince,
+  statsSinceIso,
+}: {
+  series: EquityPoint[]
+  scopedToStatsSince: boolean
+  statsSinceIso?: string | null
+}) {
   const last = series[series.length - 1]
   const lastEq = last?.equity
+  const scopeLine =
+    scopedToStatsSince && statsSinceIso
+      ? `仅展示 ${fmtSampleTime(statsSinceIso) ?? statsSinceIso} 之后的采样（与胜率、开平仓统计起点一致）。`
+      : "未设置策略统计起点时，展示最近本地采样（与胜率统计范围无关）。"
   const desc =
     series.length && last
-      ? `最近采样 ${fmtSampleTime(last.t) ?? last.t} · 共 ${series.length} 点${
+      ? `${scopeLine} 最近点 ${fmtSampleTime(last.t) ?? last.t} · 共 ${series.length} 点${
           lastEq != null && Number.isFinite(lastEq) ? ` · 末值 ${fmtUsd(lastEq)}` : ""
         }`
-      : "启用 OKX 后持续写入本地，可用于回顾资金形状"
+      : scopedToStatsSince
+        ? `${scopeLine} 该时间之后尚无权益采样，请启用 OKX 并刷新以积累曲线。`
+        : "启用 OKX 后持续写入本地，可用于回顾资金形状。"
 
   return (
     <DashboardSectionCard
@@ -823,6 +844,9 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
   const sincePresent =
     typeof snap?.dashboardAgentToolStatsSince === "string" &&
     snap.dashboardAgentToolStatsSince.length > 0
+  const sinceRaw = snap?.dashboardAgentToolStatsSince
+  const sinceValid =
+    typeof sinceRaw === "string" && sinceRaw.trim().length > 0 && Number.isFinite(Date.parse(sinceRaw.trim()))
   const strategyRunning = baselinePresent && sincePresent
 
   const simBadge =
@@ -874,12 +898,20 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
       {showLive && snap ? (
         <>
           <AccountMetricsCard snap={snap} />
-          <SwapCloseWinRateCard stats={snap.swapCloseFillStats} sinceIso={snap.dashboardAgentToolStatsSince} />
+          <SwapCloseWinRateCard
+            stats={snap.swapCloseFillStats}
+            sinceIso={snap.dashboardAgentToolStatsSince}
+            sinceValid={sinceValid}
+          />
           <PositionsCard positions={positions} />
         </>
       ) : null}
 
-      <EquityCurveCard series={series} />
+      <EquityCurveCard
+        series={series}
+        scopedToStatsSince={sinceValid}
+        statsSinceIso={snap?.dashboardAgentToolStatsSince}
+      />
     </div>
   )
 }

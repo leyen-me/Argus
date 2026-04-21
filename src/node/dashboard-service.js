@@ -32,6 +32,47 @@ function pickMarginUsedUsdt(equityUsdt, avail, metrics) {
   return null;
 }
 
+const EQUITY_CHART_MAX_POINTS = 400;
+
+/**
+ * 与 Agent 统计、平仓胜率共用同一时间戳：仅保留该时点及之后的权益采样。
+ * @param {{ t: string, equity: number }[]} series
+ * @param {string | null} sinceIso `dashboardAgentToolStatsSince`
+ */
+function filterEquitySeriesFromStatsSince(series, sinceIso) {
+  if (!Array.isArray(series) || !sinceIso || typeof sinceIso !== "string") return series;
+  const t0 = Date.parse(sinceIso.trim());
+  if (!Number.isFinite(t0)) return series;
+  return series.filter((p) => typeof p.t === "string" && Date.parse(p.t) >= t0);
+}
+
+/**
+ * @param {{ t: string, equity: number }[]} series
+ */
+function capEquitySeriesTail(series, maxPoints = EQUITY_CHART_MAX_POINTS) {
+  if (series.length <= maxPoints) return series;
+  return series.slice(-maxPoints);
+}
+
+/**
+ * @param {string | null} sinceIso
+ */
+function equitySamplePullLimit(sinceIso) {
+  if (!sinceIso || typeof sinceIso !== "string" || !Number.isFinite(Date.parse(sinceIso.trim()))) {
+    return EQUITY_CHART_MAX_POINTS;
+  }
+  return 2000;
+}
+
+/**
+ * @param {string | null} sinceIso
+ */
+function buildEquitySeriesForDashboard(sinceIso) {
+  const raw = dashboardStore.listRecentEquitySamples(equitySamplePullLimit(sinceIso));
+  const filtered = filterEquitySeriesFromStatsSince(raw, sinceIso);
+  return capEquitySeriesTail(filtered);
+}
+
 /**
  * @param {object} cfg loadAppConfig()
  */
@@ -54,7 +95,7 @@ async function getDashboardSnapshot(cfg) {
     dashboardAgentToolStatsSince,
   };
 
-  const emptySeries = dashboardStore.listRecentEquitySamples(400);
+  const emptySeries = buildEquitySeriesForDashboard(dashboardAgentToolStatsSince);
 
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
     return {
@@ -97,23 +138,28 @@ async function getDashboardSnapshot(cfg) {
       dashboardStore.appendEquitySampleIfNeeded(equityUsdt);
     }
 
-    const equitySeries = dashboardStore.listRecentEquitySamples(400);
+    const equitySeries = buildEquitySeriesForDashboard(dashboardAgentToolStatsSince);
 
     let pnlVsBaseline = null;
     if (baselineEquityUsdt != null && equityUsdt != null) {
       pnlVsBaseline = equityUsdt - baselineEquityUsdt;
     }
 
-    const sinceMs = dashboardAgentToolStatsSince ? Date.parse(dashboardAgentToolStatsSince) : NaN;
+    const sinceMs =
+      dashboardAgentToolStatsSince && Number.isFinite(Date.parse(dashboardAgentToolStatsSince.trim()))
+        ? Date.parse(dashboardAgentToolStatsSince.trim())
+        : NaN;
     /** @type {Awaited<ReturnType<typeof okxPerp.aggregateSwapCloseFillStats>> | null} */
     let swapCloseFillStats = null;
-    try {
-      swapCloseFillStats = await okxPerp.aggregateSwapCloseFillStats(client, {
-        beginMs: Number.isFinite(sinceMs) ? sinceMs : null,
-        maxPages: 25,
-      });
-    } catch {
-      swapCloseFillStats = null;
+    if (Number.isFinite(sinceMs)) {
+      try {
+        swapCloseFillStats = await okxPerp.aggregateSwapCloseFillStats(client, {
+          beginMs: sinceMs,
+          maxPages: 25,
+        });
+      } catch {
+        swapCloseFillStats = null;
+      }
     }
 
     return {
@@ -136,7 +182,7 @@ async function getDashboardSnapshot(cfg) {
       ok: false,
       message: msg,
       baselineEquityUsdt,
-      equitySeries: dashboardStore.listRecentEquitySamples(400),
+      equitySeries: buildEquitySeriesForDashboard(dashboardAgentToolStatsSince),
       ...agentPack,
     };
   }

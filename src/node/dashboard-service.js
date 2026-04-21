@@ -104,6 +104,18 @@ async function getDashboardSnapshot(cfg) {
       pnlVsBaseline = equityUsdt - baselineEquityUsdt;
     }
 
+    const sinceMs = dashboardAgentToolStatsSince ? Date.parse(dashboardAgentToolStatsSince) : NaN;
+    /** @type {Awaited<ReturnType<typeof okxPerp.aggregateSwapCloseFillStats>> | null} */
+    let swapCloseFillStats = null;
+    try {
+      swapCloseFillStats = await okxPerp.aggregateSwapCloseFillStats(client, {
+        beginMs: Number.isFinite(sinceMs) ? sinceMs : null,
+        maxPages: 25,
+      });
+    } catch {
+      swapCloseFillStats = null;
+    }
+
     return {
       ok: true,
       simulated,
@@ -115,6 +127,7 @@ async function getDashboardSnapshot(cfg) {
       pnlVsBaselineUsdt: pnlVsBaseline,
       positions,
       equitySeries,
+      swapCloseFillStats,
       ...agentPack,
     };
   } catch (e) {

@@ -1710,6 +1710,117 @@ async function executeAgentPerpClose(cfg, args) {
   };
 }
 
+/**
+ * SWAP 平仓类成交的 subType（OKX `GET /api/v5/trade/fills-history`）。
+ * 含普通平仓、止盈止损触发的平仓、强平、ADL 等；与委托是否由 Agent 发起无关。
+ */
+const SWAP_CLOSE_FILL_SUB_TYPES = new Set([
+  "5",
+  "6",
+  "100",
+  "101",
+  "104",
+  "105",
+  "125",
+  "126",
+  "208",
+  "209",
+  "274",
+  "275",
+  "328",
+  "329",
+]);
+
+/**
+ * @param {unknown} row fills-history data item
+ * @returns {number | null}
+ */
+function parseSwapFillPnl(row) {
+  if (!row || typeof row !== "object") return null;
+  const o = /** @type {Record<string, unknown>} */ (row);
+  const raw =
+    o.fillPnl != null && String(o.fillPnl).trim() !== ""
+      ? o.fillPnl
+      : o.pnl != null
+        ? o.pnl
+        : null;
+  if (raw == null) return null;
+  const n = parseFloat(String(raw).trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * 汇总 SWAP 平仓成交笔数与已实现盈亏，用于仪表盘胜率（模型平仓与 TP/SL 触发均计入）。
+ * 数据来自 `fills-history`（约最近 3 个月），分页拉取。
+ *
+ * @param {{ request: Function }} client {@link createOkxClient}
+ * @param {{ beginMs?: number | null, maxPages?: number }} [opts]
+ */
+async function aggregateSwapCloseFillStats(client, opts = {}) {
+  const maxPagesRaw =
+    typeof opts.maxPages === "number" && Number.isFinite(opts.maxPages) && opts.maxPages > 0
+      ? Math.floor(opts.maxPages)
+      : 25;
+  const maxPages = Math.min(maxPagesRaw, 60);
+  const beginMs =
+    opts.beginMs != null && Number.isFinite(Number(opts.beginMs)) && Number(opts.beginMs) > 0
+      ? Math.floor(Number(opts.beginMs))
+      : null;
+
+  let wins = 0;
+  let losses = 0;
+  let breakeven = 0;
+  let realizedPnlSum = 0;
+  /** @type {string | undefined} */
+  let after = undefined;
+  let pagesFetched = 0;
+  let capped = false;
+
+  for (let page = 0; page < maxPages; page++) {
+    const q = new URLSearchParams({ instType: "SWAP", limit: "100" });
+    if (beginMs != null) q.set("begin", String(beginMs));
+    if (after) q.set("after", after);
+
+    const json = await client.request("GET", `/api/v5/trade/fills-history?${q.toString()}`, "");
+    const rows = Array.isArray(json?.data) ? json.data : [];
+    pagesFetched += 1;
+
+    for (const row of rows) {
+      const st = row && typeof row === "object" && "subType" in row ? String(row.subType ?? "") : "";
+      if (!SWAP_CLOSE_FILL_SUB_TYPES.has(st)) continue;
+      const pnl = parseSwapFillPnl(row);
+      if (pnl == null) continue;
+      realizedPnlSum += pnl;
+      if (pnl > 0) wins += 1;
+      else if (pnl < 0) losses += 1;
+      else breakeven += 1;
+    }
+
+    if (rows.length < 100) break;
+    const lastBill = rows[rows.length - 1]?.billId;
+    const nextAfter = lastBill != null ? String(lastBill) : "";
+    if (!nextAfter || nextAfter === after) break;
+    after = nextAfter;
+    if (page === maxPages - 1) {
+      capped = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 220));
+  }
+
+  const decided = wins + losses;
+  return {
+    wins,
+    losses,
+    breakeven,
+    closeFills: wins + losses + breakeven,
+    realizedPnlUsdtSum: realizedPnlSum,
+    winRate: decided > 0 ? wins / decided : null,
+    pagesFetched,
+    capped,
+  };
+}
+
 module.exports = {
   tvSymbolToSwapInstId,
   tvIntervalToOkxCandleBar,
@@ -1738,4 +1849,5 @@ module.exports = {
   smokeSwapOpenLong,
   smokeSwapClosePosition,
   smokeSwapOpenLongThenClose,
+  aggregateSwapCloseFillStats,
 };

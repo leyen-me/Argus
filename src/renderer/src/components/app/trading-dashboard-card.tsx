@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LineChart,
   List,
+  Percent,
   Plug,
   RefreshCw,
   Wallet,
@@ -23,6 +24,17 @@ type AgentToolStats = {
   closeOk: number
   closeFail: number
   sessionsWithTrace: number
+}
+
+type SwapCloseFillStats = {
+  wins: number
+  losses: number
+  breakeven: number
+  closeFills: number
+  realizedPnlUsdtSum: number
+  winRate: number | null
+  pagesFetched: number
+  capped: boolean
 }
 
 type PositionRow = {
@@ -50,6 +62,7 @@ type DashboardPayload = {
   agentToolStats?: AgentToolStats
   dashboardAgentToolStatsSince?: string | null
   equitySeries?: EquityPoint[]
+  swapCloseFillStats?: SwapCloseFillStats | null
 }
 
 function fmtUsd(n: number | null | undefined, digits = 2) {
@@ -63,6 +76,14 @@ function fmtUsd(n: number | null | undefined, digits = 2) {
 function fmtSignedUsd(n: number | null | undefined, digits = 2) {
   if (n == null || !Number.isFinite(n)) return "—"
   return `${n >= 0 ? "+" : ""}${fmtUsd(n, digits)}`
+}
+
+function fmtPct(ratio: number | null | undefined, digits = 1) {
+  if (ratio == null || !Number.isFinite(ratio)) return "—"
+  return `${(ratio * 100).toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}%`
 }
 
 function EquitySparkline({ series }: { series: EquityPoint[] }) {
@@ -358,6 +379,102 @@ function DashboardToolbarCard({
   )
 }
 
+function SwapCloseWinRateCard({
+  stats,
+  sinceIso,
+}: {
+  stats: SwapCloseFillStats | null | undefined
+  sinceIso: string | null | undefined
+}) {
+  const sinceHint =
+    typeof sinceIso === "string" && sinceIso.length > 0
+      ? `自 ${fmtSampleTime(sinceIso) ?? sinceIso} 起`
+      : "未限定策略起点（OKX 近约三个月内全部平仓成交）"
+  const decided = (stats?.wins ?? 0) + (stats?.losses ?? 0)
+
+  return (
+    <DashboardSectionCard
+      title="平仓胜率（OKX 成交）"
+      description={
+        <>
+          按永续平仓成交统计，含模型平仓与止盈/止损触发；分批平仓记为多笔。胜率 = 盈利笔数 /（盈利 + 亏损）；保本单独列出。{sinceHint}
+          {stats?.capped ? (
+            <span className="mt-1 block text-amber-700/90 dark:text-amber-300/90">
+              已拉取分页上限，更早记录未计入。
+            </span>
+          ) : null}
+        </>
+      }
+      icon={Percent}
+    >
+      {!stats ? (
+        <div className="rounded-lg border border-dashed border-border/60 bg-muted/15 px-3 py-3 text-[11px] leading-snug text-muted-foreground">
+          暂无法拉取成交明细，请稍后刷新。
+        </div>
+      ) : stats.closeFills === 0 ? (
+        <div className="rounded-lg border border-dashed border-border/60 bg-muted/15 px-3 py-3 text-[11px] leading-snug text-muted-foreground">
+          当前时间窗内尚无平仓类成交。
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="rounded-lg border border-border/55 bg-background/50 p-2.5 ring-1 ring-inset ring-border/25">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              胜率（盈 / 盈+亏）
+            </div>
+            <div
+              className={cn(
+                "mt-1 text-lg font-semibold tabular-nums",
+                stats.winRate != null && stats.winRate >= 0.5
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : stats.winRate != null
+                    ? "text-amber-700 dark:text-amber-400"
+                    : "text-foreground",
+              )}
+            >
+              {fmtPct(stats.winRate)}
+              {decided > 0 ? (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {stats.wins} / {decided}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <MetricTile label="平仓成交笔数">
+              <span className="font-semibold tabular-nums text-foreground">{stats.closeFills}</span>
+            </MetricTile>
+            <MetricTile label="盈利 / 亏损">
+              <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                {stats.wins}
+              </span>
+              <span className="text-muted-foreground"> / </span>
+              <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">
+                {stats.losses}
+              </span>
+            </MetricTile>
+            <MetricTile label="保本">
+              <span className="font-semibold tabular-nums text-foreground">{stats.breakeven}</span>
+            </MetricTile>
+            <MetricTile label="已实现盈亏（估）">
+              <span
+                className={cn(
+                  "font-semibold tabular-nums",
+                  stats.realizedPnlUsdtSum >= 0
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-red-600 dark:text-red-400",
+                )}
+              >
+                {fmtSignedUsd(stats.realizedPnlUsdtSum)}
+              </span>
+              <span className="text-[10px] font-normal text-muted-foreground"> USDT</span>
+            </MetricTile>
+          </div>
+        </div>
+      )}
+    </DashboardSectionCard>
+  )
+}
+
 function AgentToolStatsCard({ stats }: { stats: AgentToolStats }) {
   return (
     <DashboardSectionCard
@@ -632,7 +749,7 @@ function SkippedHintCard() {
       icon={Plug}
     >
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/6 px-3 py-2.5 text-[11px] leading-relaxed text-amber-950/90 dark:text-amber-100/90">
-        请在配置中心启用「OKX 永续」并填写 API，即可查看资金与持仓。本地仍会保留已采样的资金曲线；Agent 开平仓统计不依赖 OKX。
+        请在配置中心启用「OKX 永续」并填写 API，即可查看资金、持仓与基于成交的平仓胜率。本地仍会保留已采样的资金曲线；Agent 开平仓次数统计不依赖 OKX。
       </div>
     </DashboardSectionCard>
   )
@@ -757,6 +874,7 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
       {showLive && snap ? (
         <>
           <AccountMetricsCard snap={snap} />
+          <SwapCloseWinRateCard stats={snap.swapCloseFillStats} sinceIso={snap.dashboardAgentToolStatsSince} />
           <PositionsCard positions={positions} />
         </>
       ) : null}

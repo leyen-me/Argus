@@ -379,17 +379,81 @@ async function callOpenAIChat(userText, options = {}) {
   }
 }
 
-function buildUserPrompt(symbol, periodKey, candle) {
+/** Markdown 表格单元格：转义 `|`，压缩换行，空值显示为 — */
+function mdCell(v) {
+  if (v === undefined || v === null || v === "") return "—";
+  const s = String(v).replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+  return s.length > 280 ? `${s.slice(0, 277)}…` : s;
+}
+
+/** @param {string[]} headers */
+function mdTable(headers, rows) {
+  const head = "| " + headers.map((h) => String(h).replace(/\|/g, "\\|")).join(" | ") + " |";
+  const sep = "| " + headers.map(() => "---").join(" | ") + " |";
+  const body = rows.map((r) => "| " + r.map((c) => mdCell(c)).join(" | ") + " |").join("\n");
+  return body ? `${head}\n${sep}\n${body}` : `${head}\n${sep}`;
+}
+
+/**
+ * @param {{ ok: boolean, error?: string, rows?: Array<{ timeIso: string, open: string, high: string, low: string, close: string, volume: string, turnover: string | null }>, instId?: string | null, bar?: string } | null | undefined} recent
+ */
+function buildRecentCandlesMarkdownSection(recent) {
+  if (!recent) return "";
+  const title = "### 最近 K 线（OKX REST）";
+  if (!recent.ok) {
+    const err = mdCell(recent.error || "未知错误");
+    return ["", title, "", `（拉取失败：${err}。请依赖上图与上方「已收盘」一根。）`].join("\n");
+  }
+  const meta =
+    recent.instId && recent.bar
+      ? ` \`${recent.instId}\` · \`${recent.bar}\` · 共 ${recent.rows?.length ?? 0} 根（UTC，旧→新）`
+      : "";
+  const rows = Array.isArray(recent.rows) ? recent.rows : [];
+  if (!rows.length) {
+    return ["", `${title}${meta}`, "", "（无数据行）"].join("\n");
+  }
+  const tableRows = rows.map((r) => [
+    r.timeIso.replace("T", " ").slice(0, 19),
+    r.open,
+    r.high,
+    r.low,
+    r.close,
+    r.volume,
+    r.turnover != null && r.turnover !== "" ? r.turnover : "—",
+  ]);
   return [
-    `标的：${symbol}`,
-    `周期：${periodKey}（该 K 线已收盘确认）`,
-    `时间：${candle.timestamp}`,
-    `开 ${candle.open}  高 ${candle.high}  低 ${candle.low}  收 ${candle.close}`,
-    `成交量：${candle.volume}`,
-    candle.turnover != null ? `成交额：${candle.turnover}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    "",
+    `${title}${meta}`,
+    "",
+    mdTable(["Time (UTC)", "Open", "High", "Low", "Close", "Volume", "QuoteVol"], tableRows),
+  ].join("\n");
+}
+
+/**
+ * @param {object} candle
+ * @param {Parameters<typeof buildRecentCandlesMarkdownSection>[0]} [recentCandles] OKX 最近 N 根（与 WS 同源 instId）
+ */
+function buildUserPrompt(symbol, periodKey, candle, recentCandles) {
+  const row = [
+    symbol,
+    `${periodKey}（已收盘）`,
+    candle.timestamp,
+    candle.open,
+    candle.high,
+    candle.low,
+    candle.close,
+    candle.volume,
+    candle.turnover != null ? candle.turnover : "—",
+  ];
+  const head = [
+    "## K 线（已收盘）",
+    "",
+    mdTable(
+      ["标的", "周期", "时间", "Open", "High", "Low", "Close", "Volume", "Turnover"],
+      [row],
+    ),
+  ].join("\n");
+  return head + buildRecentCandlesMarkdownSection(recentCandles);
 }
 
 /**
@@ -493,6 +557,8 @@ module.exports = {
   streamOpenAIChat,
   runTradingAgentTurn,
   buildUserPrompt,
+  mdCell,
+  mdTable,
   buildMultimodalUserContent,
   buildUserTextForHistory,
   buildChatCompletionRequestFromMessages,

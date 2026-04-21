@@ -175,6 +175,72 @@ function publicGet(pathWithQuery) {
   });
 }
 
+/** 与 crypto-scheduler WS candle 周期一致，对应 REST `GET /api/v5/market/candles` 的 `bar` */
+const TV_INTERVAL_TO_OKX_BAR = {
+  "1": "1m",
+  "3": "3m",
+  "5": "5m",
+  "15": "15m",
+  "30": "30m",
+  "60": "1H",
+  "120": "2H",
+  "240": "4H",
+  D: "1D",
+  "1D": "1D",
+};
+
+/**
+ * @param {string} intervalTv TradingView 周期，如 5、60、D
+ * @returns {string} 如 5m、1H
+ */
+function tvIntervalToOkxCandleBar(intervalTv) {
+  const iv = String(intervalTv || "5").toUpperCase();
+  return TV_INTERVAL_TO_OKX_BAR[iv] || "5m";
+}
+
+/**
+ * 公开行情：最近 N 根 K 线。使用与 WS 收盘相同的**现货类** instId（如 BTC-USDT），与 `crypto-scheduler` 对齐。
+ * @param {string} tvSymbol 如 OKX:BTCUSDT
+ * @param {string} intervalTv
+ * @param {number} [limit=30]
+ * @returns {Promise<{ ok: true, rows: Array<{ ts: number, timeIso: string, open: string, high: string, low: string, close: string, volume: string, turnover: string | null }>, instId: string, bar: string } | { ok: false, error: string, rows: [], instId: string | null, bar: string }>}
+ */
+async function fetchRecentCandlesForTv(tvSymbol, intervalTv, limit = 30) {
+  const instId = okxSpotInstIdFromTv(tvSymbol);
+  const bar = tvIntervalToOkxCandleBar(intervalTv);
+  const lim = Math.min(300, Math.max(1, Math.floor(Number(limit) || 30)));
+  if (!instId) {
+    return { ok: false, error: "非 OKX: 品种，无法请求 K 线", instId: null, bar, rows: [] };
+  }
+  try {
+    const q = new URLSearchParams({ instId, bar, limit: String(lim) });
+    const j = await publicGet(`/api/v5/market/candles?${q}`);
+    const data = Array.isArray(j.data) ? j.data : [];
+    const rows = data
+      .map((row) => {
+        if (!Array.isArray(row) || row.length < 6) return null;
+        const ts = Number(row[0]);
+        if (!Number.isFinite(ts)) return null;
+        return {
+          ts,
+          timeIso: new Date(ts).toISOString(),
+          open: String(row[1]),
+          high: String(row[2]),
+          low: String(row[3]),
+          close: String(row[4]),
+          volume: String(row[5]),
+          turnover: row[7] != null && row[7] !== "" ? String(row[7]) : null,
+        };
+      })
+      .filter(Boolean);
+    rows.sort((a, b) => a.ts - b.ts);
+    return { ok: true, rows, instId, bar };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg, instId, bar, rows: [] };
+  }
+}
+
 /**
  * @param {string} instId
  */
@@ -1568,6 +1634,8 @@ async function executeAgentPerpClose(cfg, args) {
 
 module.exports = {
   tvSymbolToSwapInstId,
+  tvIntervalToOkxCandleBar,
+  fetchRecentCandlesForTv,
   createOkxClient,
   fetchSwapPendingOrders,
   fetchSwapPendingAlgoOrders,

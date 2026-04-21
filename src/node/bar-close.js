@@ -372,6 +372,7 @@ async function emitBarClose(winGetter, ctx) {
   const executeTool = createTradingToolExecutor({
     cfg,
     tvSymbol: ctx.tvSymbol,
+    interval: ctx.interval,
     barCloseId,
     win,
   });

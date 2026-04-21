@@ -2,6 +2,7 @@
  * 交易 Agent 工具：仅执行 OKX 永续 REST，无本地模拟仓。
  */
 const okxPerp = require("./okx-perp");
+const { notifyTradePositionIfNeeded } = require("./trade-notify-email");
 
 /** 供单测注入 mock；生产路径使用默认实现。 */
 const TRADING_EXECUTOR_DEFAULT_DEPS = Object.freeze({
@@ -32,11 +33,12 @@ function requireOkx(cfg) {
  * @param {object} ctx.cfg
  * @param {string} ctx.tvSymbol
  * @param {string} ctx.barCloseId
+ * @param {string} [ctx.interval] TradingView 周期（邮件正文）
  * @param {import("electron").BrowserWindow | null} [ctx.win]
  * @param {typeof TRADING_EXECUTOR_DEFAULT_DEPS} [deps]
  */
 function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
-  const { cfg, tvSymbol, barCloseId, win } = ctx;
+  const { cfg, tvSymbol, barCloseId, win, interval: ctxInterval } = ctx;
   const {
     createOkxClient,
     tvSymbolToSwapInstId,
@@ -51,6 +53,15 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
     if (win && !win.isDestroyed()) {
       win.webContents.send("okx-swap-status", { ...payload, tvSymbol });
     }
+  };
+
+  const intervalLabel = typeof ctxInterval === "string" ? ctxInterval : "";
+
+  const scheduleTradeNotify = (detail) => {
+    void notifyTradePositionIfNeeded(cfg, { ...detail, interval: intervalLabel }).catch((e) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[Argus] 交易邮件通知失败: ${msg}`);
+    });
   };
 
   const makeClient = () => {
@@ -115,6 +126,18 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
             sendOkxStatus({ ok: false, message: ex.message || "开仓失败" });
             return { ok: false, message: ex.message || "开仓失败" };
           }
+          const resolvedOpenOrderType = ex.orderType || orderType;
+          const shouldNotifyOpen =
+            resolvedOpenOrderType === "market" || (ex.position && ex.position.hasPosition === true);
+          if (shouldNotifyOpen) {
+            scheduleTradeNotify({
+              tvSymbol,
+              prevState: { state: "COOLDOWN" },
+              nextState: { state: side === "long" ? "HOLDING_LONG" : "HOLDING_SHORT" },
+              transition: "开仓",
+              atIso: new Date().toISOString(),
+            });
+          }
           sendOkxStatus({ ok: true, message: `Agent 开仓 ${orderType} ordId=${ex.ordId || ""}` });
           return {
             ok: true,
@@ -137,6 +160,15 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
           if (!ex.ok) {
             sendOkxStatus({ ok: false, message: ex.message || "平仓失败" });
             return { ok: false, message: ex.message || "平仓失败" };
+          }
+          if (ex.preCloseHoldingState) {
+            scheduleTradeNotify({
+              tvSymbol,
+              prevState: { state: ex.preCloseHoldingState },
+              nextState: { state: "COOLDOWN" },
+              transition: "平仓",
+              atIso: new Date().toISOString(),
+            });
           }
           sendOkxStatus({ ok: true, message: `Agent 平仓 ${orderType} ordId=${ex.ordId || ""}` });
           return {

@@ -6,7 +6,9 @@ export function ConfigModalEmailSection() {
   return (
     <div className="space-y-4 pt-1">
       <div className="flex items-center gap-2">
-        <p className="m-0 text-xs text-muted-foreground">预留：交易通知邮件（QQ SMTP；当前版本主流程不自动发送）。</p>
+        <p className="m-0 text-xs text-muted-foreground">
+          开启并配置 SMTP 后，Agent 开仓/平仓工具执行成功时会发信；限价开仓仅在返回持仓快照时通知（挂单未成交不发）。
+        </p>
         <ConfigHelpTooltip>
           <div className="space-y-2">
             <p className="m-0">

@@ -636,6 +636,22 @@ function resolveCloseParams(posMode, detail) {
 }
 
 /**
+ * OKX 持仓 detail → 与 `trade-notify-email` 中 `isNotablePositionChange` 的 state 命名一致。
+ * @param {{ posNum: number, absPos: number, posSide: string }} detail
+ * @returns {"HOLDING_LONG"|"HOLDING_SHORT"|null}
+ */
+function holdingStateFromPositionDetail(detail) {
+  if (!detail || detail.absPos <= 0) return null;
+  const ps = String(detail.posSide || "").toLowerCase();
+  if (ps === "long") return "HOLDING_LONG";
+  if (ps === "short") return "HOLDING_SHORT";
+  const n = detail.posNum;
+  if (Number.isFinite(n) && n > 0) return "HOLDING_LONG";
+  if (Number.isFinite(n) && n < 0) return "HOLDING_SHORT";
+  return "HOLDING_LONG";
+}
+
+/**
  * @param {ReturnType<createOkxClient>} client
  * @param {object} p
  * @param {string} p.instId
@@ -1643,6 +1659,7 @@ async function executeAgentPerpClose(cfg, args) {
   if (detail.absPos <= 0) {
     return { ok: false, message: `${instId} 无持仓可平` };
   }
+  const preCloseHoldingState = holdingStateFromPositionDetail(detail);
 
   const tdMode =
     detail.mgnMode === "cross"
@@ -1683,7 +1700,14 @@ async function executeAgentPerpClose(cfg, args) {
       /* 平仓市价失败时仍返回 ordId */
     }
   }
-  return { ok: true, ordId, instId, closeSz: String(detail.absPos), orderType: orderType || "market" };
+  return {
+    ok: true,
+    ordId,
+    instId,
+    closeSz: String(detail.absPos),
+    orderType: orderType || "market",
+    preCloseHoldingState,
+  };
 }
 
 module.exports = {

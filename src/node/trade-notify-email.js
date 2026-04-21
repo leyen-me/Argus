@@ -1,5 +1,5 @@
 /**
- * 预留：交易相关邮件通知（当前主流程不触发；默认适配 QQ 邮箱 SMTP）。
+ * 交易仓位邮件通知（Agent `open_position` / `close_position` 成功时触发；默认适配 QQ 邮箱 SMTP）。
  * 需在 QQ 邮箱网页版开启 SMTP，并使用「授权码」作为密码，而非 QQ 登录密码。
  */
 const nodemailer = require("nodemailer");

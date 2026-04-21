@@ -17,6 +17,7 @@ const promptStrategiesStore = require(path.join(nodeRoot, "prompt-strategies-sto
 const { closeDatabase } = require(path.join(nodeRoot, "local-db", "index.js"));
 const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context.js"));
 const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp.js"));
+const { getDashboardSnapshot } = require(path.join(nodeRoot, "dashboard-service.js"));
 const {
   listAgentBarTurnsPage,
   getAgentBarTurnChart,
@@ -73,6 +74,8 @@ ipcMain.handle("market:set-context", async (_event, tvSymbol) => {
 ipcMain.handle("okx:swap-position", async (_event, tvSymbol) => {
   return getOkxSwapPositionSnapshot(loadAppConfig(), tvSymbol);
 });
+
+ipcMain.handle("dashboard:get", async () => getDashboardSnapshot(loadAppConfig()));
 
 ipcMain.handle("agent-bar-turns:list-page", (_event, args) => listAgentBarTurnsPage(args ?? {}));
 

@@ -7,6 +7,7 @@
  * - 通用键值：`kv_store(namespace, key)`，适合配置、功能开关、缓存等；值一般为 JSON 文本。
  * - `agent_bar_turns`：历史表（user_version ≥ 3）；v6 起新数据写入 `agent_sessions` + `agent_session_messages`，旧行由迁移复制到 `agent_sessions`。
  * - `agent_sessions` / `agent_session_messages`：收盘 Agent 会话与有序消息（user_version ≥ 6）。
+ * - `dashboard_equity_samples`：仪表盘权益曲线采样（user_version ≥ 7）。
  * - 其他强关系数据可在同一库中新建表并递增 user_version；业务模块仅依赖 `getDatabase()`。
  *
  * 约定命名空间（namespace）示例：
@@ -160,6 +161,17 @@ function applyMigrations(database) {
     `);
     database.pragma("user_version = 6");
     backfillLegacyAgentSessionMessages(database);
+  }
+  if (v < 7) {
+    database.exec(`
+      CREATE TABLE dashboard_equity_samples (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        captured_at TEXT NOT NULL,
+        equity_usdt REAL NOT NULL
+      );
+      CREATE INDEX idx_dashboard_equity_captured ON dashboard_equity_samples (captured_at DESC);
+    `);
+    database.pragma("user_version = 7");
   }
 }
 

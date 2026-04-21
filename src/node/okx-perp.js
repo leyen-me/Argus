@@ -300,6 +300,92 @@ async function fetchUsdtAvailEq(client) {
 }
 
 /**
+ * 账户 USDT 权益摘要（仪表盘）：总权益、可用、占用估算、未实现盈亏等。
+ * @param {ReturnType<createOkxClient>} client
+ * @returns {Promise<{
+ *   adjEq: number | null,
+ *   usdtAvailEq: number | null,
+ *   usdtEq: number | null,
+ *   usdtUpl: number | null,
+ *   usdtFrozenBal: number | null,
+ *   imr: number | null,
+ *   mmr: number | null,
+ * }>}
+ */
+async function fetchUsdtAccountMetrics(client) {
+  const j = await client.request("GET", "/api/v5/account/balance?ccy=USDT", "");
+  const top = j.data?.[0];
+  if (!top || typeof top !== "object") {
+    throw new Error("OKX balance 无数据");
+  }
+  const adjEq = parseFloat(top.adjEq ?? "");
+  const imr = parseFloat(top.imr ?? "");
+  const mmr = parseFloat(top.mmr ?? "");
+  const detail = Array.isArray(top.details) ? top.details.find((d) => d.ccy === "USDT") : null;
+  const usdtAvailEq = detail ? parseFloat(detail.availEq ?? detail.availBal ?? "") : NaN;
+  const usdtEq = detail ? parseFloat(detail.eq ?? "") : NaN;
+  const usdtUpl = detail ? parseFloat(detail.upl ?? "") : NaN;
+  const usdtFrozenBal = detail ? parseFloat(detail.frozenBal ?? "") : NaN;
+  return {
+    adjEq: Number.isFinite(adjEq) ? adjEq : null,
+    usdtAvailEq: Number.isFinite(usdtAvailEq) ? usdtAvailEq : null,
+    usdtEq: Number.isFinite(usdtEq) ? usdtEq : null,
+    usdtUpl: Number.isFinite(usdtUpl) ? usdtUpl : null,
+    usdtFrozenBal: Number.isFinite(usdtFrozenBal) ? usdtFrozenBal : null,
+    imr: Number.isFinite(imr) ? imr : null,
+    mmr: Number.isFinite(mmr) ? mmr : null,
+  };
+}
+
+/**
+ * 当前所有非零 SWAP 持仓（仪表盘列表）。
+ * @param {ReturnType<createOkxClient>} client
+ */
+async function fetchOpenSwapPositionsAll(client) {
+  const j = await client.request("GET", "/api/v5/account/positions?instType=SWAP", "");
+  const rows = Array.isArray(j.data) ? j.data : [];
+  const out = [];
+  for (const r of rows) {
+    if (swapPositionRowAbsContracts(r) <= 0) continue;
+    const ser = serializeSwapPositionRow(r);
+    if (ser) out.push(ser);
+  }
+  return out;
+}
+
+/**
+ * 基于历史平仓记录的胜率估计（OKX positions-history，最近若干条）。
+ * @param {ReturnType<createOkxClient>} client
+ * @param {number} [limit=100]
+ */
+async function fetchSwapPositionsHistoryWinStats(client, limit = 100) {
+  const lim = Math.min(100, Math.max(1, Math.floor(limit)));
+  const j = await client.request(
+    "GET",
+    `/api/v5/account/positions-history?instType=SWAP&limit=${lim}`,
+    "",
+  );
+  const rows = Array.isArray(j.data) ? j.data : [];
+  let wins = 0;
+  let losses = 0;
+  for (const r of rows) {
+    const raw = r?.pnl ?? r?.realizedPnl ?? "";
+    const pnl = parseFloat(raw);
+    if (!Number.isFinite(pnl) || pnl === 0) continue;
+    if (pnl > 0) wins += 1;
+    else losses += 1;
+  }
+  const total = wins + losses;
+  return {
+    wins,
+    losses,
+    totalClosed: total,
+    winRate: total > 0 ? wins / total : null,
+    sampleLimit: lim,
+  };
+}
+
+/**
  * 持仓接口同时返回 pos / availPos（见 OKX GET /api/v5/account/positions 响应字段说明）。
  * @param {object} r
  */
@@ -1651,6 +1737,9 @@ module.exports = {
   executeAgentPerpPreviewOpen,
   executeAgentPerpClose,
   getOkxSwapPositionSnapshot,
+  fetchUsdtAccountMetrics,
+  fetchOpenSwapPositionsAll,
+  fetchSwapPositionsHistoryWinStats,
   fetchTickerLast,
   fetchSwapInstrument,
   formatOkxPx,

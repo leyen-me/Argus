@@ -4,6 +4,7 @@
 interface ArgusPreloadApi {
   getConfig?: () => Promise<Record<string, unknown>>
   saveConfig?: (partial: Record<string, unknown>) => Promise<unknown>
+  getDashboard?: () => Promise<Record<string, unknown>>
 }
 
 declare global {

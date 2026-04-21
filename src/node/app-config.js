@@ -46,6 +46,8 @@ const APP_SETTINGS_SEED = Object.freeze({
   okxSwapLeverage: 10,
   okxSwapMarginFraction: 0.25,
   okxTdMode: "isolated",
+  /** 仪表盘「初始资金」基准（USDT 权益）；null 表示未设定，可在界面一键写入当前权益。 */
+  dashboardBaselineEquityUsdt: null,
 });
 
 const DEFAULT_OPENAI_BASE_URL = APP_SETTINGS_SEED.openaiBaseUrl;
@@ -283,6 +285,16 @@ function normalizeConfig(raw) {
   if (raw.okxTdMode === "isolated") okxTdMode = "isolated";
   else if (raw.okxTdMode === "cross") okxTdMode = "cross";
 
+  let dashboardBaselineEquityUsdt = base.dashboardBaselineEquityUsdt;
+  if ("dashboardBaselineEquityUsdt" in raw) {
+    const v = raw.dashboardBaselineEquityUsdt;
+    if (v === null || v === "") dashboardBaselineEquityUsdt = null;
+    else {
+      const n = Number(v);
+      dashboardBaselineEquityUsdt = Number.isFinite(n) && n >= 0 ? n : null;
+    }
+  }
+
   return {
     symbols,
     defaultSymbol,
@@ -311,6 +323,7 @@ function normalizeConfig(raw) {
     okxSwapLeverage,
     okxSwapMarginFraction,
     okxTdMode,
+    dashboardBaselineEquityUsdt,
   };
 }
 

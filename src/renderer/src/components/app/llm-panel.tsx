@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { TradingDashboardCard } from "@/components/app/trading-dashboard-card"
 
 export function LlmPanel() {
   const [barCloseAgentAuto, setBarCloseAgentAuto] = useState(true)
@@ -52,6 +53,7 @@ export function LlmPanel() {
             </Button>
           </div>
         </div>
+        <TradingDashboardCard />
         <div
           className="shrink-0 px-3 pt-3"
           id="okx-position-bar"

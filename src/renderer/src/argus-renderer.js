@@ -1014,7 +1014,12 @@ function buildTradeStackFromToolTrace(payload) {
       const el = buildCloseTradeStripElement(args, result);
       if (el) {
         blocks.push(el);
-        accent = "close";
+        accent =
+          result.closedSide === "short"
+            ? "short"
+            : result.closedSide === "long"
+              ? "long"
+              : "close";
       }
     } else if (name === "open_position") {
       const el = buildOpenTradeStripElement(args, result);

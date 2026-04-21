@@ -194,12 +194,12 @@ body,
 }
 
 .llm-round-card--open-short {
-  --llm-round-accent: color-mix(in oklch, var(--chart-1, #f43f5e) 74%, transparent);
+  --llm-round-accent: color-mix(in oklch, var(--destructive, #ef4444) 74%, transparent);
 }
 
 /* 最后一笔为平仓时（仅平、或平→…→仍以平结束） */
 .llm-round-card--trade-close {
-  --llm-round-accent: color-mix(in oklch, var(--chart-3, #6366f1) 72%, transparent);
+  --llm-round-accent: color-mix(in oklch, var(--destructive, #ef4444) 74%, transparent);
 }
 
 .llm-round-trade-stack {
@@ -258,6 +258,18 @@ body,
   border-color: color-mix(in oklch, var(--chart-3, #6366f1) 32%, var(--border));
   color: color-mix(in oklch, var(--chart-3, #6366f1) 82%, var(--foreground));
   background: color-mix(in oklch, var(--chart-3, #6366f1) 11%, transparent);
+}
+
+.llm-round-close-trade--long .llm-round-event-badge--close {
+  border-color: color-mix(in oklch, var(--chart-2, #22c55e) 32%, var(--border));
+  color: color-mix(in oklch, var(--chart-2, #22c55e) 82%, var(--foreground));
+  background: color-mix(in oklch, var(--chart-2, #22c55e) 11%, transparent);
+}
+
+.llm-round-close-trade--short .llm-round-event-badge--close {
+  border-color: color-mix(in oklch, var(--destructive, #ef4444) 32%, var(--border));
+  color: color-mix(in oklch, var(--destructive, #ef4444) 82%, var(--foreground));
+  background: color-mix(in oklch, var(--destructive, #ef4444) 11%, transparent);
 }
 
 .llm-round-event-badge--neutral {

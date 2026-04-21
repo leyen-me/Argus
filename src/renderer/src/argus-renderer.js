@@ -330,6 +330,7 @@ function agentBarTurnRowToPayload(row) {
     kind: "bar_close",
     barCloseId: row.barCloseId,
     tvSymbol: row.tvSymbol,
+    periodLabel: row.periodLabel,
     capturedAt: row.capturedAt,
     textForLlm: row.textForLlm,
     fullUserPromptForDisplay: row.llmUserFullText,
@@ -816,6 +817,54 @@ function pickFiniteNum(v) {
 }
 
 /**
+ * @param {"running" | "idle" | "skipped" | "error"} kind
+ * @returns {HTMLElement}
+ */
+function buildNeutralTradeStripElement(kind) {
+  const wrap = document.createElement("div");
+  wrap.className = `llm-round-neutral-trade llm-round-neutral-trade--${kind}`;
+  wrap.setAttribute("role", "status");
+
+  const badge = document.createElement("span");
+  badge.className = "llm-round-event-badge llm-round-event-badge--neutral";
+  if (kind === "running") badge.textContent = "IN PROGRESS";
+  else if (kind === "skipped") badge.textContent = "SKIP";
+  else if (kind === "error") badge.textContent = "ERROR";
+  else badge.textContent = "NO TRADE";
+
+  const body = document.createElement("div");
+  body.className = "llm-round-neutral-trade-body";
+  const title = document.createElement("div");
+  title.className = "llm-round-neutral-trade-title";
+  if (kind === "running") title.textContent = "等待本轮下单决策";
+  else if (kind === "skipped") title.textContent = "本轮未触发 Agent 会话";
+  else if (kind === "error") title.textContent = "本轮未完成交易执行";
+  else title.textContent = "本轮无下单动作";
+  const text = document.createElement("div");
+  text.className = "llm-round-neutral-trade-text";
+  if (kind === "running") text.textContent = "模型分析进行中，若触发交易将追加到此处。";
+  else if (kind === "skipped") text.textContent = "当前只有状态判断或外部条件未满足，没有生成可查看的交易会话。";
+  else if (kind === "error") text.textContent = "Agent 分析未成功完成，因此没有可确认的开平仓事件。";
+  else text.textContent = "保留统一的事件流骨架，便于快速扫视哪些 bar 产生了真实交易。";
+  body.append(title, text);
+
+  wrap.append(badge, body);
+  return wrap;
+}
+
+/**
+ * @param {object} payload
+ * @returns {"running" | "idle" | "skipped" | "error"}
+ */
+function getNeutralTradeKind(payload) {
+  const llm = payload?.llm;
+  if (llm?.streaming === true) return "running";
+  if (llm?.skippedReason && String(llm.skippedReason).trim()) return "skipped";
+  if (llm?.error) return "error";
+  return "idle";
+}
+
+/**
  * @param {object} args
  * @param {object} result
  * @returns {HTMLElement | null}
@@ -834,40 +883,47 @@ function buildOpenTradeStripElement(args, result) {
   wrap.className = `llm-round-open-trade llm-round-open-trade--${side}`;
   wrap.setAttribute("role", "status");
 
-  const head = document.createElement("div");
-  head.className = "llm-round-open-trade-head";
   const badge = document.createElement("span");
-  badge.className = "llm-round-open-trade-badge";
-  badge.textContent = "已开仓";
-  const sideTag = document.createElement("span");
-  sideTag.className = "llm-round-open-trade-side";
-  sideTag.textContent = side === "short" ? "做空" : "做多";
-  head.append(badge, sideTag);
-
-  const dl = document.createElement("dl");
-  dl.className = "llm-round-open-trade-dl";
+  badge.className = "llm-round-event-badge llm-round-event-badge--open";
+  badge.textContent = "OPEN";
 
   let priceLine = "—";
   if (openPrice != null) {
-    priceLine = fmtTradePx(openPrice) + (orderType === "limit" ? " · 限价" : " · 成交均价约");
+    priceLine = fmtTradePx(openPrice) + (orderType === "limit" ? " · LIMIT" : " · AVG");
   } else if (orderType === "limit") {
-    priceLine = "限价待成交（无均价）";
+    priceLine = "LIMIT · 待成交";
   } else {
-    priceLine = "市价（见交易所持仓均价）";
+    priceLine = "MKT · 见持仓均价";
   }
 
-  const mkRow = (term, defText) => {
-    const dt = document.createElement("dt");
-    dt.textContent = term;
-    const dd = document.createElement("dd");
-    dd.textContent = defText;
-    dl.append(dt, dd);
-  };
-  mkRow("开仓价", priceLine);
-  mkRow("止盈触发价", takeProfit != null ? fmtTradePx(takeProfit) : "未设置");
-  mkRow("止损触发价", stopLoss != null ? fmtTradePx(stopLoss) : "未设置");
+  const body = document.createElement("div");
+  body.className = "llm-round-event-body";
+  const title = document.createElement("div");
+  title.className = "llm-round-event-title";
+  title.textContent = side === "short" ? "做空开仓" : "做多开仓";
+  const meta = document.createElement("div");
+  meta.className = "llm-round-event-meta";
 
-  wrap.append(head, dl);
+  const metaLines = [
+    ["入场", priceLine],
+    ["TP", takeProfit != null ? fmtTradePx(takeProfit) : "未设"],
+    ["SL", stopLoss != null ? fmtTradePx(stopLoss) : "未设"],
+  ];
+  for (const [label, value] of metaLines) {
+    const row = document.createElement("span");
+    row.className = "llm-round-event-meta-item";
+    const k = document.createElement("span");
+    k.className = "llm-round-event-meta-label";
+    k.textContent = label;
+    const v = document.createElement("span");
+    v.className = "llm-round-event-meta-value";
+    v.textContent = value;
+    row.append(k, v);
+    meta.appendChild(row);
+  }
+
+  body.append(title, meta);
+  wrap.append(badge, body);
   return wrap;
 }
 
@@ -894,48 +950,55 @@ function buildCloseTradeStripElement(args, result) {
   wrap.className = `llm-round-close-trade ${sideMod}`;
   wrap.setAttribute("role", "status");
 
-  const head = document.createElement("div");
-  head.className = "llm-round-open-trade-head";
   const badge = document.createElement("span");
-  badge.className = "llm-round-open-trade-badge";
-  badge.textContent = "已平仓";
-  const sideTag = document.createElement("span");
-  sideTag.className = "llm-round-open-trade-side";
-  if (closedSide === "short") sideTag.textContent = "平空";
-  else if (closedSide === "long") sideTag.textContent = "平多";
-  else sideTag.textContent = "方向未知";
-  head.append(badge, sideTag);
-
-  const dl = document.createElement("dl");
-  dl.className = "llm-round-open-trade-dl";
+  badge.className = "llm-round-event-badge llm-round-event-badge--close";
+  badge.textContent = "CLOSE";
   const priceLine =
     orderType === "limit" && limitPx != null
-      ? `${fmtTradePx(limitPx)} · 限价`
+      ? `${fmtTradePx(limitPx)} · LIMIT`
       : orderType === "limit"
-        ? "限价（价格未解析）"
-        : "市价";
+        ? "LIMIT · 待确认"
+        : "MKT";
 
-  const mkRow = (term, defText) => {
-    const dt = document.createElement("dt");
-    dt.textContent = term;
-    const dd = document.createElement("dd");
-    dd.textContent = defText;
-    dl.append(dt, dd);
-  };
-  mkRow("委托", priceLine);
-  mkRow("平仓量（张）", closeSz);
+  const body = document.createElement("div");
+  body.className = "llm-round-event-body";
+  const title = document.createElement("div");
+  title.className = "llm-round-event-title";
+  if (closedSide === "short") title.textContent = "平空";
+  else if (closedSide === "long") title.textContent = "平多";
+  else title.textContent = "平仓";
+  const meta = document.createElement("div");
+  meta.className = "llm-round-event-meta";
+  const metaLines = [
+    ["委托", priceLine],
+    ["数量", closeSz],
+  ];
+  for (const [label, value] of metaLines) {
+    const row = document.createElement("span");
+    row.className = "llm-round-event-meta-item";
+    const k = document.createElement("span");
+    k.className = "llm-round-event-meta-label";
+    k.textContent = label;
+    const v = document.createElement("span");
+    v.className = "llm-round-event-meta-value";
+    v.textContent = value;
+    row.append(k, v);
+    meta.appendChild(row);
+  }
 
-  wrap.append(head, dl);
+  body.append(title, meta);
+  wrap.append(badge, body);
   return wrap;
 }
 
 /**
  * 按 tool_trace **时间顺序**生成平仓/开仓摘要块；同一根 K 线内先平后开会得到上下两块。
  * 卡片整体高亮取**最后一笔**成功交易（平→开 则与最终开仓方向一致）。
- * @param {unknown} toolTrace
+ * @param {object} payload
  * @returns {{ stack: HTMLElement | null, accent: "long" | "short" | "close" | null }}
  */
-function buildTradeStackFromToolTrace(toolTrace) {
+function buildTradeStackFromToolTrace(payload) {
+  const toolTrace = payload?.llm?.toolTrace;
   if (!Array.isArray(toolTrace)) return { stack: null, accent: null };
   /** @type {HTMLElement[]} */
   const blocks = [];
@@ -962,9 +1025,12 @@ function buildTradeStackFromToolTrace(toolTrace) {
     }
   }
 
-  if (blocks.length === 0) return { stack: null, accent: null };
   const stack = document.createElement("div");
   stack.className = "llm-round-trade-stack";
+  if (blocks.length === 0) {
+    stack.appendChild(buildNeutralTradeStripElement(getNeutralTradeKind(payload)));
+    return { stack, accent: null };
+  }
   for (const b of blocks) stack.appendChild(b);
   return { stack, accent };
 }
@@ -973,9 +1039,9 @@ function buildTradeStackFromToolTrace(toolTrace) {
  * @param {HTMLElement} card
  * @param {HTMLElement} inner
  * @param {HTMLElement} subEl
- * @param {unknown} toolTrace
+ * @param {object} payload
  */
-function applyTradeStripsToRoundCard(card, inner, subEl, toolTrace) {
+function applyTradeStripsToRoundCard(card, inner, subEl, payload) {
   for (const n of inner.querySelectorAll(".llm-round-trade-stack")) {
     n.remove();
   }
@@ -985,7 +1051,7 @@ function applyTradeStripsToRoundCard(card, inner, subEl, toolTrace) {
     "llm-round-card--open-short",
     "llm-round-card--trade-close",
   );
-  const { stack, accent } = buildTradeStackFromToolTrace(toolTrace);
+  const { stack, accent } = buildTradeStackFromToolTrace(payload);
   if (!stack) return;
   card.classList.add("llm-round-card--has-open");
   if (accent === "close") {
@@ -1002,15 +1068,21 @@ function applyTradeStripsToRoundCard(card, inner, subEl, toolTrace) {
  * 流式结束后根据最终 toolTrace 更新平仓/开仓摘要区。
  * @param {string} barCloseId
  * @param {unknown} toolTrace
+ * @param {"idle" | "error"} [state]
  */
-function syncLlmRoundTradeStrips(barCloseId, toolTrace) {
+function syncLlmRoundTradeStrips(barCloseId, toolTrace, state = "idle") {
   const root = findLlmRoundRoot(barCloseId);
   if (!root) return;
   const card = root.querySelector(".llm-round-card");
   const inner = root.querySelector(".llm-round-card-inner");
   const sub = root.querySelector(".llm-round-card-sub");
   if (card instanceof HTMLElement && inner instanceof HTMLElement && sub instanceof HTMLElement) {
-    applyTradeStripsToRoundCard(card, inner, sub, toolTrace);
+    applyTradeStripsToRoundCard(card, inner, sub, {
+      llm: {
+        toolTrace: Array.isArray(toolTrace) ? toolTrace : [],
+        error: state === "error" ? "error" : null,
+      },
+    });
   }
 }
 
@@ -1055,18 +1127,29 @@ function buildLlmRoundElement(payload) {
   summaryTitle.className = "llm-round-summary-title";
   summaryTitle.textContent = payload.tvSymbol || "未命名标的";
   head.appendChild(summaryTitle);
+  if (payload?.periodLabel) {
+    const period = document.createElement("span");
+    period.className = "llm-round-period-badge";
+    period.textContent = String(payload.periodLabel);
+    head.appendChild(period);
+  }
 
   top.append(head, buildLlmRoundStatusEl(statusKind));
 
   const sub = document.createElement("div");
   sub.className = "llm-round-card-sub";
+  const subMeta = document.createElement("div");
+  subMeta.className = "llm-round-card-submeta";
   const timeEl = document.createElement("span");
   timeEl.className = "llm-round-card-time";
   timeEl.textContent = cap;
+  const routeEl = document.createElement("span");
+  routeEl.className = "llm-round-card-route";
+  routeEl.textContent = "Agent 回合";
   const detailBtn = document.createElement("button");
   detailBtn.type = "button";
   detailBtn.className = "llm-round-detail-btn";
-  detailBtn.textContent = "查看明细";
+  detailBtn.textContent = "详情";
   detailBtn.disabled = locked;
   detailBtn.setAttribute(
     "aria-label",
@@ -1079,10 +1162,11 @@ function buildLlmRoundElement(payload) {
     detailBtn.setAttribute("aria-label", "本轮未调用 Agent，无会话明细");
     round.dataset.detailLocked = "1";
   }
-  sub.append(timeEl, detailBtn);
+  subMeta.append(timeEl, routeEl);
+  sub.append(subMeta, detailBtn);
   inner.appendChild(top);
   inner.appendChild(sub);
-  applyTradeStripsToRoundCard(card, inner, sub, llm?.toolTrace);
+  applyTradeStripsToRoundCard(card, inner, sub, payload);
   card.appendChild(inner);
 
   const openIfUnlocked = () => {
@@ -2082,7 +2166,7 @@ function bindLlmStream() {
           bubbleTool.parentElement.parentElement.hidden = !display.toolText;
         }
       }
-      syncLlmRoundTradeStrips(barCloseId, toolTrace);
+      syncLlmRoundTradeStrips(barCloseId, toolTrace, "idle");
       if (conversationKey && exchangeContext) {
         rememberExchangeContext(conversationKey, exchangeContext);
         if (conversationKey === currentConversationKeyForUi()) {
@@ -2120,7 +2204,7 @@ function bindLlmStream() {
           bubbleTool.parentElement.parentElement.hidden = !toolText;
         }
       }
-      syncLlmRoundTradeStrips(barCloseId, toolTrace);
+      syncLlmRoundTradeStrips(barCloseId, toolTrace, "error");
       updateLlmRoundAfterAgentFinished(barCloseId, "err");
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {

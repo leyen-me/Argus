@@ -130,12 +130,21 @@ body,
 /* 列表项：卡片 + 状态角标，明细在弹窗中查看 */
 .llm-round-card {
   box-sizing: border-box;
+  position: relative;
   width: 100%;
   max-width: 100%;
-  border: 1px solid color-mix(in oklch, var(--border) 88%, var(--background));
+  --llm-round-accent: transparent;
+  border: 1px solid color-mix(in oklch, var(--border) 84%, var(--background));
   border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--card) 86%, var(--background));
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--card) 94%, var(--background)) 0%,
+      color-mix(in oklch, var(--card) 88%, var(--background)) 100%
+    );
+  box-shadow:
+    0 1px 1px rgba(15, 23, 42, 0.03),
+    0 8px 20px rgba(15, 23, 42, 0.035);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -148,187 +157,191 @@ body,
   cursor: pointer;
   transition:
     border-color 0.16s ease,
-    box-shadow 0.16s ease;
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.llm-round-card::before {
+  content: "";
+  position: absolute;
+  inset: 10px auto 10px 0;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--llm-round-accent);
+  opacity: 0.92;
 }
 
 .llm-round-card:hover:not(.llm-round-card--locked) {
-  border-color: color-mix(in oklch, var(--primary) 28%, var(--border));
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.07);
+  border-color: color-mix(in oklch, var(--foreground) 10%, var(--border));
+  box-shadow:
+    0 1px 1px rgba(15, 23, 42, 0.035),
+    0 12px 26px rgba(15, 23, 42, 0.05);
+  transform: translateY(-1px);
 }
 
 .llm-round-card--locked {
   cursor: not-allowed;
-  opacity: 0.92;
+  opacity: 0.95;
 }
 
-/* 历史列表：成功开仓轮次 — 与纯分析卡片区分 */
+/* 历史列表：以细节与局部强调色区分交易事件，而非整卡铺色 */
 .llm-round-card--has-open {
-  border-width: 1px;
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--foreground) 6%, transparent),
-    0 12px 36px rgba(15, 23, 42, 0.08);
+  border-color: color-mix(in oklch, var(--foreground) 8%, var(--border));
 }
 
 .llm-round-card--open-long {
-  border-color: color-mix(in oklch, var(--chart-2, #22c55e) 42%, var(--border));
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklch, var(--chart-2, #22c55e) 12%, var(--card)) 0%,
-    color-mix(in oklch, var(--card) 88%, var(--background)) 48%,
-    color-mix(in oklch, var(--card) 92%, var(--background)) 100%
-  );
+  --llm-round-accent: color-mix(in oklch, var(--chart-2, #22c55e) 76%, transparent);
 }
 
 .llm-round-card--open-short {
-  border-color: color-mix(in oklch, var(--chart-1, #f43f5e) 40%, var(--border));
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklch, var(--chart-1, #f43f5e) 11%, var(--card)) 0%,
-    color-mix(in oklch, var(--card) 88%, var(--background)) 48%,
-    color-mix(in oklch, var(--card) 92%, var(--background)) 100%
-  );
+  --llm-round-accent: color-mix(in oklch, var(--chart-1, #f43f5e) 74%, transparent);
 }
 
 /* 最后一笔为平仓时（仅平、或平→…→仍以平结束） */
 .llm-round-card--trade-close {
-  border-color: color-mix(in oklch, var(--chart-3, #6366f1) 38%, var(--border));
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklch, var(--chart-3, #6366f1) 10%, var(--card)) 0%,
-    color-mix(in oklch, var(--card) 88%, var(--background)) 48%,
-    color-mix(in oklch, var(--card) 92%, var(--background)) 100%
-  );
+  --llm-round-accent: color-mix(in oklch, var(--chart-3, #6366f1) 72%, transparent);
 }
 
 .llm-round-trade-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 2px 0 0;
-}
-
-.llm-round-open-trade {
+  gap: 0;
   margin: 0;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in oklch, var(--border) 75%, transparent);
-  background: color-mix(in oklch, var(--background) 72%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 
-.llm-round-open-trade--long {
-  border-color: color-mix(in oklch, var(--chart-2, #22c55e) 28%, var(--border));
+.llm-round-trade-stack > * + * {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in oklch, var(--border) 86%, transparent);
 }
 
-.llm-round-open-trade--short {
-  border-color: color-mix(in oklch, var(--chart-1, #f43f5e) 26%, var(--border));
-}
-
-.llm-round-close-trade {
+.llm-round-open-trade,
+.llm-round-close-trade,
+.llm-round-neutral-trade {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
   margin: 0;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in oklch, var(--border) 75%, transparent);
-  background: color-mix(in oklch, var(--background) 72%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-.llm-round-close-trade--long {
-  border-color: color-mix(in oklch, var(--chart-3, #6366f1) 30%, var(--border));
-}
-
-.llm-round-close-trade--short {
-  border-color: color-mix(in oklch, var(--chart-4, #a855f7) 28%, var(--border));
-}
-
-.llm-round-close-trade--unknown {
-  border-color: color-mix(in oklch, var(--muted-foreground) 22%, var(--border));
-}
-
-.llm-round-close-trade--long .llm-round-open-trade-side {
-  color: var(--chart-3, #4f46e5);
-}
-
-.llm-round-close-trade--short .llm-round-open-trade-side {
-  color: var(--chart-4, #9333ea);
-}
-
-.llm-round-close-trade--unknown .llm-round-open-trade-side {
+.llm-round-event-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  background: color-mix(in oklch, var(--muted) 42%, transparent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
 }
 
-.llm-round-open-trade-head {
+.llm-round-event-badge--open {
+  border-color: color-mix(in oklch, var(--chart-2, #22c55e) 32%, var(--border));
+  color: color-mix(in oklch, var(--chart-2, #22c55e) 82%, var(--foreground));
+  background: color-mix(in oklch, var(--chart-2, #22c55e) 11%, transparent);
+}
+
+.llm-round-event-badge--close {
+  border-color: color-mix(in oklch, var(--chart-3, #6366f1) 32%, var(--border));
+  color: color-mix(in oklch, var(--chart-3, #6366f1) 82%, var(--foreground));
+  background: color-mix(in oklch, var(--chart-3, #6366f1) 11%, transparent);
+}
+
+.llm-round-event-badge--neutral {
+  border-color: color-mix(in oklch, var(--muted-foreground) 18%, var(--border));
+  background: color-mix(in oklch, var(--muted) 40%, transparent);
+}
+
+.llm-round-event-body,
+.llm-round-neutral-trade-body {
+  min-width: 0;
+}
+
+.llm-round-event-title,
+.llm-round-neutral-trade-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--foreground);
+  line-height: 1.35;
+}
+
+.llm-round-event-meta {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 6px 14px;
+  margin-top: 4px;
 }
 
-.llm-round-open-trade-badge {
+.llm-round-event-meta-item {
   display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 2px 9px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  background: color-mix(in oklch, var(--primary) 16%, var(--muted));
-  color: var(--foreground);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 22%, transparent);
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
 }
 
-.llm-round-open-trade-side {
-  font-size: 13px;
-  font-weight: 700;
+.llm-round-event-meta-label {
+  color: var(--muted-foreground);
+  font-weight: 600;
   letter-spacing: 0.02em;
 }
 
-.llm-round-open-trade--long .llm-round-open-trade-side {
-  color: var(--chart-2, #16a34a);
-}
-
-.llm-round-open-trade--short .llm-round-open-trade-side {
-  color: var(--chart-1, #e11d48);
-}
-
-.llm-round-open-trade-dl {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 4px 12px;
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.llm-round-open-trade-dl dt {
-  margin: 0;
+.llm-round-event-meta-value {
+  min-width: 0;
+  color: color-mix(in oklch, var(--foreground) 88%, var(--muted-foreground));
   font-weight: 600;
-  color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
+  word-break: break-word;
 }
 
-.llm-round-open-trade-dl dd {
-  margin: 0;
-  font-weight: 500;
-  color: var(--foreground);
-  font-variant-numeric: tabular-nums;
-  word-break: break-word;
+.llm-round-neutral-trade-title {
+  color: color-mix(in oklch, var(--foreground) 82%, var(--muted-foreground));
+}
+
+.llm-round-neutral-trade-text {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.llm-round-neutral-trade--running .llm-round-neutral-trade-title {
+  color: color-mix(in oklch, var(--primary) 74%, var(--foreground));
+}
+
+.llm-round-neutral-trade--error .llm-round-event-badge--neutral {
+  border-color: color-mix(in oklch, var(--destructive) 24%, var(--border));
+  color: color-mix(in oklch, var(--destructive) 80%, var(--foreground));
+  background: color-mix(in oklch, var(--destructive) 8%, transparent);
 }
 
 .llm-round-card-inner {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 12px;
+  padding: 13px 14px 12px 15px;
 }
 
 .llm-round-card-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
 }
 
 .llm-round-card-head {
@@ -340,44 +353,86 @@ body,
   flex-wrap: wrap;
 }
 
+.llm-round-period-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--border) 84%, transparent);
+  background: color-mix(in oklch, var(--muted) 34%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
 .llm-round-card-sub {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  padding-top: 1px;
+}
+
+.llm-round-card-submeta {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.llm-round-card-route {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: color-mix(in oklch, var(--muted-foreground) 82%, transparent);
+  white-space: nowrap;
+}
+
+.llm-round-card-route::before {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--muted-foreground) 72%, transparent);
+  flex-shrink: 0;
 }
 
 .llm-round-card-time {
   min-width: 0;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.35;
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .llm-round-detail-btn {
   flex-shrink: 0;
   margin: 0;
-  padding: 2px 4px;
+  padding: 0;
   height: auto;
   min-height: 0;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 0;
   background: transparent;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  color: color-mix(in oklch, var(--foreground) 78%, var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition:
     color 0.15s ease,
-    background-color 0.15s ease;
+    opacity 0.15s ease;
 }
 
 .llm-round-detail-btn:hover:not(:disabled) {
   color: var(--foreground);
-  background: color-mix(in oklch, var(--muted) 55%, transparent);
 }
 
 .llm-round-detail-btn:focus-visible {
@@ -386,7 +441,7 @@ body,
 }
 
 .llm-round-detail-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.36;
   cursor: not-allowed;
 }
 
@@ -394,7 +449,7 @@ body,
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  gap: 0;
   flex-shrink: 0;
 }
 
@@ -403,26 +458,34 @@ body,
   align-items: center;
   gap: 5px;
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 0 8px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+  background: color-mix(in oklch, var(--muted) 34%, transparent);
   white-space: nowrap;
 }
 
 .llm-round-status--running {
-  color: var(--primary);
+  color: color-mix(in oklch, var(--primary) 80%, var(--foreground));
+  border-color: color-mix(in oklch, var(--primary) 24%, var(--border));
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
 }
 
 .llm-round-status--done {
-  color: color-mix(in oklch, var(--chart-2) 75%, var(--foreground));
+  color: color-mix(in oklch, var(--foreground) 84%, var(--muted-foreground));
 }
 
 .llm-round-status--skipped {
-  background: color-mix(in oklab, var(--muted) 55%, transparent);
   color: var(--muted-foreground);
 }
 
 .llm-round-status--error {
-  color: var(--destructive);
+  color: color-mix(in oklch, var(--destructive) 80%, var(--foreground));
+  border-color: color-mix(in oklch, var(--destructive) 24%, var(--border));
+  background: color-mix(in oklch, var(--destructive) 8%, transparent);
 }
 
 @keyframes llm-round-spin {

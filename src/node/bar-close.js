@@ -11,6 +11,7 @@ const {
   runTradingAgentTurn,
   buildMultimodalUserContent,
   resolveSystemPrompt,
+  RECENT_CANDLES_FETCH_LIMIT,
   mdCell,
   mdTable,
 } = require("./llm");
@@ -289,7 +290,7 @@ async function emitBarClose(winGetter, ctx) {
   const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
   const [exchangeCtx, recentCandles] = await Promise.all([
     getOkxExchangeContextForBar(cfg, ctx.tvSymbol),
-    fetchRecentCandlesForTv(ctx.tvSymbol, ctx.interval, 30),
+    fetchRecentCandlesForTv(ctx.tvSymbol, ctx.interval, RECENT_CANDLES_FETCH_LIMIT),
   ]);
   const textForLlm = buildUserPrompt(ctx.tvSymbol, ctx.periodLabel, ctx.candle, recentCandles);
   const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx);

@@ -379,6 +379,52 @@ async function callOpenAIChat(userText, options = {}) {
   }
 }
 
+/** 拉取 K 线条数（供 EMA 预热）；表内只展示最近 {@link RECENT_CANDLES_DISPLAY_COUNT} 根 */
+const RECENT_CANDLES_FETCH_LIMIT = 100;
+const RECENT_CANDLES_DISPLAY_COUNT = 30;
+const EMA20_PERIOD = 20;
+
+/**
+ * 收盘价 EMA：第 `period` 根起有效，首值为前 `period` 根收盘 SMA，之后标准 EMA（α=2/(period+1)）。
+ * @param {number[]} closes
+ * @param {number} period
+ * @returns {(number | null)[]}
+ */
+function computeEmaSeries(closes, period) {
+  const n = closes.length;
+  const out = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  if (!Number.isFinite(period) || period < 1 || n < period) return out;
+  let sum = 0;
+  for (let i = 0; i < period; i++) {
+    const c = closes[i];
+    if (!Number.isFinite(c)) return out;
+    sum += c;
+  }
+  let ema = sum / period;
+  out[period - 1] = ema;
+  const alpha = 2 / (period + 1);
+  for (let i = period; i < n; i++) {
+    const c = closes[i];
+    if (!Number.isFinite(c)) continue;
+    ema = alpha * c + (1 - alpha) * ema;
+    out[i] = ema;
+  }
+  return out;
+}
+
+/** @param {string | number} raw */
+function closeToNumber(raw) {
+  const x = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/,/g, ""));
+  return Number.isFinite(x) ? x : NaN;
+}
+
+/** @param {number | null | undefined} x */
+function formatPromptNumber(x) {
+  if (x == null || !Number.isFinite(x)) return "—";
+  const t = x.toFixed(12).replace(/\.?0+$/, "");
+  return t === "" ? "0" : t;
+}
+
 /** Markdown 表格单元格：转义 `|`，压缩换行，空值显示为 — */
 function mdCell(v) {
   if (v === undefined || v === null || v === "") return "—";
@@ -412,7 +458,13 @@ function buildRecentCandlesMarkdownSection(recent) {
   if (!rows.length) {
     return ["", `${title}${meta}`, "", "（无数据行）"].join("\n");
   }
-  const tableRows = rows.map((r) => [
+  const closes = rows.map((r) => closeToNumber(r.close));
+  const ema20 = computeEmaSeries(closes, EMA20_PERIOD);
+  const show = Math.min(RECENT_CANDLES_DISPLAY_COUNT, rows.length);
+  const sliceStart = rows.length - show;
+  const sliceRows = rows.slice(sliceStart);
+  const sliceEma = ema20.slice(sliceStart);
+  const tableRows = sliceRows.map((r, j) => [
     r.timeIso.replace("T", " ").slice(0, 19),
     r.open,
     r.high,
@@ -420,12 +472,20 @@ function buildRecentCandlesMarkdownSection(recent) {
     r.close,
     r.volume,
     r.turnover != null && r.turnover !== "" ? r.turnover : "—",
+    formatPromptNumber(sliceEma[j]),
   ]);
+  const emaNote =
+    `EMA20：基于收盘价；第 ${EMA20_PERIOD} 根起有效（首条为前 ${EMA20_PERIOD} 根 SMA）；已用本次拉取的 ${rows.length} 根预热，表内为最近 ${show} 根（旧→新）。`;
   return [
     "",
     `${title}${meta}`,
     "",
-    mdTable(["Time (UTC)", "Open", "High", "Low", "Close", "Volume", "QuoteVol"], tableRows),
+    emaNote,
+    "",
+    mdTable(
+      ["Time (UTC)", "Open", "High", "Low", "Close", "Volume", "QuoteVol", "EMA20"],
+      tableRows,
+    ),
   ].join("\n");
 }
 
@@ -557,6 +617,10 @@ module.exports = {
   streamOpenAIChat,
   runTradingAgentTurn,
   buildUserPrompt,
+  computeEmaSeries,
+  RECENT_CANDLES_FETCH_LIMIT,
+  RECENT_CANDLES_DISPLAY_COUNT,
+  EMA20_PERIOD,
   mdCell,
   mdTable,
   buildMultimodalUserContent,

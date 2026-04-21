@@ -1,6 +1,5 @@
 const okxPerp = require("./okx-perp");
 const dashboardStore = require("./dashboard-store");
-const { aggregateAgentToolStats } = require("./agent-tool-stats");
 
 /**
  * @param {object} metrics {@link okxPerp.fetchUsdtAccountMetrics}
@@ -88,12 +87,8 @@ async function getDashboardSnapshot(cfg) {
     typeof statsSinceRaw === "string" && statsSinceRaw.trim() && Number.isFinite(Date.parse(statsSinceRaw.trim()))
       ? statsSinceRaw.trim()
       : null;
-  const agentToolStats = aggregateAgentToolStats(dashboardAgentToolStatsSince);
 
-  const agentPack = {
-    agentToolStats,
-    dashboardAgentToolStatsSince,
-  };
+  const metaPack = { dashboardAgentToolStatsSince };
 
   const emptySeries = buildEquitySeriesForDashboard(dashboardAgentToolStatsSince);
 
@@ -104,7 +99,7 @@ async function getDashboardSnapshot(cfg) {
       reason: "okx_swap_disabled",
       baselineEquityUsdt,
       equitySeries: emptySeries,
-      ...agentPack,
+      ...metaPack,
     };
   }
 
@@ -117,7 +112,7 @@ async function getDashboardSnapshot(cfg) {
       message: "OKX API 未配置完整",
       baselineEquityUsdt,
       equitySeries: emptySeries,
-      ...agentPack,
+      ...metaPack,
     };
   }
 
@@ -174,7 +169,7 @@ async function getDashboardSnapshot(cfg) {
       positions,
       equitySeries,
       swapCloseFillStats,
-      ...agentPack,
+      ...metaPack,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -183,7 +178,7 @@ async function getDashboardSnapshot(cfg) {
       message: msg,
       baselineEquityUsdt,
       equitySeries: buildEquitySeriesForDashboard(dashboardAgentToolStatsSince),
-      ...agentPack,
+      ...metaPack,
     };
   }
 }

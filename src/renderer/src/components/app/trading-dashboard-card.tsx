@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useState, type ComponentType, type ReactNode } from "react"
 import {
-  Activity,
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
@@ -17,14 +16,6 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { cn } from "@/lib/utils"
 
 type EquityPoint = { t: string; equity: number }
-
-type AgentToolStats = {
-  openOk: number
-  openFail: number
-  closeOk: number
-  closeFail: number
-  sessionsWithTrace: number
-}
 
 type SwapCloseFillStats = {
   wins: number
@@ -59,7 +50,6 @@ type DashboardPayload = {
   baselineEquityUsdt?: number | null
   pnlVsBaselineUsdt?: number | null
   positions?: PositionRow[]
-  agentToolStats?: AgentToolStats
   dashboardAgentToolStatsSince?: string | null
   equitySeries?: EquityPoint[]
   swapCloseFillStats?: SwapCloseFillStats | null
@@ -249,23 +239,6 @@ function MetricTile({
   )
 }
 
-function CountPill({ value, tone }: { value: number; tone: "ok" | "bad" | "neutral" }) {
-  const toneLabel = tone === "ok" ? "OK" : tone === "bad" ? "ERR" : "ALL"
-  return (
-    <div
-      className={cn(
-        "rounded-md px-2 py-1.5 text-center ring-1 ring-inset",
-        tone === "ok" && "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-400",
-        tone === "bad" && "bg-red-500/10 text-red-700 ring-red-500/20 dark:text-red-400",
-        tone === "neutral" && "bg-muted/50 text-foreground ring-border/40",
-      )}
-    >
-      <div className="text-[10px] font-semibold tracking-wide opacity-80">{toneLabel}</div>
-      <div className="mt-1 text-lg font-semibold tabular-nums leading-none">{value}</div>
-    </div>
-  )
-}
-
 function DashboardToolbarCard({
   embedded,
   simulated,
@@ -354,8 +327,8 @@ function DashboardToolbarCard({
             }
             title={
               strategyRunning
-                ? "策略进行中：点击将结束策略并清除初始资金与 Agent 统计起点"
-                : "开始策略：以当前权益为初始资金，并从此刻起统计 Agent 工具结果"
+                ? "策略进行中：点击将结束策略并清除初始资金与统计起点"
+                : "开始策略：以当前权益为初始资金，并从此刻起统计胜率与资金曲线"
             }
             aria-pressed={strategyRunning}
             onClick={() => void onToggleStrategy()}
@@ -390,7 +363,7 @@ function SwapCloseWinRateCard({
 }) {
   const sinceHint =
     sinceValid && typeof sinceIso === "string" && sinceIso.length > 0
-      ? `仅统计 ${fmtSampleTime(sinceIso) ?? sinceIso} 之后（与资金曲线、开平仓次数起点一致）。`
+      ? `仅统计 ${fmtSampleTime(sinceIso) ?? sinceIso} 之后（与资金曲线同一统计起点）。`
       : null
   const decided = (stats?.wins ?? 0) + (stats?.losses ?? 0)
 
@@ -478,55 +451,6 @@ function SwapCloseWinRateCard({
           </div>
         </div>
       )}
-    </DashboardSectionCard>
-  )
-}
-
-function AgentToolStatsCard({ stats }: { stats: AgentToolStats }) {
-  return (
-    <DashboardSectionCard
-      title="开平仓次数"
-      description="Agent 工具调用结果汇总（成功 / 失败）"
-      icon={Activity}
-    >
-      <div className="grid gap-2 sm:grid-cols-2">
-        <div className="rounded-lg border border-border/55 bg-background/50 p-2.5 ring-1 ring-inset ring-border/25">
-          <div className="mb-2 flex items-center gap-1.5 border-b border-border/40 pb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            <span className="rounded bg-blue-500/15 px-1 py-px text-[9px] font-bold text-blue-700 dark:text-blue-400">
-              开
-            </span>
-            开仓
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <div className="mb-1 text-[10px] text-muted-foreground">成功</div>
-              <CountPill value={stats.openOk} tone="ok" />
-            </div>
-            <div>
-              <div className="mb-1 text-[10px] text-muted-foreground">失败</div>
-              <CountPill value={stats.openFail} tone="bad" />
-            </div>
-          </div>
-        </div>
-        <div className="rounded-lg border border-border/55 bg-background/50 p-2.5 ring-1 ring-inset ring-border/25">
-          <div className="mb-2 flex items-center gap-1.5 border-b border-border/40 pb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            <span className="rounded bg-violet-500/15 px-1 py-px text-[9px] font-bold text-violet-700 dark:text-violet-400">
-              平
-            </span>
-            平仓
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <div className="mb-1 text-[10px] text-muted-foreground">成功</div>
-              <CountPill value={stats.closeOk} tone="ok" />
-            </div>
-            <div>
-              <div className="mb-1 text-[10px] text-muted-foreground">失败</div>
-              <CountPill value={stats.closeFail} tone="bad" />
-            </div>
-          </div>
-        </div>
-      </div>
     </DashboardSectionCard>
   )
 }
@@ -739,7 +663,7 @@ function EquityCurveCard({
   const lastEq = last?.equity
   const scopeLine =
     scopedToStatsSince && statsSinceIso
-      ? `仅展示 ${fmtSampleTime(statsSinceIso) ?? statsSinceIso} 之后的采样（与胜率、开平仓统计起点一致）。`
+      ? `仅展示 ${fmtSampleTime(statsSinceIso) ?? statsSinceIso} 之后的采样（与胜率同一统计起点）。`
       : "未设置策略统计起点时，展示最近本地采样（与胜率统计范围无关）。"
   const desc =
     series.length && last
@@ -770,7 +694,7 @@ function SkippedHintCard() {
       icon={Plug}
     >
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/6 px-3 py-2.5 text-[11px] leading-relaxed text-amber-950/90 dark:text-amber-100/90">
-        请在配置中心启用「OKX 永续」并填写 API，即可查看资金、持仓与基于成交的平仓胜率。本地仍会保留已采样的资金曲线；Agent 开平仓次数统计不依赖 OKX。
+        请在配置中心启用「OKX 永续」并填写 API，即可查看资金、持仓与基于成交的平仓胜率。本地仍会保留已采样的资金曲线。
       </div>
     </DashboardSectionCard>
   )
@@ -836,7 +760,6 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
   const skipped = snap?.skipped === true
   const series = Array.isArray(snap?.equitySeries) ? snap!.equitySeries! : []
   const positions = Array.isArray(snap?.positions) ? snap!.positions! : []
-  const at = snap?.agentToolStats
   const showLive = !skipped && snap?.ok === true
 
   const baselinePresent =
@@ -859,8 +782,8 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
   return (
     <div
       className={cn(
-        "flex min-h-0 min-w-0 shrink-0 flex-col gap-2",
-        embedded ? "px-1 pt-0 pb-2" : "border-b border-border/60 px-3 pt-3 pb-2",
+        "flex min-h-0 min-w-0 shrink-0 flex-col gap-4",
+        embedded ? "px-1 pt-0 pb-3" : "border-b border-border/60 px-3 pt-3 pb-3",
       )}
     >
       <DashboardToolbarCard
@@ -892,8 +815,6 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
       ) : null}
 
       {skipped ? <SkippedHintCard /> : null}
-
-      {at ? <AgentToolStatsCard stats={at} /> : null}
 
       {showLive && snap ? (
         <>

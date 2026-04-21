@@ -712,7 +712,7 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
   return (
     <div
       className={cn(
-        "flex shrink-0 flex-col gap-2",
+        "flex min-h-0 min-w-0 shrink-0 flex-col gap-2",
         embedded ? "px-1 pt-0 pb-2" : "border-b border-border/60 px-3 pt-3 pb-2",
       )}
     >

@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { ARGUS_DASHBOARD_MODAL_OPEN } from "@/lib/argus-dashboard-modal-events"
 
@@ -54,9 +53,9 @@ export function DashboardModal() {
           </div>
           <DialogDescription className="sr-only">账户资金、持仓与 Agent 统计</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1 px-4 pt-4 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-4">
           <TradingDashboardCard embedded />
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   )

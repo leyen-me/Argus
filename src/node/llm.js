@@ -448,7 +448,7 @@ function buildRecentCandlesMarkdownSection(recent) {
   const title = "### 最近 K 线（OKX REST）";
   if (!recent.ok) {
     const err = mdCell(recent.error || "未知错误");
-    return [title, "", `（拉取失败：${err}。请依赖上图与上方「已收盘」一根。）`].join("\n");
+    return ["", title, "", `（拉取失败：${err}。请依赖上图与上方「已收盘」一根。）`].join("\n");
   }
   const meta =
     recent.instId && recent.bar
@@ -456,7 +456,7 @@ function buildRecentCandlesMarkdownSection(recent) {
       : "";
   const rows = Array.isArray(recent.rows) ? recent.rows : [];
   if (!rows.length) {
-    return [`${title}${meta}`, "", "（无数据行）"].join("\n");
+    return ["", `${title}${meta}`, "", "（无数据行）"].join("\n");
   }
   const closes = rows.map((r) => closeToNumber(r.close));
   const ema20 = computeEmaSeries(closes, EMA20_PERIOD);
@@ -477,6 +477,7 @@ function buildRecentCandlesMarkdownSection(recent) {
   const emaNote =
     `EMA20：基于收盘价；第 ${EMA20_PERIOD} 根起有效（首条为前 ${EMA20_PERIOD} 根 SMA）；已用本次拉取的 ${rows.length} 根预热，表内为最近 ${show} 根（旧→新）。`;
   return [
+    "",
     `${title}${meta}`,
     "",
     emaNote,
@@ -512,8 +513,7 @@ function buildUserPrompt(symbol, periodKey, candle, recentCandles) {
       [row],
     ),
   ].join("\n");
-  const recentMd = buildRecentCandlesMarkdownSection(recentCandles);
-  return recentMd ? `${head}\n\n${recentMd}` : head;
+  return head + buildRecentCandlesMarkdownSection(recentCandles);
 }
 
 /**

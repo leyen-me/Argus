@@ -179,7 +179,6 @@ function buildOkxContextUserText(marketText, exchangeCtx) {
     "## OKX 永续快照",
     "",
     snapshotIntro,
-    "",
     "### 合约",
     "",
     contractBlock,

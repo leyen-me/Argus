@@ -110,38 +110,31 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
     return () => window.clearInterval(t)
   }, [load])
 
-  const setBaselineFromCurrent = useCallback(async () => {
+  const startStrategyRange = useCallback(async () => {
     const eq = snap?.equityUsdt
-    if (eq == null || !Number.isFinite(eq)) return
+    if (eq == null || !Number.isFinite(eq)) {
+      setErr("需要当前权益以设为初始资金，请确认已连接 OKX 并刷新。")
+      return
+    }
     try {
-      await window.argus?.saveConfig?.({ dashboardBaselineEquityUsdt: eq })
+      setErr(null)
+      await window.argus?.saveConfig?.({
+        dashboardBaselineEquityUsdt: eq,
+        dashboardAgentToolStatsSince: new Date().toISOString(),
+      })
       void load()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
   }, [snap?.equityUsdt, load])
 
-  const clearBaseline = useCallback(async () => {
+  const endStrategyRange = useCallback(async () => {
     try {
-      await window.argus?.saveConfig?.({ dashboardBaselineEquityUsdt: null })
-      void load()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    }
-  }, [load])
-
-  const setAgentStatsSinceNow = useCallback(async () => {
-    try {
-      await window.argus?.saveConfig?.({ dashboardAgentToolStatsSince: new Date().toISOString() })
-      void load()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    }
-  }, [load])
-
-  const clearAgentStatsSince = useCallback(async () => {
-    try {
-      await window.argus?.saveConfig?.({ dashboardAgentToolStatsSince: null })
+      setErr(null)
+      await window.argus?.saveConfig?.({
+        dashboardBaselineEquityUsdt: null,
+        dashboardAgentToolStatsSince: null,
+      })
       void load()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -154,6 +147,14 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
   const at = snap?.agentToolStats
   const statsSince = snap?.dashboardAgentToolStatsSince
   const showLive = !skipped && snap?.ok === true
+
+  const baselinePresent =
+    snap?.baselineEquityUsdt != null && Number.isFinite(Number(snap.baselineEquityUsdt))
+  const sincePresent =
+    typeof snap?.dashboardAgentToolStatsSince === "string" &&
+    snap.dashboardAgentToolStatsSince.length > 0
+  const strategyRunning = baselinePresent && sincePresent
+  const strategyEnded = !baselinePresent && !sincePresent
 
   const simBadge =
     snap?.simulated === true ? (
@@ -192,45 +193,39 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
         >
           <Button
             type="button"
-            variant="outline"
+            variant={strategyRunning ? "default" : "outline"}
             size="sm"
             className="h-7 px-2.5 text-[11px] shadow-none"
-            disabled={loading || snap?.equityUsdt == null}
-            title="将当前账户权益（adjEq）存为初始资金，用于计算总盈亏"
-            onClick={() => void setBaselineFromCurrent()}
+            disabled={
+              loading ||
+              (!strategyRunning &&
+                (snap?.equityUsdt == null || !Number.isFinite(snap.equityUsdt)))
+            }
+            title={
+              strategyRunning
+                ? "策略进行中：点击将结束策略并清除初始资金与 Agent 统计起点"
+                : "开始策略：以当前权益为初始资金，并从此刻起统计 Agent 工具结果"
+            }
+            aria-pressed={strategyRunning}
+            onClick={() => void (strategyRunning ? endStrategyRange() : startStrategyRange())}
           >
-            设为初始资金
+            策略开始
           </Button>
           <Button
             type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2.5 text-[11px] text-muted-foreground shadow-none"
-            disabled={loading}
-            onClick={() => void clearBaseline()}
-          >
-            清除基准
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
+            variant={strategyEnded ? "default" : "outline"}
             size="sm"
             className="h-7 px-2.5 text-[11px] shadow-none"
-            disabled={loading}
-            title="仅统计此时间点之后的 Agent 回合（换策略时可重置，不含手动单）"
-            onClick={() => void setAgentStatsSinceNow()}
+            disabled={loading || strategyEnded}
+            title={
+              strategyEnded
+                ? "当前未设置策略区间（无基准、统计全部历史回合）"
+                : "结束策略：清除初始资金与 Agent 统计起点"
+            }
+            aria-pressed={strategyEnded}
+            onClick={() => void endStrategyRange()}
           >
-            Agent 统计起点
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2.5 text-[11px] text-muted-foreground shadow-none"
-            disabled={loading}
-            onClick={() => void clearAgentStatsSince()}
-          >
-            清除统计起点
+            策略结束
           </Button>
           <Button
             type="button"
@@ -255,20 +250,7 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
 
       {at ? (
         <div className="mt-2 space-y-1.5 rounded-md border border-border/70 bg-muted/15 px-2.5 py-2 text-[11px]">
-          <div className="font-medium text-foreground">Agent 工具结果（仅本项目）</div>
-          <p className="m-0 text-[10px] leading-relaxed text-muted-foreground">
-            来自本机 SQLite 中各次收盘 Agent 的{" "}
-            <code className="rounded bg-muted px-0.5">open_position</code> /{" "}
-            <code className="rounded bg-muted px-0.5">close_position</code>{" "}
-            返回值，不包含您在 OKX 其他端的手动单，也<strong>不是</strong>按盈亏定义的胜率。
-          </p>
-          <div className="text-[10px] text-muted-foreground">
-            {statsSince
-              ? `统计范围：自 ${statsSince.replace("T", " ").slice(0, 19)} UTC 起`
-              : "统计范围：全部历史回合"}
-            {" · "}
-            含工具 trace 的回合 {at.sessionsWithTrace} 个
-          </div>
+          <div className="font-medium text-foreground">开平仓次数</div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div>
               <div className="text-muted-foreground">开仓 · 成功</div>
@@ -327,7 +309,6 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
               <div className="font-medium tabular-nums text-foreground">
                 {fmtUsd(snap.marginUsedUsdt ?? null)}
               </div>
-              <div className="text-[10px] text-muted-foreground">imr 或 权益−可用</div>
             </div>
           </div>
 

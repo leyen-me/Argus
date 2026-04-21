@@ -54,7 +54,7 @@ export function DashboardModal() {
           </div>
           <DialogDescription className="sr-only">账户资金、持仓与 Agent 统计</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1 px-4 pb-4">
+        <ScrollArea className="min-h-0 flex-1 px-4 pt-4 pb-4">
           <TradingDashboardCard embedded />
         </ScrollArea>
       </DialogContent>

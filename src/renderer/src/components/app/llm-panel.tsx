@@ -14,8 +14,8 @@ export function LlmPanel() {
           aria-live="polite"
           title="OKX 永续持仓、普通挂单与算法单（止盈止损等，收盘推送或刷新）；须启用永续并配置 API。"
         >
-          <div className="flex items-start gap-3 rounded-xl border border-border/80 bg-muted/20 px-3 py-3 text-xs text-foreground shadow-sm">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+          <div className="flex items-start gap-3 rounded-lg border border-border/80 bg-muted/20 px-3 py-3 text-xs text-foreground shadow-sm">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
               <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
@@ -38,7 +38,7 @@ export function LlmPanel() {
               type="button"
               variant="outline"
               size="sm"
-              className="h-7 shrink-0 rounded-lg border-border/80 bg-background/80 px-3 text-[11px] shadow-none"
+              className="h-7 shrink-0 border-border/80 bg-background/80 px-3 text-[11px] shadow-none"
               id="okx-position-refresh"
               title="重新查询"
             >

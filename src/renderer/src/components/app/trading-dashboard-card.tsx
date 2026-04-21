@@ -60,6 +60,11 @@ function fmtUsd(n: number | null | undefined, digits = 2) {
   })
 }
 
+function fmtSignedUsd(n: number | null | undefined, digits = 2) {
+  if (n == null || !Number.isFinite(n)) return "—"
+  return `${n >= 0 ? "+" : ""}${fmtUsd(n, digits)}`
+}
+
 function EquitySparkline({ series }: { series: EquityPoint[] }) {
   const gradId = useId().replace(/:/g, "")
   const w = 320
@@ -68,11 +73,12 @@ function EquitySparkline({ series }: { series: EquityPoint[] }) {
   if (!series.length) {
     return (
       <div
-        className="flex h-[88px] items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/20 text-center text-[11px] leading-snug text-muted-foreground"
-        aria-hidden
+        className="flex h-[92px] items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 text-center text-xs leading-snug text-muted-foreground"
+        role="status"
+        aria-live="polite"
       >
         暂无采样数据
-        <span className="mt-0.5 block text-[10px] opacity-80">启用 OKX 并刷新后将记录权益曲线</span>
+        <span className="mt-0.5 block text-[11px] opacity-80">启用 OKX 并刷新后将记录权益曲线</span>
       </div>
     )
   }
@@ -96,9 +102,9 @@ function EquitySparkline({ series }: { series: EquityPoint[] }) {
   const delta = first != null && last != null ? last - first : null
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-end justify-between gap-2 text-[10px] tabular-nums">
+      <div className="flex flex-wrap items-end justify-between gap-2 text-[11px] tabular-nums">
         <div className="text-muted-foreground">
-          <span className="text-[9px] uppercase tracking-wide">区间</span>
+          <span className="text-[10px] uppercase tracking-wide">区间</span>
           <span className="ml-1.5 font-medium text-foreground">
             {fmtUsd(min)} – {fmtUsd(max)}
           </span>
@@ -111,8 +117,7 @@ function EquitySparkline({ series }: { series: EquityPoint[] }) {
             )}
           >
             {delta >= 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
-            {delta >= 0 ? "+" : ""}
-            {fmtUsd(delta)} <span className="font-normal text-muted-foreground">（首尾点）</span>
+            {fmtSignedUsd(delta)} <span className="font-normal text-muted-foreground">（首尾点）</span>
           </div>
         ) : null}
       </div>
@@ -140,6 +145,11 @@ function EquitySparkline({ series }: { series: EquityPoint[] }) {
             vectorEffect="non-scaling-stroke"
           />
         </svg>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] tabular-nums text-muted-foreground">
+        <span>起点 {fmtUsd(first)}</span>
+        <span>末点 {fmtUsd(last)}</span>
+        <span>采样点 {series.length}</span>
       </div>
     </div>
   )
@@ -176,11 +186,11 @@ function DashboardSectionCard({
             </div>
           ) : null}
           <div className="min-w-0 flex-1 space-y-0.5">
-            <CardTitle className="text-[11px] font-semibold tracking-tight text-foreground">
+            <CardTitle className="text-xs font-semibold tracking-tight text-foreground">
               {title}
             </CardTitle>
             {description ? (
-              <div className="text-[10px] leading-snug text-muted-foreground">{description}</div>
+              <div className="text-[11px] leading-snug text-muted-foreground">{description}</div>
             ) : null}
           </div>
         </div>
@@ -209,13 +219,14 @@ function MetricTile({
         className,
       )}
     >
-      <div className="text-[10px] font-medium text-muted-foreground">{label}</div>
-      <div className="mt-1 text-[11px] leading-tight">{children}</div>
+      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+      <div className="mt-1.5 text-[13px] leading-tight">{children}</div>
     </div>
   )
 }
 
 function CountPill({ value, tone }: { value: number; tone: "ok" | "bad" | "neutral" }) {
+  const toneLabel = tone === "ok" ? "OK" : tone === "bad" ? "ERR" : "ALL"
   return (
     <div
       className={cn(
@@ -225,7 +236,8 @@ function CountPill({ value, tone }: { value: number; tone: "ok" | "bad" | "neutr
         tone === "neutral" && "bg-muted/50 text-foreground ring-border/40",
       )}
     >
-      <div className="text-lg font-semibold tabular-nums leading-none">{value}</div>
+      <div className="text-[10px] font-semibold tracking-wide opacity-80">{toneLabel}</div>
+      <div className="mt-1 text-lg font-semibold tabular-nums leading-none">{value}</div>
     </div>
   )
 }
@@ -235,25 +247,24 @@ function DashboardToolbarCard({
   simulated,
   simBadge,
   strategyRunning,
-  strategyEnded,
   loading,
   equityUsdt,
   onToggleStrategy,
-  onEndStrategy,
   onRefresh,
 }: {
   embedded: boolean
   simulated: boolean | undefined
   simBadge: ReactNode
   strategyRunning: boolean
-  strategyEnded: boolean
   loading: boolean
   equityUsdt: number | null | undefined
   onToggleStrategy: () => void
-  onEndStrategy: () => void
   onRefresh: () => void
 }) {
   const actionsPullRight = embedded && simulated !== true
+  const strategyStatusClassName = strategyRunning
+    ? "bg-emerald-500/12 text-emerald-700 ring-emerald-500/20 dark:text-emerald-400"
+    : "bg-muted/70 text-muted-foreground ring-border/40"
   return (
     <Card size="sm" className="gap-0 overflow-hidden py-0 shadow-none ring-border/60">
       <CardHeader
@@ -272,14 +283,32 @@ function DashboardToolbarCard({
                 <LayoutDashboard className="size-3.5 text-muted-foreground" />
               </div>
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <CardTitle className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                <CardTitle className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                   仪表盘
                 </CardTitle>
+                <span
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
+                    strategyStatusClassName,
+                  )}
+                >
+                  {strategyRunning ? "策略进行中" : "未设置策略区间"}
+                </span>
                 {simBadge}
               </div>
             </>
           ) : (
-            simBadge
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  "rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
+                  strategyStatusClassName,
+                )}
+              >
+                {strategyRunning ? "策略进行中" : "未设置策略区间"}
+              </span>
+              {simBadge}
+            </div>
           )}
         </div>
         <CardAction
@@ -292,7 +321,7 @@ function DashboardToolbarCard({
             type="button"
             variant={strategyRunning ? "default" : "outline"}
             size="sm"
-            className="h-7 px-2.5 text-[11px] shadow-none"
+            className="h-8 px-3 text-xs shadow-none"
             disabled={
               loading || (!strategyRunning && (equityUsdt == null || !Number.isFinite(equityUsdt)))
             }
@@ -304,29 +333,13 @@ function DashboardToolbarCard({
             aria-pressed={strategyRunning}
             onClick={() => void onToggleStrategy()}
           >
-            策略开始
-          </Button>
-          <Button
-            type="button"
-            variant={strategyEnded ? "default" : "outline"}
-            size="sm"
-            className="h-7 px-2.5 text-[11px] shadow-none"
-            disabled={loading || strategyEnded}
-            title={
-              strategyEnded
-                ? "当前未设置策略区间（无基准、统计全部历史回合）"
-                : "结束策略：清除初始资金与 Agent 统计起点"
-            }
-            aria-pressed={strategyEnded}
-            onClick={() => void onEndStrategy()}
-          >
-            策略结束
+            {strategyRunning ? "结束策略" : "开始策略"}
           </Button>
           <Button
             type="button"
             variant="secondary"
             size="sm"
-            className="h-7 gap-1 px-2.5 text-[11px] shadow-none"
+            className="h-8 gap-1 px-3 text-xs shadow-none"
             disabled={loading}
             onClick={() => void onRefresh()}
           >
@@ -415,9 +428,23 @@ function AccountMetricsCard({ snap }: { snap: DashboardPayload }) {
                   : "text-foreground",
             )}
           >
-            {snap.pnlVsBaselineUsdt != null ? `${fmtUsd(snap.pnlVsBaselineUsdt)} USDT` : "—"}
+            {snap.pnlVsBaselineUsdt != null ? `${fmtSignedUsd(snap.pnlVsBaselineUsdt)} USDT` : "—"}
           </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+            <span
+              className={cn(
+                "rounded-md px-1.5 py-px font-medium ring-1 ring-inset",
+                snap.pnlVsBaselineUsdt == null
+                  ? "bg-muted/70 text-muted-foreground ring-border/40"
+                  : snap.pnlVsBaselineUsdt >= 0
+                    ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-400"
+                    : "bg-red-500/10 text-red-700 ring-red-500/20 dark:text-red-400",
+              )}
+            >
+              {snap.pnlVsBaselineUsdt == null ? "未设置基准" : snap.pnlVsBaselineUsdt >= 0 ? "盈利" : "亏损"}
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
             <span className="rounded-md bg-muted/80 px-1.5 py-px tabular-nums ring-1 ring-border/40">
               初始 {fmtUsd(snap.baselineEquityUsdt ?? null)}
             </span>
@@ -430,7 +457,7 @@ function AccountMetricsCard({ snap }: { snap: DashboardPayload }) {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <MetricTile label="未实现盈亏">
             <span className={cn("font-semibold tabular-nums", uplTone)}>
-              {fmtUsd(snap.uplUsdt ?? null)}
+              {fmtSignedUsd(snap.uplUsdt ?? null)}
             </span>
           </MetricTile>
           <MetricTile label="当前权益（USDT）">
@@ -474,11 +501,20 @@ function PositionsCard({ positions }: { positions: PositionRow[] }) {
     >
       {positions.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border/60 bg-muted/15 py-6 text-center">
-          <span className="text-[11px] font-medium text-muted-foreground">无 SWAP 持仓</span>
-          <span className="text-[10px] text-muted-foreground/80">开仓后将在此列出合约与盈亏</span>
+          <span className="text-xs font-medium text-muted-foreground">无 SWAP 持仓</span>
+          <span className="text-[11px] text-muted-foreground/80">开仓后将在此列出合约与盈亏</span>
         </div>
       ) : (
-        <ul className="max-h-[168px] space-y-1.5 overflow-y-auto pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin]">
+        <div className="space-y-1.5">
+          <div className="hidden grid-cols-[minmax(0,1.5fr)_auto_repeat(4,minmax(0,0.8fr))] gap-3 px-2.5 text-[10px] font-medium tracking-wide text-muted-foreground sm:grid">
+            <span>合约</span>
+            <span>方向</span>
+            <span className="text-right">张数</span>
+            <span className="text-right">未实现盈亏</span>
+            <span className="text-right">保证金</span>
+            <span className="text-right">杠杆</span>
+          </div>
+          <ul className="max-h-[184px] space-y-1.5 overflow-y-auto pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin]">
           {positions.map((p, i) => {
             const side = String(p.posSide ?? "").trim() || "—"
             const uplNum = Number(p.upl)
@@ -486,55 +522,59 @@ function PositionsCard({ positions }: { positions: PositionRow[] }) {
             return (
               <li
                 key={`${String(p.instId ?? "x")}-${String(p.posSide ?? "")}-${i}`}
-                className="rounded-lg border border-border/50 bg-background/70 px-2.5 py-2 text-[11px] shadow-sm ring-1 ring-inset ring-border/20 transition-colors hover:bg-muted/30"
+                className="rounded-lg border border-border/50 bg-background/70 px-2.5 py-2.5 text-xs shadow-sm ring-1 ring-inset ring-border/20 transition-colors hover:bg-muted/30"
               >
-                <div className="flex flex-wrap items-center gap-2 gap-y-1">
-                  <span className="font-semibold tracking-tight text-foreground">{p.instId ?? "—"}</span>
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1.5fr)_auto_repeat(4,minmax(0,0.8fr))] sm:items-center sm:gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold tracking-tight text-foreground">{p.instId ?? "—"}</div>
+                  </div>
                   <span
                     className={cn(
-                      "rounded-md px-1.5 py-px text-[9px] font-bold uppercase tracking-wide ring-1 ring-inset",
+                      "w-fit rounded-md px-1.5 py-px text-[10px] font-bold uppercase tracking-wide ring-1 ring-inset",
                       positionSideStyle(p.posSide),
                     )}
                   >
                     {side}
                   </span>
-                  {p.lever != null ? (
-                    <span className="ml-auto rounded bg-muted/80 px-1.5 py-px text-[10px] font-medium tabular-nums text-muted-foreground ring-1 ring-border/35">
-                      {p.lever}x
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4">
-                  <div>
-                    <div className="text-[9px] uppercase tracking-wide text-muted-foreground">张数</div>
-                    <div className="tabular-nums font-medium text-foreground">{p.pos ?? "—"}</div>
-                  </div>
-                  <div>
-                    <div className="text-[9px] uppercase tracking-wide text-muted-foreground">UPL</div>
-                    <div
-                      className={cn(
-                        "tabular-nums font-medium",
-                        uplOk && uplNum >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : uplOk
-                            ? "text-red-600 dark:text-red-400"
-                            : "text-foreground",
-                      )}
-                    >
-                      {fmtUsd(uplOk ? uplNum : Number.NaN)}
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:contents">
+                    <div>
+                      <div className="text-[10px] text-muted-foreground sm:hidden">张数</div>
+                      <div className="tabular-nums font-medium text-foreground sm:text-right">{p.pos ?? "—"}</div>
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-[9px] uppercase tracking-wide text-muted-foreground">保证金</div>
-                    <div className="tabular-nums font-medium text-muted-foreground">
-                      {fmtUsd(Number(p.margin))}
+                    <div>
+                      <div className="text-[10px] text-muted-foreground sm:hidden">未实现盈亏</div>
+                      <div
+                        className={cn(
+                          "tabular-nums font-medium sm:text-right",
+                          uplOk && uplNum >= 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : uplOk
+                              ? "text-red-600 dark:text-red-400"
+                              : "text-foreground",
+                        )}
+                      >
+                        {fmtSignedUsd(uplOk ? uplNum : Number.NaN)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground sm:hidden">保证金</div>
+                      <div className="tabular-nums font-medium text-muted-foreground sm:text-right">
+                        {fmtUsd(Number(p.margin))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground sm:hidden">杠杆</div>
+                      <div className="tabular-nums font-medium text-muted-foreground sm:text-right">
+                        {p.lever != null ? `${p.lever}x` : "—"}
+                      </div>
                     </div>
                   </div>
                 </div>
               </li>
             )
           })}
-        </ul>
+          </ul>
+        </div>
       )}
     </DashboardSectionCard>
   )
@@ -661,11 +701,10 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
     typeof snap?.dashboardAgentToolStatsSince === "string" &&
     snap.dashboardAgentToolStatsSince.length > 0
   const strategyRunning = baselinePresent && sincePresent
-  const strategyEnded = !baselinePresent && !sincePresent
 
   const simBadge =
     snap?.simulated === true ? (
-      <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+      <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
         模拟盘
       </span>
     ) : null
@@ -682,11 +721,9 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
         simulated={snap?.simulated}
         simBadge={simBadge}
         strategyRunning={strategyRunning}
-        strategyEnded={strategyEnded}
         loading={loading}
         equityUsdt={snap?.equityUsdt}
         onToggleStrategy={() => void (strategyRunning ? endStrategyRange() : startStrategyRange())}
-        onEndStrategy={() => void endStrategyRange()}
         onRefresh={() => void load()}
       />
 
@@ -695,14 +732,14 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
           size="sm"
           className="gap-0 overflow-hidden border-destructive/35 py-0 shadow-none ring-destructive/20"
         >
-          <CardContent className="flex gap-2.5 px-3 py-2.5">
+          <CardContent className="flex gap-2.5 px-3 py-2.5" role="alert" aria-live="polite">
             <div
               className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-destructive/10"
               aria-hidden
             >
               <AlertCircle className="size-3.5 text-destructive" />
             </div>
-            <p className="min-w-0 flex-1 text-[11px] leading-snug text-destructive">{err}</p>
+            <p className="min-w-0 flex-1 text-xs leading-snug text-destructive">{err}</p>
           </CardContent>
         </Card>
       ) : null}

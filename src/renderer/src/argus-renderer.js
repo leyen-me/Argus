@@ -70,6 +70,7 @@ const FALLBACK_APP_CONFIG = {
   systemPromptCrypto: FALLBACK_SYSTEM_PROMPT_CRYPTO,
   llmRequestTimeoutMs: 300000,
   llmReasoningEnabled: false,
+  barCloseAgentAutoEnabled: true,
   tradeNotifyEmailEnabled: false,
   smtpHost: "smtp.qq.com",
   smtpPort: 465,
@@ -486,6 +487,7 @@ function findLlmRoundRoot(barCloseId) {
 function getLlmRoundStatusKind(payload, llm) {
   if (llm.streaming === true) return "running";
   if (llm.error) return "error";
+  if (llm.skippedReason && String(llm.skippedReason).trim()) return "skipped";
   return "done";
 }
 
@@ -506,6 +508,8 @@ function buildLlmRoundStatusEl(kind) {
     st.appendChild(document.createTextNode("决策中"));
   } else if (kind === "error") {
     st.textContent = "失败";
+  } else if (kind === "skipped") {
+    st.textContent = "已跳过";
   } else {
     st.textContent = "已完成";
   }
@@ -551,6 +555,7 @@ function formatSessionMsgContent(content) {
 }
 
 /**
+ * 非 assistant 行仍合并在一列（含罕见的 tool_calls），与落库结构一致。
  * @param {object} m
  * @returns {string}
  */
@@ -565,6 +570,18 @@ function formatSessionMessageRowBody(m) {
   if (m.toolCallId) parts.push(`tool_call_id: ${m.toolCallId}`);
   if (m.name) parts.push(`name: ${m.name}`);
   return parts.join("\n\n").trim() || "（空）";
+}
+
+/**
+ * assistant 主文本（不含 tool_calls），单独一块展示。
+ * @param {object} m
+ * @returns {string}
+ */
+function formatAssistantSessionMainText(m) {
+  if (m.content != null && m.content !== "") {
+    return formatSessionMsgContent(m.content);
+  }
+  return "";
 }
 
 /**
@@ -590,10 +607,37 @@ function renderSessionMessagesInto(container, msgs) {
     roleEl.className = "llm-session-msg-role";
     const seq = m.seq != null ? ` · #${m.seq}` : "";
     roleEl.textContent = `${m.role || "?"}${seq}`;
-    const pre = document.createElement("pre");
-    pre.className = "llm-session-msg-pre";
-    pre.textContent = formatSessionMessageRowBody(m);
-    row.append(roleEl, pre);
+    const isAssistant = String(m.role || "").toLowerCase() === "assistant";
+    const toolCalls = Array.isArray(m.toolCalls) ? m.toolCalls : [];
+    const hasToolCalls = toolCalls.length > 0;
+
+    if (isAssistant && hasToolCalls) {
+      const mainText = formatAssistantSessionMainText(m);
+      if (mainText) {
+        const preMain = document.createElement("pre");
+        preMain.className = "llm-session-msg-pre";
+        preMain.textContent = mainText;
+        row.appendChild(roleEl);
+        row.appendChild(preMain);
+      } else {
+        row.appendChild(roleEl);
+      }
+      const toolsWrap = document.createElement("div");
+      toolsWrap.className = "llm-session-msg-toolcalls";
+      const toolsLabel = document.createElement("div");
+      toolsLabel.className = "llm-session-msg-toolcalls-label";
+      toolsLabel.textContent = "工具调用";
+      const preTools = document.createElement("pre");
+      preTools.className = "llm-session-msg-pre llm-session-msg-pre--toolcalls";
+      preTools.textContent = JSON.stringify(toolCalls, null, 2);
+      toolsWrap.append(toolsLabel, preTools);
+      row.appendChild(toolsWrap);
+    } else {
+      const pre = document.createElement("pre");
+      pre.className = "llm-session-msg-pre";
+      pre.textContent = formatSessionMessageRowBody(m);
+      row.append(roleEl, pre);
+    }
     container.appendChild(row);
   }
 }
@@ -746,6 +790,10 @@ function formatToolTraceDisplay(trace) {
  * @returns {{ assistantText: string, toolText: string }}
  */
 function resolveAssistantAndToolDisplay(llm) {
+  const skip = llm?.skippedReason != null ? String(llm.skippedReason).trim() : "";
+  if (skip) {
+    return { assistantText: skip, toolText: "" };
+  }
   const legacy = splitLegacyAssistantAndToolText(llm?.analysisText);
   const toolText = formatToolTraceDisplay(llm?.toolTrace) || legacy.legacyToolText;
   return {
@@ -812,6 +860,13 @@ function buildLlmRoundElement(payload) {
     "aria-label",
     locked ? "决策完成后可查看明细" : "在弹窗中查看多轮对话明细",
   );
+  const skipped = Boolean(llm.skippedReason && String(llm.skippedReason).trim());
+  if (skipped) {
+    detailBtn.disabled = true;
+    detailBtn.textContent = "—";
+    detailBtn.setAttribute("aria-label", "本轮未调用 Agent，无会话明细");
+    round.dataset.detailLocked = "1";
+  }
   sub.append(timeEl, detailBtn);
   inner.append(top, sub);
   card.appendChild(inner);
@@ -1610,6 +1665,7 @@ function shortLlmStatusLabel(full) {
     [(s) => s.includes("收盘（截图异常）"), "截图异常"],
     [(s) => s.includes("收盘 · LLM 已分析"), "已分析"],
     [(s) => s.includes("收盘 · LLM 失败"), "分析失败"],
+    [(s) => s.includes("收盘 · Agent 已跳过"), "已跳过"],
     [(s) => s.includes("K 线收盘已采集"), "已采集"],
     [(s) => s.startsWith("OKX WS · K 收盘"), "WS收盘"],
     [(s) => s.startsWith("收盘处理失败"), "处理失败"],
@@ -1725,7 +1781,10 @@ function bindMarketBarClose() {
     const llm = payload?.llm;
     const showRound =
       llm?.enabled &&
-      (llm.streaming === true || Boolean(llm.analysisText) || Boolean(llm.error));
+      (llm.streaming === true ||
+        Boolean(llm.analysisText) ||
+        Boolean(llm.error) ||
+        Boolean(llm.skippedReason && String(llm.skippedReason).trim()));
     if (showRound) {
       appendLlmRound(payload);
     }
@@ -1735,7 +1794,9 @@ function bindMarketBarClose() {
     } catch {
       console.log("[Argus] market-bar-close", payload);
     }
-    if (payload?.chartCaptureError) {
+    if (llm?.skippedReason && String(llm.skippedReason).trim()) {
+      setLlmStatus("收盘 · Agent 已跳过");
+    } else if (payload?.chartCaptureError) {
       setLlmStatus("收盘（截图异常）");
     } else if (llm?.enabled && llm.streaming) {
       setLlmStatus("LLM 输出中…");

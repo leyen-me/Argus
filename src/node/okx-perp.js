@@ -1107,6 +1107,59 @@ async function amendSwapOrder(client, p) {
 }
 
 /**
+ * K 线收盘 Agent 启动前：须 OKX 快照成功，且资金余额、合约规格、仓位结构、挂单列表均已拉取（挂单可为空数组）。
+ * @param {object} exchangeCtx {@link getOkxExchangeContextForBar} 的返回值
+ * @returns {boolean}
+ */
+function isOkxExchangeContextReadyForBarAgent(exchangeCtx) {
+  if (!exchangeCtx || exchangeCtx.enabled !== true || exchangeCtx.ok !== true) return false;
+  const pos = exchangeCtx.position;
+  if (!pos || typeof pos !== "object") return false;
+  if (typeof pos.instId !== "string" || !pos.instId.trim()) return false;
+  if (!Array.isArray(exchangeCtx.pending_orders) || !Array.isArray(exchangeCtx.pending_algo_orders)) {
+    return false;
+  }
+  if (!Number.isFinite(exchangeCtx.usdt_avail_eq)) return false;
+  const cs = exchangeCtx.contract_sizing;
+  if (!cs || typeof cs !== "object") return false;
+  if (!Number.isFinite(cs.ct_val) || !Number.isFinite(cs.last_px)) return false;
+  return true;
+}
+
+/**
+ * @param {object} exchangeCtx {@link getOkxExchangeContextForBar} 的返回值
+ * @returns {string}
+ */
+function describeOkxExchangeContextGateFailure(exchangeCtx) {
+  if (!exchangeCtx) return "未调用 LLM：未能获取交易所快照。";
+  if (exchangeCtx.enabled !== true) {
+    if (exchangeCtx.reason === "okx_swap_disabled") {
+      return "未调用 LLM：请启用 OKX 永续并完整配置 API，以拉取账户资金、持仓与挂单。";
+    }
+    if (exchangeCtx.reason === "not_crypto_chart") {
+      return "未调用 LLM：当前品种非 OKX 加密永续，无法拉取账户快照。";
+    }
+    return `未调用 LLM：交易所快照未启用（${exchangeCtx.reason || "未知"}）。`;
+  }
+  if (exchangeCtx.ok !== true) {
+    return `未调用 LLM：OKX 接口失败：${exchangeCtx.message || "未知错误"}（请检查网络与 API 权限）。`;
+  }
+  if (!Number.isFinite(exchangeCtx.usdt_avail_eq)) {
+    return "未调用 LLM：账户可用资金未能拉取（网络或 API 权限）。";
+  }
+  if (!exchangeCtx.contract_sizing || typeof exchangeCtx.contract_sizing !== "object") {
+    return "未调用 LLM：合约规格或行情未能拉取。";
+  }
+  if (!Array.isArray(exchangeCtx.pending_orders) || !Array.isArray(exchangeCtx.pending_algo_orders)) {
+    return "未调用 LLM：委托订单摘要未能拉取。";
+  }
+  if (!exchangeCtx.position || typeof exchangeCtx.position !== "object") {
+    return "未调用 LLM：仓位快照未能拉取。";
+  }
+  return "未调用 LLM：交易所上下文不完整。";
+}
+
+/**
  * K 线收盘：拉取交易所持仓 + 挂单摘要，供 Agent 用户消息注入。
  * @param {object} cfg
  * @param {string} tvSymbol
@@ -1523,6 +1576,8 @@ module.exports = {
   serializePendingSwapAlgoOrder,
   cancelSwapOrder,
   amendSwapOrder,
+  isOkxExchangeContextReadyForBarAgent,
+  describeOkxExchangeContextGateFailure,
   getOkxExchangeContextForBar,
   executeAgentPerpOpen,
   executeAgentPerpPreviewOpen,

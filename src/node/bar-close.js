@@ -12,7 +12,11 @@ const {
   buildMultimodalUserContent,
   resolveSystemPrompt,
 } = require("./llm");
-const { getOkxExchangeContextForBar } = require("./okx-perp");
+const {
+  getOkxExchangeContextForBar,
+  isOkxExchangeContextReadyForBarAgent,
+  describeOkxExchangeContextGateFailure,
+} = require("./okx-perp");
 const { TRADING_AGENT_TOOLS } = require("./trading-agent-tools");
 const { createTradingToolExecutor } = require("./trading-agent-executor");
 const { persistAgentBarTurn } = require("./agent-bar-turns-store");
@@ -149,6 +153,14 @@ async function emitBarClose(winGetter, ctx) {
   };
   llm.toolTrace = [];
 
+  const finishSkipped = (reason) => {
+    llm.skippedReason = reason;
+    llm.analysisText = null;
+    llm.streaming = false;
+    llm.error = null;
+    win.webContents.send("market-bar-close", payloadBase);
+  };
+
   if (!llm.enabled) {
     llm.skippedReason =
       "未调用 LLM：请在配置中心填写 API Key（或环境变量 OPENAI_API_KEY）。";
@@ -156,11 +168,30 @@ async function emitBarClose(winGetter, ctx) {
     return;
   }
 
+  if (chartCaptureError || !chartImage?.base64) {
+    finishSkipped(
+      chartCaptureError
+        ? `未调用 LLM：图表截图失败（${chartCaptureError}）。`
+        : "未调用 LLM：图表截图不可用。",
+    );
+    return;
+  }
+
+  if (!isOkxExchangeContextReadyForBarAgent(exchangeCtx)) {
+    finishSkipped(describeOkxExchangeContextGateFailure(exchangeCtx));
+    return;
+  }
+
+  if (cfg.barCloseAgentAutoEnabled === false) {
+    finishSkipped("未调用 LLM：右侧面板已关闭「K 线收盘自动 Agent」。");
+    return;
+  }
+
   const systemPrompt = resolveSystemPrompt(cfg);
   const currentUserContent = buildMultimodalUserContent(
     llmUserText,
-    chartImage?.base64 ?? null,
-    chartImage?.mimeType || "image/png",
+    chartImage.base64,
+    chartImage.mimeType || "image/png",
   );
   /** 每根 K 线独立单轮：不传历史 messages，仅 system + 本轮 user（含完整 OKX 快照与图）。 */
   const messages = [

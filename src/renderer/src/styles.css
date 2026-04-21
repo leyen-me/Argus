@@ -260,6 +260,11 @@ body,
   color: color-mix(in oklch, var(--chart-2) 75%, var(--foreground));
 }
 
+.llm-round-status--skipped {
+  background: color-mix(in oklab, var(--muted) 55%, transparent);
+  color: var(--muted-foreground);
+}
+
 .llm-round-status--error {
   color: var(--destructive);
 }
@@ -415,6 +420,28 @@ body,
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.llm-session-msg-toolcalls {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in oklch, var(--border) 90%, transparent);
+}
+
+.llm-session-msg-toolcalls-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin-bottom: 6px;
+}
+
+.llm-session-msg-pre--toolcalls {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--muted) 38%, var(--background));
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
 }
 
 .llm-session-msg--system {

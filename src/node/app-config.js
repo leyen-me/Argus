@@ -29,6 +29,8 @@ const APP_SETTINGS_SEED = Object.freeze({
   openaiApiKey: "",
   llmRequestTimeoutMs: 300_000,
   llmReasoningEnabled: false,
+  /** 右侧面板「K 线收盘自动 Agent」总开关；关闭时不调用 LLM（仍推送收盘 payload）。 */
+  barCloseAgentAutoEnabled: true,
   tradeNotifyEmailEnabled: false,
   smtpHost: "smtp.qq.com",
   smtpPort: 465,
@@ -233,6 +235,10 @@ function normalizeConfig(raw) {
   if (raw.llmReasoningEnabled === true) llmReasoningEnabled = true;
   else if (raw.llmReasoningEnabled === false) llmReasoningEnabled = false;
 
+  let barCloseAgentAutoEnabled = base.barCloseAgentAutoEnabled;
+  if (raw.barCloseAgentAutoEnabled === false) barCloseAgentAutoEnabled = false;
+  else if (raw.barCloseAgentAutoEnabled === true) barCloseAgentAutoEnabled = true;
+
   let tradeNotifyEmailEnabled = base.tradeNotifyEmailEnabled;
   if (raw.tradeNotifyEmailEnabled === true) tradeNotifyEmailEnabled = true;
   else if (raw.tradeNotifyEmailEnabled === false) tradeNotifyEmailEnabled = false;
@@ -289,6 +295,7 @@ function normalizeConfig(raw) {
     systemPromptCrypto,
     llmRequestTimeoutMs,
     llmReasoningEnabled,
+    barCloseAgentAutoEnabled,
     tradeNotifyEmailEnabled,
     smtpHost,
     smtpPort,

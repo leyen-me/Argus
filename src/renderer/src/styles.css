@@ -562,6 +562,34 @@ body,
   object-fit: contain;
 }
 
+/* 列表内可见：本轮跳过 / Agent 失败时的主因（与下方隐藏 stream 气泡解耦） */
+.llm-round-card-note {
+  box-sizing: border-box;
+  margin: 0 12px 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+  border: 1px solid color-mix(in oklch, var(--border) 86%, var(--background));
+  background: color-mix(in oklch, var(--muted) 6%, var(--card));
+  color: var(--foreground);
+}
+
+.llm-round-card-note[hidden] {
+  display: none;
+}
+
+.llm-round-card-note--error {
+  border-color: color-mix(in oklch, var(--destructive) 32%, var(--border));
+  background: color-mix(in oklch, var(--destructive) 9%, var(--card));
+  color: color-mix(in oklch, var(--foreground) 92%, var(--destructive));
+}
+
+.llm-round-card-note--skip {
+  color: var(--muted-foreground);
+}
+
 /* 仅供 IPC 更新用，不在列表中展示 */
 .llm-round-stream-target {
   position: absolute;

@@ -876,8 +876,13 @@ function buildNeutralTradeStripElement(kind, llm) {
   text.className = "llm-round-neutral-trade-text";
   if (kind === "running") text.textContent = "模型分析进行中，若触发交易将追加到此处。";
   else if (kind === "skipped") text.textContent = "当前只有状态判断或外部条件未满足，没有生成可查看的交易会话。";
-  else if (kind === "error") text.textContent = "Agent 分析未成功完成，因此没有可确认的开平仓事件。";
-  else setIdleNeutralTradeSummaryText(text, llm);
+  else if (kind === "error") {
+    const raw = llm && typeof llm.error === "string" ? llm.error.trim() : "";
+    const detail = raw && raw !== "error" ? raw : "";
+    text.textContent = detail
+      ? detail
+      : "Agent 分析未成功完成，因此没有可确认的开平仓事件。";
+  } else setIdleNeutralTradeSummaryText(text, llm);
   body.append(title, text);
 
   wrap.append(badgeCell, body);
@@ -1108,11 +1113,45 @@ function applyTradeStripsToRoundCard(card, inner, subEl, payload) {
 }
 
 /**
+ * 列表卡片上可见的说明（`.llm-round-stream-target` 在 CSS 中不可见，主因/跳过须写在此处）。
+ * @param {HTMLElement} el
+ * @param {object} llm
+ */
+function fillLlmRoundCardNoteElement(el, llm) {
+  if (!el) return;
+  const skip = llm?.skippedReason && String(llm.skippedReason).trim();
+  const err = llm?.error && String(llm.error).trim() && !llm?.streaming;
+  if (skip) {
+    el.textContent = skip;
+    el.className = "llm-round-card-note llm-round-card-note--skip";
+    el.hidden = false;
+  } else if (err) {
+    el.textContent = String(llm.error).trim();
+    el.className = "llm-round-card-note llm-round-card-note--error";
+    el.hidden = false;
+  } else {
+    el.textContent = "";
+    el.hidden = true;
+  }
+}
+
+/**
+ * @param {string} barCloseId
+ * @param {object} llm
+ */
+function syncLlmRoundCardNoteFromPayload(barCloseId, llm) {
+  const root = findLlmRoundRoot(barCloseId);
+  if (!root) return;
+  const el = root.querySelector(".llm-round-card-note");
+  if (el instanceof HTMLElement) fillLlmRoundCardNoteElement(el, llm);
+}
+
+/**
  * 流式结束后根据最终 toolTrace 更新平仓/开仓摘要区。
  * @param {string} barCloseId
  * @param {unknown} toolTrace
  * @param {"idle" | "error"} [state]
- * @param {object} [llmPatch] 与无成交摘要条一起展示时用，如流式结束时的 `analysisText`
+ * @param {object} [llmPatch] 与无成交摘要条一起展示；失败时须带 `error` 原文，勿覆盖为 \"error\"。
  */
 function syncLlmRoundTradeStrips(barCloseId, toolTrace, state = "idle", llmPatch) {
   const root = findLlmRoundRoot(barCloseId);
@@ -1122,24 +1161,34 @@ function syncLlmRoundTradeStrips(barCloseId, toolTrace, state = "idle", llmPatch
   const sub = root.querySelector(".llm-round-card-sub");
   if (card instanceof HTMLElement && inner instanceof HTMLElement && sub instanceof HTMLElement) {
     const base = llmPatch && typeof llmPatch === "object" ? { ...llmPatch } : {};
+    if (state === "error") {
+      const em = typeof base.error === "string" && base.error.trim() ? base.error.trim() : "";
+      base.error = em || "error";
+    } else {
+      if (!("error" in base)) base.error = null;
+    }
     applyTradeStripsToRoundCard(card, inner, sub, {
       llm: {
         ...base,
         toolTrace: Array.isArray(toolTrace) ? toolTrace : [],
-        error: state === "error" ? "error" : null,
       },
     });
   }
 }
 
 /**
- * 构建单轮 DOM（实时收盘与库分页复用）：卡片列表 + 弹窗明细；流式更新依赖隐藏的 bubble。
+ * 构建单轮 DOM（实时收盘与库分页复用）：卡片 + 可见的 `.llm-round-card-note`；隐藏区仍供流式/IPC 更新气泡。
  * @returns {HTMLElement} `.llm-round` 根节点
  */
 function buildLlmRoundElement(payload) {
   const llm = payload?.llm;
   const barCloseId = payload?.barCloseId;
-  if (!barCloseId || !llm?.enabled) {
+  if (!barCloseId || !llm) {
+    throw new Error("buildLlmRoundElement: 无效 payload");
+  }
+  const allowListItem =
+    llm.enabled === true || Boolean(llm.skippedReason && String(llm.skippedReason).trim());
+  if (!allowListItem) {
     throw new Error("buildLlmRoundElement: 无效 payload");
   }
   const display = resolveAssistantAndToolDisplay(llm);
@@ -1201,7 +1250,13 @@ function buildLlmRoundElement(payload) {
   }
   subMeta.append(timeEl);
   sub.append(subMeta, detailBtn);
+  const cardNote = document.createElement("div");
+  cardNote.className = "llm-round-card-note";
+  cardNote.setAttribute("role", "status");
+  fillLlmRoundCardNoteElement(cardNote, llm);
+
   inner.appendChild(top);
+  inner.appendChild(cardNote);
   inner.appendChild(sub);
   applyTradeStripsToRoundCard(card, inner, sub, payload);
   card.appendChild(inner);
@@ -1308,7 +1363,10 @@ function appendLlmRound(payload) {
   const history = document.getElementById("llm-chat-history");
   const llm = payload?.llm;
   const barCloseId = payload?.barCloseId;
-  if (!history || !barCloseId || !llm?.enabled) return null;
+  if (!history || !barCloseId || !llm) return null;
+  const canAppend =
+    llm.enabled === true || Boolean(llm.skippedReason && String(llm.skippedReason).trim());
+  if (!canAppend) return null;
 
   const round = buildLlmRoundElement(payload);
   ensureLlmHistorySentinel(history);
@@ -2124,11 +2182,12 @@ function bindMarketBarClose() {
 
     const llm = payload?.llm;
     const showRound =
-      llm?.enabled &&
-      (llm.streaming === true ||
-        Boolean(llm.analysisText) ||
-        Boolean(llm.error) ||
-        Boolean(llm.skippedReason && String(llm.skippedReason).trim()));
+      llm &&
+      (Boolean(llm.skippedReason && String(llm.skippedReason).trim()) ||
+        (llm.enabled === true &&
+          (llm.streaming === true ||
+            Boolean(llm.analysisText) ||
+            Boolean(llm.error))));
     if (showRound) {
       appendLlmRound(payload);
     }
@@ -2204,6 +2263,7 @@ function bindLlmStream() {
         }
       }
       syncLlmRoundTradeStrips(barCloseId, toolTrace, "idle", { analysisText, cardSummary });
+      syncLlmRoundCardNoteFromPayload(barCloseId, { skippedReason: null, error: null, streaming: false });
       if (conversationKey && exchangeContext) {
         rememberExchangeContext(conversationKey, exchangeContext);
         if (conversationKey === currentConversationKeyForUi()) {
@@ -2243,7 +2303,14 @@ function bindLlmStream() {
           bubbleTool.parentElement.parentElement.hidden = !toolText;
         }
       }
-      syncLlmRoundTradeStrips(barCloseId, toolTrace, "error");
+      syncLlmRoundTradeStrips(barCloseId, toolTrace, "error", {
+        error: message && String(message).trim() ? String(message).trim() : "错误",
+      });
+      syncLlmRoundCardNoteFromPayload(barCloseId, {
+        skippedReason: null,
+        error: message && String(message).trim() ? String(message).trim() : "错误",
+        streaming: false,
+      });
       updateLlmRoundAfterAgentFinished(barCloseId, "err");
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {

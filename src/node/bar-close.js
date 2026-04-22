@@ -21,6 +21,7 @@ const {
   isOkxExchangeContextReadyForBarAgent,
   describeOkxExchangeContextGateFailure,
   fetchRecentCandlesForTv,
+  fetchRecentSwapPositionsHistoryForBar,
 } = require("./okx-perp");
 const { TRADING_AGENT_TOOLS } = require("./trading-agent-tools");
 const { createTradingToolExecutor } = require("./trading-agent-executor");
@@ -62,6 +63,113 @@ const MD_ALGO_ORDER_HEADERS = [
   "ordPx",
 ];
 
+const OKX_POSITION_HISTORY_LLM_HEADERS = [
+  "标的",
+  "方向",
+  "全仓/逐仓",
+  "杠杆",
+  "开仓均价",
+  "已实现收益",
+  "最大持仓",
+  "平仓均价",
+  "实现收益率",
+  "已平量",
+  "开仓时间",
+  "平仓时间",
+];
+
+/**
+ * @param {string | null | undefined} m
+ */
+function okxMgnModeZh(m) {
+  if (m === "cross") return "全仓";
+  if (m === "isolated") return "逐仓";
+  if (m == null || m === "") return "—";
+  return String(m);
+}
+
+/**
+ * @param {string | number | null | undefined} ms
+ */
+function okxPosHistTimeIso(ms) {
+  if (ms == null || ms === "") return "—";
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return String(ms);
+  return new Date(n).toISOString();
+}
+
+/**
+ * @param {string | number | null | undefined} ratio
+ */
+function okxPnlRatioDisplay(ratio) {
+  if (ratio == null || ratio === "") return "—";
+  const x = Number(ratio);
+  if (!Number.isFinite(x)) return String(ratio);
+  return `${(x * 100).toFixed(4)}%`;
+}
+
+/**
+ * 将 `fetchRecentSwapPositionsHistoryForBar` 的返回格式化为可注入 user 的 Markdown；未启用/跳过/非本轮标的时传 `null`。
+ * @param {Awaited<ReturnType<typeof fetchRecentSwapPositionsHistoryForBar>> | null} ph
+ */
+function formatOkxPositionHistoryForPrompt(ph) {
+  if (!ph || ph.skipped) return "";
+  if (!ph.ok) {
+    return [
+      "",
+      "### 最近仓位历史",
+      "",
+      `> **说明**：数据来自 OKX \`GET /api/v5/account/positions-history\`（**非**当前「持仓」页统计，仅作近期盈亏参考）`,
+      "",
+      `（拉取失败：${mdCell(ph.message)}。）`,
+    ].join("\n");
+  }
+  if (!ph.rows || ph.rows.length === 0) {
+    return [
+      "",
+      "### 最近仓位历史",
+      "",
+      "> **说明**：数据来自 OKX `positions-history`；若为空，可能近约 3 个月该 `instId` 无记录。",
+      "",
+      "（无历史仓位行。）",
+    ].join("\n");
+  }
+  const tableRows = ph.rows.map((r) => {
+    if (!r || typeof r !== "object") {
+      return ["—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—"];
+    }
+    const o = /** @type {Record<string, unknown>} */ (r);
+    const side =
+      o.direction != null && String(o.direction) !== ""
+        ? String(o.direction)
+        : o.posSide != null
+          ? String(o.posSide)
+          : "—";
+    return [
+      o.instId != null ? String(o.instId) : "—",
+      side,
+      okxMgnModeZh(o.mgnMode != null ? String(o.mgnMode) : ""),
+      o.lever != null ? String(o.lever) : "—",
+      o.openAvgPx != null ? String(o.openAvgPx) : "—",
+      o.realizedPnl != null ? String(o.realizedPnl) : "—",
+      o.openMaxPos != null ? String(o.openMaxPos) : "—",
+      o.closeAvgPx != null ? String(o.closeAvgPx) : "—",
+      okxPnlRatioDisplay(/** @type {string} */ (o.pnlRatio)),
+      o.closeTotalPos != null ? String(o.closeTotalPos) : "—",
+      okxPosHistTimeIso(/** @type {string} */ (o.cTime)),
+      okxPosHistTimeIso(/** @type {string} */ (o.uTime)),
+    ];
+  });
+  return [
+    "",
+    "### 最近仓位历史",
+    "",
+    "> **说明**：历史仓位是你最近的仓位（只给 10 条），你可以由此看到你自己的盈亏情况。",
+    "",
+    mdTable(OKX_POSITION_HISTORY_LLM_HEADERS, tableRows),
+  ].join("\n");
+}
+
 /**
  * @param {Record<string, unknown>} o
  * @param {string[]} keys
@@ -83,7 +191,7 @@ function positionFieldsTable(fields) {
   );
 }
 
-function buildOkxContextUserText(marketText, exchangeCtx) {
+function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory) {
   const snapshotIntro =
     "> **说明**：以下为 OKX 永续账户、持仓与挂单快照。**若要开仓、平仓或改单，请调用工具执行**（例如先用 `preview_open_size` 试算张数，再使用下单/平仓/撤单等工具）。**不要只在回复里写交易建议而不调用工具。**";
 
@@ -207,6 +315,9 @@ function buildOkxContextUserText(marketText, exchangeCtx) {
     "### 算法挂单（条件单等）",
     "",
     algoBlock,
+    formatOkxPositionHistoryForPrompt(
+      exchangeCtx?.ok === true && exchangeCtx?.enabled === true ? positionsHistory ?? null : null,
+    ),
   ].join("\n");
 }
 
@@ -290,12 +401,13 @@ async function emitBarClose(winGetter, ctx) {
   };
 
   const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
-  const [exchangeCtx, recentCandles] = await Promise.all([
+  const [exchangeCtx, recentCandles, positionsHistory] = await Promise.all([
     getOkxExchangeContextForBar(cfg, ctx.tvSymbol),
     fetchRecentCandlesForTv(ctx.tvSymbol, ctx.interval, RECENT_CANDLES_FETCH_LIMIT),
+    fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10),
   ]);
   const textForLlm = buildUserPrompt(ctx.tvSymbol, ctx.periodLabel, ctx.candle, recentCandles);
-  const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx);
+  const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx, positionsHistory);
 
   const payloadBase = {
     kind: "bar_close",

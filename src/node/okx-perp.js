@@ -1928,6 +1928,60 @@ async function aggregateSwapCloseFillStats(client, opts = {}) {
   };
 }
 
+/**
+ * K 线收盘前：拉取该合约下 OKX 永续**历史仓位**（`GET /api/v5/account/positions-history`）最近最多 `maxRows` 条，
+ * 供 LLM 了解近期该标的下的平仓/实现盈亏。非统计用途。官方数据约近 3 个月、按 uTime 倒序。
+ * @param {object} cfg
+ * @param {string} tvSymbol
+ * @param {number} [maxRows=10]
+ * @returns {Promise<{
+ *   ok: true,
+ *   skipped: true,
+ *   reason?: string
+ * } | {
+ *   ok: true,
+ *   skipped: false,
+ *   instId: string,
+ *   rows: object[]
+ * } | {
+ *   ok: false,
+ *   message: string
+ * }>}
+ */
+async function fetchRecentSwapPositionsHistoryForBar(cfg, tvSymbol, maxRows = 10) {
+  if (!cfg || cfg.okxSwapTradingEnabled !== true) {
+    return { ok: true, skipped: true, reason: "okx_swap_disabled" };
+  }
+  if (inferFeed(tvSymbol) !== "crypto") {
+    return { ok: true, skipped: true, reason: "not_crypto_chart" };
+  }
+  const instId = tvSymbolToSwapInstId(tvSymbol);
+  if (!instId) {
+    return { ok: true, skipped: true, reason: "invalid_swap_inst" };
+  }
+  const apiKey = typeof cfg.okxApiKey === "string" ? cfg.okxApiKey.trim() : "";
+  const secretKey = typeof cfg.okxSecretKey === "string" ? cfg.okxSecretKey.trim() : "";
+  const passphrase = typeof cfg.okxPassphrase === "string" ? cfg.okxPassphrase.trim() : "";
+  if (!apiKey || !secretKey || !passphrase) {
+    return { ok: false, message: "OKX API 未配置完整" };
+  }
+  const n = Math.min(100, Math.max(1, Math.floor(maxRows)));
+  const simulated = cfg.okxSimulated !== false;
+  try {
+    const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
+    const q = new URLSearchParams({ instType: "SWAP", instId, limit: String(n) });
+    const json = await client.request("GET", `/api/v5/account/positions-history?${q.toString()}`, "");
+    if (String(json?.code) !== "0") {
+      return { ok: false, message: formatOkxErrorBody(json) };
+    }
+    const rows = Array.isArray(json?.data) ? json.data : [];
+    return { ok: true, skipped: false, instId, rows };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: msg };
+  }
+}
+
 module.exports = {
   tvSymbolToSwapInstId,
   tvIntervalToOkxCandleBar,
@@ -1958,4 +2012,5 @@ module.exports = {
   smokeSwapClosePosition,
   smokeSwapOpenLongThenClose,
   aggregateSwapCloseFillStats,
+  fetchRecentSwapPositionsHistoryForBar,
 };

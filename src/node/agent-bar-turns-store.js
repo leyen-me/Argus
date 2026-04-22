@@ -73,6 +73,7 @@ function messageToRow(m, seq) {
  * @param {string | null} [row.chartBase64] 裸 base64，无 data: 前缀
  * @param {string | null} [row.chartCaptureError]
  * @param {string | null} [row.assistantText]
+ * @param {string | null} [row.cardSummary] 二次 LLM 卡片短摘要
  * @param {unknown[] | null} [row.toolTrace]
  * @param {object | null} [row.exchangeAfter]
  * @param {boolean} [row.agentOk]
@@ -107,13 +108,13 @@ function persistAgentBarTurn(row) {
       bar_close_id, tv_symbol, interval, period_label, captured_at,
       text_for_llm, llm_user_full_text, exchange_context_json,
       chart_mime, chart_png, chart_capture_error,
-      assistant_text, tool_trace_json, exchange_after_json, agent_ok, agent_error,
+      assistant_text, card_summary, tool_trace_json, exchange_after_json, agent_ok, agent_error,
       estimated_prompt_tokens, context_window_tokens, updated_at, system_prompt_text
     ) VALUES (
       @bar_close_id, @tv_symbol, @interval, @period_label, @captured_at,
       @text_for_llm, @llm_user_full_text, @exchange_context_json,
       @chart_mime, @chart_png, @chart_capture_error,
-      @assistant_text, @tool_trace_json, @exchange_after_json, @agent_ok, @agent_error,
+      @assistant_text, @card_summary, @tool_trace_json, @exchange_after_json, @agent_ok, @agent_error,
       @estimated_prompt_tokens, @context_window_tokens, datetime('now'), @system_prompt_text
     )
   `);
@@ -142,6 +143,8 @@ function persistAgentBarTurn(row) {
           ? String(row.chartCaptureError)
           : null,
       assistant_text: row.assistantText != null ? String(row.assistantText) : null,
+      card_summary:
+        row.cardSummary != null && String(row.cardSummary).trim() !== "" ? String(row.cardSummary) : null,
       tool_trace_json: encToolTrace,
       exchange_after_json: encAfter,
       agent_ok: row.agentOk !== false ? 1 : 0,
@@ -198,7 +201,7 @@ function listAgentBarTurnsPage(args = {}) {
       bar_close_id, tv_symbol, interval, period_label, captured_at,
       text_for_llm, llm_user_full_text, exchange_context_json,
       chart_mime, chart_capture_error,
-      assistant_text, tool_trace_json, exchange_after_json, agent_ok, agent_error,
+      assistant_text, card_summary, tool_trace_json, exchange_after_json, agent_ok, agent_error,
       CASE WHEN chart_png IS NOT NULL AND length(chart_png) > 0 THEN 1 ELSE 0 END AS has_chart
     FROM agent_sessions
     WHERE tv_symbol = ? AND interval = ?
@@ -237,6 +240,7 @@ function listAgentBarTurnsPage(args = {}) {
       chartMime: r.chart_mime,
       chartCaptureError: r.chart_capture_error,
       assistantText: r.assistant_text,
+      cardSummary: r.card_summary != null && String(r.card_summary).trim() ? String(r.card_summary) : null,
       toolTrace,
       agentOk: r.agent_ok === 1,
       agentError: r.agent_error,

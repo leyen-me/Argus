@@ -332,6 +332,21 @@ body,
   color: var(--muted-foreground);
 }
 
+/* 无成交时节选 assistant 长文：卡片内可滚动，避免撑满整列 */
+.llm-round-neutral-trade-text--analysis {
+  max-height: min(42vh, 16rem);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.llm-round-neutral-trade-text--summary {
+  max-height: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: color-mix(in oklch, var(--foreground) 72%, var(--muted-foreground));
+}
+
 .llm-round-neutral-trade--running .llm-round-neutral-trade-title {
   color: color-mix(in oklch, var(--primary) 74%, var(--foreground));
 }

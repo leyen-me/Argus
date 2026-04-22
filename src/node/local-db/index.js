@@ -8,6 +8,7 @@
  * - `agent_bar_turns`：历史表（user_version ≥ 3）；v6 起新数据写入 `agent_sessions` + `agent_session_messages`，旧行由迁移复制到 `agent_sessions`。
  * - `agent_sessions` / `agent_session_messages`：收盘 Agent 会话与有序消息（user_version ≥ 6）。
  * - `dashboard_equity_samples`：仪表盘权益曲线采样（user_version ≥ 7）。
+ * - `agent_sessions.card_summary`：收盘后二次 LLM 卡片短摘要（user_version ≥ 8）。
  * - 其他强关系数据可在同一库中新建表并递增 user_version；业务模块仅依赖 `getDatabase()`。
  *
  * 约定命名空间（namespace）示例：
@@ -172,6 +173,13 @@ function applyMigrations(database) {
       CREATE INDEX idx_dashboard_equity_captured ON dashboard_equity_samples (captured_at DESC);
     `);
     database.pragma("user_version = 7");
+    v = 7;
+  }
+  if (v < 8) {
+    database.exec(`
+      ALTER TABLE agent_sessions ADD COLUMN card_summary TEXT;
+    `);
+    database.pragma("user_version = 8");
   }
 }
 

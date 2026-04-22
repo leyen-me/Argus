@@ -340,6 +340,7 @@ function agentBarTurnRowToPayload(row) {
       reasoningEnabled: false,
       streaming: false,
       analysisText: row.agentOk ? row.assistantText || "" : null,
+      cardSummary: row.agentOk && row.cardSummary ? String(row.cardSummary) : null,
       toolTrace: Array.isArray(row.toolTrace) ? row.toolTrace : [],
       error: row.agentOk ? null : row.agentError || "Agent 失败",
       reasoningText: null,
@@ -817,10 +818,38 @@ function pickFiniteNum(v) {
 }
 
 /**
+ * @param {object | null | undefined} llm
+ */
+function setIdleNeutralTradeSummaryText(textEl, llm) {
+  const L = llm && typeof llm === "object" ? llm : {};
+  const short =
+    L.cardSummary != null && String(L.cardSummary).trim()
+      ? normalizeAssistantDisplayText(String(L.cardSummary).trim())
+      : "";
+  if (short) {
+    textEl.textContent = short;
+    textEl.classList.remove("llm-round-neutral-trade-text--analysis");
+    textEl.classList.add("llm-round-neutral-trade-text--summary");
+    return;
+  }
+  const d = resolveAssistantAndToolDisplay(L);
+  const body = d.assistantText && String(d.assistantText).trim();
+  if (body) {
+    textEl.textContent = normalizeAssistantDisplayText(body);
+    textEl.classList.add("llm-round-neutral-trade-text--analysis");
+    textEl.classList.remove("llm-round-neutral-trade-text--summary");
+  } else {
+    textEl.textContent = "暂无可摘录的分析正文。";
+    textEl.classList.remove("llm-round-neutral-trade-text--analysis", "llm-round-neutral-trade-text--summary");
+  }
+}
+
+/**
  * @param {"running" | "idle" | "skipped" | "error"} kind
+ * @param {object | null | undefined} [llm] 与 `kind === "idle"` 时展示 `llm.cardSummary` 或正文摘要用
  * @returns {HTMLElement}
  */
-function buildNeutralTradeStripElement(kind) {
+function buildNeutralTradeStripElement(kind, llm) {
   const wrap = document.createElement("div");
   wrap.className = `llm-round-neutral-trade llm-round-neutral-trade--${kind}`;
   wrap.setAttribute("role", "status");
@@ -845,7 +874,7 @@ function buildNeutralTradeStripElement(kind) {
   if (kind === "running") text.textContent = "模型分析进行中，若触发交易将追加到此处。";
   else if (kind === "skipped") text.textContent = "当前只有状态判断或外部条件未满足，没有生成可查看的交易会话。";
   else if (kind === "error") text.textContent = "Agent 分析未成功完成，因此没有可确认的开平仓事件。";
-  else text.textContent = "保留统一的事件流骨架，便于快速扫视哪些 bar 产生了真实交易。";
+  else setIdleNeutralTradeSummaryText(text, llm);
   body.append(title, text);
 
   wrap.append(badge, body);
@@ -1033,7 +1062,7 @@ function buildTradeStackFromToolTrace(payload) {
   const stack = document.createElement("div");
   stack.className = "llm-round-trade-stack";
   if (blocks.length === 0) {
-    stack.appendChild(buildNeutralTradeStripElement(getNeutralTradeKind(payload)));
+    stack.appendChild(buildNeutralTradeStripElement(getNeutralTradeKind(payload), payload?.llm));
     return { stack, accent: null };
   }
   for (const b of blocks) stack.appendChild(b);
@@ -1074,16 +1103,19 @@ function applyTradeStripsToRoundCard(card, inner, subEl, payload) {
  * @param {string} barCloseId
  * @param {unknown} toolTrace
  * @param {"idle" | "error"} [state]
+ * @param {object} [llmPatch] 与无成交摘要条一起展示时用，如流式结束时的 `analysisText`
  */
-function syncLlmRoundTradeStrips(barCloseId, toolTrace, state = "idle") {
+function syncLlmRoundTradeStrips(barCloseId, toolTrace, state = "idle", llmPatch) {
   const root = findLlmRoundRoot(barCloseId);
   if (!root) return;
   const card = root.querySelector(".llm-round-card");
   const inner = root.querySelector(".llm-round-card-inner");
   const sub = root.querySelector(".llm-round-card-sub");
   if (card instanceof HTMLElement && inner instanceof HTMLElement && sub instanceof HTMLElement) {
+    const base = llmPatch && typeof llmPatch === "object" ? { ...llmPatch } : {};
     applyTradeStripsToRoundCard(card, inner, sub, {
       llm: {
+        ...base,
         toolTrace: Array.isArray(toolTrace) ? toolTrace : [],
         error: state === "error" ? "error" : null,
       },
@@ -2153,7 +2185,7 @@ function bindLlmStream() {
   }
   if (typeof onLlmStreamEnd === "function") {
     onLlmStreamEnd(
-      ({ barCloseId, analysisText, reasoningText, toolTrace, conversationKey, exchangeContext }) => {
+      ({ barCloseId, analysisText, cardSummary, reasoningText, toolTrace, conversationKey, exchangeContext }) => {
       const bubbleAsst = findAssistantBubbleForBar(barCloseId);
       const display = resolveAssistantAndToolDisplay({ analysisText, toolTrace });
       if (bubbleAsst && analysisText != null) {
@@ -2171,7 +2203,7 @@ function bindLlmStream() {
           bubbleTool.parentElement.parentElement.hidden = !display.toolText;
         }
       }
-      syncLlmRoundTradeStrips(barCloseId, toolTrace, "idle");
+      syncLlmRoundTradeStrips(barCloseId, toolTrace, "idle", { analysisText, cardSummary });
       if (conversationKey && exchangeContext) {
         rememberExchangeContext(conversationKey, exchangeContext);
         if (conversationKey === currentConversationKeyForUi()) {
@@ -2182,6 +2214,8 @@ function bindLlmStream() {
       if (barCloseId !== latestBarCloseId) return;
       if (window.argusLastBarClose?.llm) {
         window.argusLastBarClose.llm.analysisText = analysisText;
+        window.argusLastBarClose.llm.cardSummary =
+          cardSummary != null && String(cardSummary).trim() ? String(cardSummary).trim() : null;
         window.argusLastBarClose.llm.toolTrace = Array.isArray(toolTrace) ? toolTrace : [];
         window.argusLastBarClose.llm.reasoningText = reasoningText ?? "";
         window.argusLastBarClose.llm.streaming = false;

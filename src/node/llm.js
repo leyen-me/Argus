@@ -379,6 +379,87 @@ async function callOpenAIChat(userText, options = {}) {
   }
 }
 
+/** 与 renderer 中 `splitLegacyAssistantAndToolText` 一致：去掉老格式里拼接的工具轨迹。 */
+function stripToolSectionFromAssistantRaw(raw) {
+  const t = typeof raw === "string" ? raw : "";
+  const marker = "\n---\n工具轨迹：\n";
+  const idx = t.indexOf(marker);
+  if (idx < 0) return t.trim();
+  return t.slice(0, idx).trim();
+}
+
+const CARD_SUMMARY_MAX_INPUT_CHARS = 12_000;
+const SUMMARY_LLM_MAX_MS = 60_000;
+
+/**
+ * 主 Agent 成功后再调一次小模型/同模型，生成右侧「无成交」卡片的极短中文摘要（额外交费 + 约数十秒级延迟，失败不阻断主流程）。
+ * @param {string} assistantFull
+ * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
+ * @returns {Promise<{ ok: boolean, text?: string }>}
+ */
+async function summarizeAgentAnalysisForCard(assistantFull, options) {
+  const cfg = options.appConfig;
+  if (!isLlmEnabled(cfg)) {
+    return { ok: false };
+  }
+  const bodyText = stripToolSectionFromAssistantRaw(assistantFull);
+  if (!bodyText) {
+    return { ok: false };
+  }
+  const cut =
+    bodyText.length > CARD_SUMMARY_MAX_INPUT_CHARS
+      ? `${bodyText.slice(0, CARD_SUMMARY_MAX_INPUT_CHARS)}\n\n…（后文已省略）`
+      : bodyText;
+  const system =
+    "你是交易日志编辑。用户会给你一根 K 线收盘的 Agent 分析全文。请用**一两句**中文写「卡片外显摘要」：\n" +
+    "仅结论与操作含义（多/空/观望/未下单等），不要列表、小标题、Markdown、引号。总字数 120 字以内。";
+  const user = `以下为本轮分析内容，请直接输出摘要句子：\n\n${cut}`;
+  const built = buildChatCompletionRequestFromMessages(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    options,
+    false,
+  );
+  if (built.error) {
+    return { ok: false };
+  }
+  const body = { ...built.body, temperature: 0.2, max_tokens: 256 };
+  if (isOpenRouterBaseUrl(built.baseURL) && "reasoning" in body) {
+    delete body.reasoning;
+  }
+  if (isDashScopeBaseUrl(built.baseURL)) {
+    body.enable_thinking = false;
+  }
+  const apiKey = resolveOpenAiApiKey(cfg);
+  const signal =
+    typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(SUMMARY_LLM_MAX_MS)
+      : llmAbortSignal(cfg);
+  const client = new OpenAI({
+    apiKey,
+    baseURL: built.baseURL,
+    timeout: Math.min(SUMMARY_LLM_MAX_MS + 5_000, llmRequestTimeoutMs(cfg)),
+    maxRetries: 0,
+  });
+  try {
+    const completion = await client.chat.completions.create(/** @type {any} */ (body), { signal });
+    const rawMsg = completion?.choices?.[0]?.message?.content;
+    const text = messageContentToString(rawMsg).trim();
+    if (!text) {
+      return { ok: false };
+    }
+    const oneLine = text.replace(/\s+/g, " ").replace(/^["'「]+|["'」]+$/g, "").trim();
+    if (!oneLine) {
+      return { ok: false };
+    }
+    return { ok: true, text: oneLine.length > 200 ? oneLine.slice(0, 197) + "…" : oneLine };
+  } catch (e) {
+    return { ok: false };
+  }
+}
+
 /** 拉取 K 线条数（供 EMA 预热）；表内只展示最近 {@link RECENT_CANDLES_DISPLAY_COUNT} 根 */
 const RECENT_CANDLES_FETCH_LIMIT = 100;
 const RECENT_CANDLES_DISPLAY_COUNT = 30;
@@ -616,6 +697,7 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
 module.exports = {
   callOpenAIChat,
   streamOpenAIChat,
+  summarizeAgentAnalysisForCard,
   runTradingAgentTurn,
   buildUserPrompt,
   computeEmaSeries,

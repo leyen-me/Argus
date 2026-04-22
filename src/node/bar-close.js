@@ -14,6 +14,7 @@ const {
   RECENT_CANDLES_FETCH_LIMIT,
   mdCell,
   mdTable,
+  summarizeAgentAnalysisForCard,
 } = require("./llm");
 const {
   getOkxExchangeContextForBar,
@@ -277,12 +278,13 @@ async function emitBarClose(winGetter, ctx) {
   const cfg = loadAppConfig();
   const barCloseId = crypto.randomUUID();
 
-  /** @type {{ enabled: boolean, streaming?: boolean, reasoningEnabled?: boolean, reasoningText?: string | null, analysisText: string | null, skippedReason: string | null, error: string | null }} */
+  /** @type {{ enabled: boolean, streaming?: boolean, reasoningEnabled?: boolean, reasoningText?: string | null, analysisText: string | null, cardSummary?: string | null, skippedReason: string | null, error: string | null }} */
   const llm = {
     enabled: isLlmEnabled(cfg),
     reasoningEnabled: cfg.llmReasoningEnabled === true,
     reasoningText: null,
     analysisText: null,
+    cardSummary: null,
     skippedReason: null,
     error: null,
   };
@@ -410,7 +412,18 @@ async function emitBarClose(winGetter, ctx) {
     llm.toolTrace = Array.isArray(agentResult.toolTrace) ? agentResult.toolTrace : [];
     llm.reasoningText = "";
     llm.streaming = false;
-    const exchangeAfter = await getOkxExchangeContextForBar(cfg, ctx.tvSymbol);
+    llm.cardSummary = null;
+    const summaryP =
+      agentResult.text && String(agentResult.text).trim()
+        ? summarizeAgentAnalysisForCard(agentResult.text, streamOpts)
+        : Promise.resolve(/** @type {{ ok: boolean, text?: string }} */ ({ ok: false }));
+    const [sumResult, exchangeAfter] = await Promise.all([
+      summaryP,
+      getOkxExchangeContextForBar(cfg, ctx.tvSymbol),
+    ]);
+    if (sumResult.ok && sumResult.text) {
+      llm.cardSummary = sumResult.text;
+    }
     payloadBase.exchangeContext = exchangeAfter;
     try {
       persistAgentBarTurn({
@@ -426,6 +439,7 @@ async function emitBarClose(winGetter, ctx) {
         chartBase64: chartImage?.base64 ?? null,
         chartCaptureError,
         assistantText: agentResult.text,
+        cardSummary: llm.cardSummary,
         toolTrace: llm.toolTrace,
         exchangeAfter,
         agentOk: true,
@@ -443,6 +457,7 @@ async function emitBarClose(winGetter, ctx) {
       conversationKey: convKey,
       exchangeContext: exchangeAfter,
       analysisText: llm.analysisText,
+      cardSummary: llm.cardSummary,
       reasoningText: "",
       toolTrace: llm.toolTrace,
     });

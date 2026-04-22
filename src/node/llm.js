@@ -389,14 +389,85 @@ function stripToolSectionFromAssistantRaw(raw) {
 }
 
 const CARD_SUMMARY_MAX_INPUT_CHARS = 12_000;
+/** 最终展示：超过则二次 LLM 压缩，仍超则硬截断（与提示中的字数一致） */
+const CARD_SUMMARY_MAX_OUT_CHARS = 40;
+const CARD_SUMMARY_FIRST_MAX_TOKENS = 100;
+const CARD_SUMMARY_TIGHTEN_MAX_TOKENS = 72;
 const SUMMARY_LLM_MAX_MS = 60_000;
 
 /**
- * 主 Agent 成功后再调一次同兼容接口，生成右侧「无成交」卡片的极短中文摘要（额外交费 + 约数十秒级延迟，失败不阻断主流程）。
- *
- * **不传入 `tools`**：请求体为纯文本多轮缺省形态，与 `runTradingAgentTurn` 不同；本函数只读 `message.content`，
- * 不执行 `executeTool`，模型无法通过此路径触发开仓/平仓等副作用（即使网关误返回 `tool_calls` 也会被忽略）。
- *
+ * 卡片摘要用的 chat.completions 调用：低温度、小 max_tokens、关思考。
+ * @param {Array<{ role: string, content: string }>} messages
+ * @param {object} param1
+ * @param {{ appConfig: object, baseUrl?: string, model?: string }} param1.options
+ * @param {import("openai").OpenAI} param1.client
+ * @param {AbortSignal} param1.signal
+ * @param {number} param1.maxTokens
+ */
+async function runCardSummaryCompletion(messages, { options, client, signal, maxTokens } = {}) {
+  const built = buildChatCompletionRequestFromMessages(messages, options, false);
+  if (built.error) {
+    return "";
+  }
+  const body = { ...built.body, temperature: 0.15, max_tokens: maxTokens };
+  if (isOpenRouterBaseUrl(built.baseURL) && "reasoning" in body) {
+    delete body.reasoning;
+  }
+  if (isDashScopeBaseUrl(built.baseURL)) {
+    body.enable_thinking = false;
+  }
+  const completion = await client.chat.completions.create(/** @type {any} */ (body), { signal });
+  const rawMsg = completion?.choices?.[0]?.message?.content;
+  return messageContentToString(rawMsg).trim();
+}
+
+function normalizeOneLineCardText(s) {
+  return String(s || "")
+    .replace(/\s+/g, " ")
+    .replace(/^["'「]+|["'」]+$/g, "")
+    .trim();
+}
+
+/**
+ * 若首轮仍偏长，再让模型收束到 CARD_SUMMARY_MAX_OUT_CHARS 以内（失败则后面硬截断）。
+ * @param {string} longLine
+ * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
+ * @param {import("openai").OpenAI} client
+ * @param {AbortSignal} signal
+ * @returns {Promise<string>}
+ */
+async function compressCardLineForTightLimit(longLine, options, client, signal) {
+  const line = normalizeOneLineCardText(longLine);
+  if (!line) return "";
+  if (line.length <= CARD_SUMMARY_MAX_OUT_CHARS) return line;
+  const system = [
+    "你是交易日志编辑。用户会给你一句偏长的「K 线收盘结论」。",
+    `请**只输出一句**更短的中文，总长度**不得超过 ${CARD_SUMMARY_MAX_OUT_CHARS} 个字符**（汉字/数字/英文/标点都计入），`,
+    "保留多/空/观望/未下单等关键结论，不要列表、换行、引号、前缀说明。",
+  ].join("");
+  const user = `请压缩为一句（≤${CARD_SUMMARY_MAX_OUT_CHARS} 字）：\n\n${line}`;
+  try {
+    const t = await runCardSummaryCompletion(
+      [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      { options, client, signal, maxTokens: CARD_SUMMARY_TIGHTEN_MAX_TOKENS },
+    );
+    const out = normalizeOneLineCardText(t);
+    const hard = (s) =>
+      s.length > CARD_SUMMARY_MAX_OUT_CHARS ? s.slice(0, CARD_SUMMARY_MAX_OUT_CHARS - 1) + "…" : s;
+    if (!out) return hard(line);
+    return hard(out);
+  } catch {
+    return line.length > CARD_SUMMARY_MAX_OUT_CHARS
+      ? line.slice(0, CARD_SUMMARY_MAX_OUT_CHARS - 1) + "…"
+      : line;
+  }
+}
+
+/**
+ * 主 Agent 成功后再调一次小模型/同模型，生成右侧「无成交」卡片的极短中文摘要（可额二次压缩；失败不阻断主流程）。
  * @param {string} assistantFull
  * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
  * @returns {Promise<{ ok: boolean, text?: string }>}
@@ -414,53 +485,52 @@ async function summarizeAgentAnalysisForCard(assistantFull, options) {
     bodyText.length > CARD_SUMMARY_MAX_INPUT_CHARS
       ? `${bodyText.slice(0, CARD_SUMMARY_MAX_INPUT_CHARS)}\n\n…（后文已省略）`
       : bodyText;
-  const system =
-    "你是交易日志编辑。用户会给你一根 K 线收盘的 Agent 分析全文。本对话没有交易或工具接口，你只需输出纯文本摘要。\n" +
-    "请用**一两句**中文写「卡片外显摘要」：仅结论与操作含义（多/空/观望/未下单等），" +
-    "不要列表、小标题、Markdown、引号。总字数 120 字以内。不要编造已执行下单。";
-  const user = `以下为本轮分析内容，请直接输出摘要句子：\n\n${cut}`;
-  const built = buildChatCompletionRequestFromMessages(
-    [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-    options,
-    false,
-  );
-  if (built.error) {
-    return { ok: false };
-  }
-  const body = { ...built.body, temperature: 0.2, max_tokens: 256 };
-  if (isOpenRouterBaseUrl(built.baseURL) && "reasoning" in body) {
-    delete body.reasoning;
-  }
-  if (isDashScopeBaseUrl(built.baseURL)) {
-    body.enable_thinking = false;
-  }
-  const apiKey = resolveOpenAiApiKey(cfg);
+  const system = [
+    "你是交易日志编辑。用户会给你一根 K 线收盘的 Agent 分析全文。",
+    "请**只输出一句**中文「卡片外显」摘要：只写**结论/操作**（多、空、观望、未开平仓、止损意向等可择要一词带过）。",
+    `**整句总长度必须不超过 ${CARD_SUMMARY_MAX_OUT_CHARS} 个字符**（含标点、数字）；禁止多句、换行、列表、Markdown、引号。`,
+  ].join("");
+  const user = `以下是本轮分析，请直接输出**一句**摘要：\n\n${cut}`;
   const signal =
     typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
       ? AbortSignal.timeout(SUMMARY_LLM_MAX_MS)
       : llmAbortSignal(cfg);
+  const initBuilt = buildChatCompletionRequestFromMessages(
+    [{ role: "user", content: "x" }],
+    options,
+    false,
+  );
+  if (initBuilt.error) {
+    return { ok: false };
+  }
   const client = new OpenAI({
-    apiKey,
-    baseURL: built.baseURL,
+    apiKey: resolveOpenAiApiKey(cfg),
+    baseURL: initBuilt.baseURL,
     timeout: Math.min(SUMMARY_LLM_MAX_MS + 5_000, llmRequestTimeoutMs(cfg)),
     maxRetries: 0,
   });
   try {
-    const completion = await client.chat.completions.create(/** @type {any} */ (body), { signal });
-    const msg = completion?.choices?.[0]?.message;
-    const rawMsg = msg?.content;
-    const text = messageContentToString(rawMsg).trim();
-    if (!text) {
-      return { ok: false };
-    }
-    const oneLine = text.replace(/\s+/g, " ").replace(/^["'「]+|["'」]+$/g, "").trim();
+    const first = await runCardSummaryCompletion(
+      [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      { options, client, signal, maxTokens: CARD_SUMMARY_FIRST_MAX_TOKENS },
+    );
+    let oneLine = normalizeOneLineCardText(first);
     if (!oneLine) {
       return { ok: false };
     }
-    return { ok: true, text: oneLine.length > 200 ? oneLine.slice(0, 197) + "…" : oneLine };
+    if (oneLine.length > CARD_SUMMARY_MAX_OUT_CHARS) {
+      oneLine = await compressCardLineForTightLimit(oneLine, options, client, signal);
+    }
+    if (!oneLine) {
+      return { ok: false };
+    }
+    if (oneLine.length > CARD_SUMMARY_MAX_OUT_CHARS) {
+      oneLine = oneLine.slice(0, CARD_SUMMARY_MAX_OUT_CHARS - 1) + "…";
+    }
+    return { ok: true, text: oneLine };
   } catch (e) {
     return { ok: false };
   }

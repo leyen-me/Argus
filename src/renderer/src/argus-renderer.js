@@ -1164,6 +1164,12 @@ function buildLlmRoundElement(payload) {
   summaryTitle.className = "llm-round-summary-title";
   summaryTitle.textContent = payload.tvSymbol || "未命名标的";
   head.appendChild(summaryTitle);
+  if (payload?.periodLabel) {
+    const period = document.createElement("span");
+    period.className = "llm-round-period-badge";
+    period.textContent = String(payload.periodLabel);
+    head.appendChild(period);
+  }
 
   top.append(head, buildLlmRoundStatusEl(statusKind));
 
@@ -1174,6 +1180,9 @@ function buildLlmRoundElement(payload) {
   const timeEl = document.createElement("span");
   timeEl.className = "llm-round-card-time";
   timeEl.textContent = cap;
+  const routeEl = document.createElement("span");
+  routeEl.className = "llm-round-card-route";
+  routeEl.textContent = "Agent 回合";
   const detailBtn = document.createElement("button");
   detailBtn.type = "button";
   detailBtn.className = "llm-round-detail-btn";
@@ -1190,7 +1199,7 @@ function buildLlmRoundElement(payload) {
     detailBtn.setAttribute("aria-label", "本轮未调用 Agent，无会话明细");
     round.dataset.detailLocked = "1";
   }
-  subMeta.append(timeEl);
+  subMeta.append(timeEl, routeEl);
   sub.append(subMeta, detailBtn);
   inner.appendChild(top);
   inner.appendChild(sub);

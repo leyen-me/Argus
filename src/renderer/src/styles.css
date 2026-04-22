@@ -230,6 +230,15 @@ body,
   box-shadow: none;
 }
 
+.llm-round-event-badge-cell {
+  width: 6rem;
+  min-width: 6rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
 .llm-round-event-badge {
   display: inline-flex;
   align-items: center;

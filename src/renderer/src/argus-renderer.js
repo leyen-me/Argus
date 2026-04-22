@@ -860,6 +860,9 @@ function buildNeutralTradeStripElement(kind, llm) {
   else if (kind === "skipped") badge.textContent = "SKIP";
   else if (kind === "error") badge.textContent = "ERROR";
   else badge.textContent = "NO TRADE";
+  const badgeCell = document.createElement("div");
+  badgeCell.className = "llm-round-event-badge-cell";
+  badgeCell.appendChild(badge);
 
   const body = document.createElement("div");
   body.className = "llm-round-neutral-trade-body";
@@ -877,7 +880,7 @@ function buildNeutralTradeStripElement(kind, llm) {
   else setIdleNeutralTradeSummaryText(text, llm);
   body.append(title, text);
 
-  wrap.append(badge, body);
+  wrap.append(badgeCell, body);
   return wrap;
 }
 
@@ -915,6 +918,9 @@ function buildOpenTradeStripElement(args, result) {
   const badge = document.createElement("span");
   badge.className = "llm-round-event-badge llm-round-event-badge--open";
   badge.textContent = "OPEN";
+  const badgeCell = document.createElement("div");
+  badgeCell.className = "llm-round-event-badge-cell";
+  badgeCell.appendChild(badge);
 
   let priceLine = "—";
   if (openPrice != null) {
@@ -952,7 +958,7 @@ function buildOpenTradeStripElement(args, result) {
   }
 
   body.append(title, meta);
-  wrap.append(badge, body);
+  wrap.append(badgeCell, body);
   return wrap;
 }
 
@@ -982,6 +988,9 @@ function buildCloseTradeStripElement(args, result) {
   const badge = document.createElement("span");
   badge.className = "llm-round-event-badge llm-round-event-badge--close";
   badge.textContent = "CLOSE";
+  const badgeCell = document.createElement("div");
+  badgeCell.className = "llm-round-event-badge-cell";
+  badgeCell.appendChild(badge);
   const priceLine =
     orderType === "limit" && limitPx != null
       ? `${fmtTradePx(limitPx)} · LIMIT`
@@ -1016,7 +1025,7 @@ function buildCloseTradeStripElement(args, result) {
   }
 
   body.append(title, meta);
-  wrap.append(badge, body);
+  wrap.append(badgeCell, body);
   return wrap;
 }
 

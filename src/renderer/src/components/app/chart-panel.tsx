@@ -1,5 +1,6 @@
 import { ChartIntervalSelect } from "@/components/chart-interval-select"
 import { ChartSymbolSelect } from "@/components/chart-symbol-select"
+import { FishModeOverlay } from "@/components/app/fish-mode-overlay"
 import {
   Card,
   CardContent,
@@ -22,6 +23,7 @@ export function ChartPanel() {
       <CardContent className="flex min-h-0 flex-1 flex-col p-0">
         <div className="chart-wrap">
           <div id="tradingview_chart" className="tradingview-chart" />
+          <FishModeOverlay />
         </div>
       </CardContent>
     </Card>

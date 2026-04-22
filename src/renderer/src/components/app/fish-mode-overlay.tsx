@@ -22,7 +22,7 @@ export function FishModeOverlay() {
           界面已隐藏
         </h2>
         <p id="fish-mode-desc" className="fish-mode-desc">
-          图表与侧栏内容已被遮盖，适合短暂离开工位或投屏时避免误露敏感信息。
+          仅遮盖左侧行情图区域，右侧仍可正常使用；适合短暂离开工位或投屏时避免图表误露。
         </p>
         <div className="fish-mode-hint-row">
           <Keyboard className="size-3.5 shrink-0 opacity-70" aria-hidden />

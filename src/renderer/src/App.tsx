@@ -3,7 +3,6 @@ import { ChartPanel } from "@/components/app/chart-panel";
 import { ConfigModal } from "@/components/app/config-modal";
 import { DashboardModal } from "@/components/app/dashboard-modal";
 import { StrategyCenterModal } from "@/components/app/strategy-center-modal";
-import { FishModeOverlay } from "@/components/app/fish-mode-overlay";
 import { LlmChartPreviewModal } from "@/components/app/llm-chart-preview-modal";
 import { LlmSessionDetailModal } from "@/components/app/llm-session-detail-modal";
 import { LlmPanel } from "@/components/app/llm-panel";
@@ -28,7 +27,6 @@ export default function App() {
       <ConfigModal />
       <DashboardModal />
       <StrategyCenterModal />
-      <FishModeOverlay />
       <LlmChartPreviewModal />
       <LlmSessionDetailModal />
     </>

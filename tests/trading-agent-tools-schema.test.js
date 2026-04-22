@@ -9,7 +9,7 @@ const path = require("path");
 const { TRADING_AGENT_TOOLS } = require(path.join(__dirname, "../src/node/trading-agent-tools.js"));
 
 test("工具数量与名称唯一", () => {
-  assert.equal(TRADING_AGENT_TOOLS.length, 5);
+  assert.equal(TRADING_AGENT_TOOLS.length, 6);
   const names = TRADING_AGENT_TOOLS.map((t) => t.function.name);
   assert.deepEqual(new Set(names).size, names.length);
   assert.ok(names.includes("preview_open_size"));
@@ -17,6 +17,7 @@ test("工具数量与名称唯一", () => {
   assert.ok(names.includes("close_position"));
   assert.ok(names.includes("cancel_order"));
   assert.ok(names.includes("amend_order"));
+  assert.ok(names.includes("amend_tp_sl"));
 });
 
 test("每项为 function 类型且含 parameters", () => {
@@ -41,4 +42,9 @@ test("open_position：required 字段", () => {
 test("cancel_order：order_id 必填", () => {
   const t = TRADING_AGENT_TOOLS.find((x) => x.function.name === "cancel_order");
   assert.ok(t.function.parameters.required.includes("order_id"));
+});
+
+test("amend_tp_sl：algo_id 必填", () => {
+  const t = TRADING_AGENT_TOOLS.find((x) => x.function.name === "amend_tp_sl");
+  assert.ok(t.function.parameters.required.includes("algo_id"));
 });

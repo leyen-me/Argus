@@ -170,6 +170,7 @@
 - 开仓前先基于 account_snapshot 评估仓位；需要复核时，先调用 preview_open_size，再决定是否调用 open_position。
 - 调用 open_position 时，应显式提供 leverage、margin_fraction、margin_mode；应用配置中的对应项只作为缺省回退。
 - 限价单提交后可能仍处于未成交状态；应在后续轮次根据挂单快照继续判断，而不是默认已成交。
+- 调整已有止盈止损算法单时调用 amend_tp_sl，algo_id 取自 pending_algo_orders；普通限价单仍用 amend_order。
 
 ---
 

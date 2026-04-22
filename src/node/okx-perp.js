@@ -1243,6 +1243,62 @@ async function amendSwapOrder(client, p) {
 }
 
 /**
+ * 修改未触发算法单（止盈止损、条件单等）。见 OKX `POST /api/v5/trade/amend-algos`。
+ * 文档载明不支持移动止损、冰山、TWAP、Trailing 等类型。
+ *
+ * @param {ReturnType<createOkxClient>} client
+ * @param {{
+ *   instId: string,
+ *   algoId?: string,
+ *   algoClOrdId?: string,
+ *   newSz?: string | number,
+ *   newTpTriggerPx?: string | number,
+ *   newTpOrdPx?: string | number,
+ *   newSlTriggerPx?: string | number,
+ *   newSlOrdPx?: string | number,
+ *   newTpTriggerPxType?: string,
+ *   newSlTriggerPxType?: string,
+ *   tpSlTriggerPxType?: string,
+ * }} p tpSlTriggerPxType：未单独指定 newTp/newSl 的 PxType 时，对本次涉及的止盈/止损腿共用触发价基准
+ */
+async function amendSwapAlgoOrder(client, p) {
+  const bodyObj = { instId: p.instId };
+  if (p.algoId != null && String(p.algoId).trim() !== "") bodyObj.algoId = String(p.algoId);
+  if (p.algoClOrdId != null && String(p.algoClOrdId).trim() !== "") bodyObj.algoClOrdId = String(p.algoClOrdId);
+  if (!bodyObj.algoId && !bodyObj.algoClOrdId) {
+    throw new Error("OKX amend-algos 需要 algoId 或 algoClOrdId");
+  }
+  if (p.newSz != null && String(p.newSz).trim() !== "") bodyObj.newSz = String(p.newSz);
+  if (p.newTpTriggerPx != null && String(p.newTpTriggerPx).trim() !== "") {
+    bodyObj.newTpTriggerPx = String(p.newTpTriggerPx);
+  }
+  if (p.newTpOrdPx != null && String(p.newTpOrdPx).trim() !== "") {
+    bodyObj.newTpOrdPx = String(p.newTpOrdPx);
+  }
+  if (p.newSlTriggerPx != null && String(p.newSlTriggerPx).trim() !== "") {
+    bodyObj.newSlTriggerPx = String(p.newSlTriggerPx);
+  }
+  if (p.newSlOrdPx != null && String(p.newSlOrdPx).trim() !== "") {
+    bodyObj.newSlOrdPx = String(p.newSlOrdPx);
+  }
+  let basePxType = typeof p.tpSlTriggerPxType === "string" ? p.tpSlTriggerPxType.toLowerCase() : "";
+  if (basePxType !== "mark" && basePxType !== "index") basePxType = "last";
+  if (bodyObj.newTpTriggerPx != null || bodyObj.newTpOrdPx != null) {
+    const t = p.newTpTriggerPxType;
+    bodyObj.newTpTriggerPxType =
+      typeof t === "string" && ["last", "mark", "index"].includes(t.toLowerCase()) ? t.toLowerCase() : basePxType;
+  }
+  if (bodyObj.newSlTriggerPx != null || bodyObj.newSlOrdPx != null) {
+    const t = p.newSlTriggerPxType;
+    bodyObj.newSlTriggerPxType =
+      typeof t === "string" && ["last", "mark", "index"].includes(t.toLowerCase()) ? t.toLowerCase() : basePxType;
+  }
+  const json = await client.request("POST", "/api/v5/trade/amend-algos", JSON.stringify(bodyObj));
+  assertOkxTradeOrderAccepted(json);
+  return json;
+}
+
+/**
  * K 线收盘 Agent 启动前：须 OKX 快照成功，且资金余额、合约规格、仓位结构、挂单列表均已拉取（挂单可为空数组）。
  * @param {object} exchangeCtx {@link getOkxExchangeContextForBar} 的返回值
  * @returns {boolean}
@@ -1833,6 +1889,7 @@ module.exports = {
   serializePendingSwapAlgoOrder,
   cancelSwapOrder,
   amendSwapOrder,
+  amendSwapAlgoOrder,
   isOkxExchangeContextReadyForBarAgent,
   describeOkxExchangeContextGateFailure,
   getOkxExchangeContextForBar,

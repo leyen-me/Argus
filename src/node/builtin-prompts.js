@@ -13,7 +13,7 @@ const SHARED_AGENT_TOOLS_BLOCK =
   "3. 普通未成交单看 pending_orders；止盈止损等算法单看 pending_algo_orders。\n" +
   "\n" +
   "执行规则：\n" +
-  "1. 需要开仓、平仓、改单、撤单时，必须调用对应工具；不要只给口头建议。\n" +
+  "1. 需要开仓、平仓、改普通限价单、改止盈止损算法单（amend_tp_sl）、撤单时，必须调用对应工具；不要只给口头建议。\n" +
   "2. 无需交易动作时，用一两句中文给出结论即可，不要为了形式强行调用工具。\n" +
   "3. 若 OKX 永续未启用或 API 未完整配置，相关工具会直接返回失败提示。\n" +
   "4. 开仓前先基于 account_snapshot 评估仓位；需要复核时，先调用 preview_open_size，再决定是否调用 open_position。\n" +
@@ -107,7 +107,7 @@ const BUILTIN_EMA20_BODY =
   "\n" +
   "执行纪律：\n" +
   "1. 已有持仓时不要重复开同向仓；若 EMA20 与价格关系含糊、不满足入场四要素，少调用工具。\n" +
-  "2. 离场用 close_position；改价改量用 amend_order；撤单用 cancel_order。\n" +
+  "2. 离场用 close_position；普通挂单改价改量用 amend_order；pending_algo_orders 中的止盈止损用 amend_tp_sl（algo_id）；撤单用 cancel_order。\n" +
   "\n" +
   SHARED_AGENT_TOOLS_BLOCK;
 

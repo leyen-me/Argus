@@ -138,6 +138,40 @@ const TRADING_AGENT_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "amend_tp_sl",
+      description:
+        "修改当前合约上未触发的止盈止损/条件类算法单（用户快照里的 pending_algo_orders，使用其中的 algoId）。对接 OKX amend-algos。至少提供 new_size、take_profit_trigger_price、stop_loss_trigger_price、take_profit_order_price、stop_loss_order_price 之一。触发价基准默认 last，可与开仓时一致选 mark/index。说明：交易所文档载明不支持移动止损、冰山、TWAP、Trailing 等算法类型；删除止盈/止损腿时可将对应触发价或委托价设为 0（以 OKX 文档为准）。",
+      parameters: {
+        type: "object",
+        properties: {
+          algo_id: { type: "string", description: "待修改算法单的 OKX algoId。" },
+          new_size: { type: "number", description: "可选，修改后的委托张数（newSz）。" },
+          take_profit_trigger_price: {
+            type: "number",
+            description: "可选，新的止盈触发价；与 stop_loss_trigger_price 等同向参考当前持仓方向填写。",
+          },
+          stop_loss_trigger_price: { type: "number", description: "可选，新的止损触发价。" },
+          take_profit_order_price: {
+            type: "number",
+            description: "可选，止盈触发后的委托价；-1 表示触发后市价成交（与 OKX 约定一致）。",
+          },
+          stop_loss_order_price: {
+            type: "number",
+            description: "可选，止损触发后的委托价；-1 表示触发后市价成交。",
+          },
+          tp_sl_trigger_price_type: {
+            type: "string",
+            enum: ["last", "mark", "index"],
+            description: "可选，止盈/止损触发价基准；last=最新价，mark=标记价，index=指数价。默认 last。",
+          },
+        },
+        required: ["algo_id"],
+      },
+    },
+  },
 ];
 
 module.exports = { TRADING_AGENT_TOOLS };

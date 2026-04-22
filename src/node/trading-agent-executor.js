@@ -10,6 +10,7 @@ const TRADING_EXECUTOR_DEFAULT_DEPS = Object.freeze({
   tvSymbolToSwapInstId: okxPerp.tvSymbolToSwapInstId,
   cancelSwapOrder: okxPerp.cancelSwapOrder,
   amendSwapOrder: okxPerp.amendSwapOrder,
+  amendSwapAlgoOrder: okxPerp.amendSwapAlgoOrder,
   executeAgentPerpOpen: okxPerp.executeAgentPerpOpen,
   executeAgentPerpPreviewOpen: okxPerp.executeAgentPerpPreviewOpen,
   executeAgentPerpClose: okxPerp.executeAgentPerpClose,
@@ -44,6 +45,7 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
     tvSymbolToSwapInstId,
     cancelSwapOrder,
     amendSwapOrder,
+    amendSwapAlgoOrder,
     executeAgentPerpOpen,
     executeAgentPerpPreviewOpen,
     executeAgentPerpClose,
@@ -207,6 +209,54 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
           await amendSwapOrder(triplet.client, patch);
           sendOkxStatus({ ok: true, message: `改单 ordId=${a.order_id}` });
           return { ok: true, message: "改单已提交" };
+        }
+        case "amend_tp_sl": {
+          const triplet = makeClient();
+          if (!triplet.ok) return { ok: false, message: triplet.message };
+          const instId = tvSymbolToSwapInstId(tvSymbol);
+          if (!instId) return { ok: false, message: "无效品种" };
+          const algoId = a.algo_id != null ? String(a.algo_id).trim() : "";
+          if (!algoId) {
+            return { ok: false, message: "amend_tp_sl 需要提供 algo_id（见 pending_algo_orders）" };
+          }
+          /** @param {unknown} v */
+          const pickNum = (v) => {
+            if (v === undefined || v === null) return undefined;
+            if (typeof v === "string" && v.trim() === "") return undefined;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : undefined;
+          };
+          const newSz = pickNum(a.new_size);
+          const newTpTriggerPx = pickNum(a.take_profit_trigger_price);
+          const newSlTriggerPx = pickNum(a.stop_loss_trigger_price);
+          const newTpOrdPx = pickNum(a.take_profit_order_price);
+          const newSlOrdPx = pickNum(a.stop_loss_order_price);
+          if (
+            newSz === undefined &&
+            newTpTriggerPx === undefined &&
+            newSlTriggerPx === undefined &&
+            newTpOrdPx === undefined &&
+            newSlOrdPx === undefined
+          ) {
+            return {
+              ok: false,
+              message:
+                "amend_tp_sl 至少需要 new_size、take_profit_trigger_price、stop_loss_trigger_price、take_profit_order_price、stop_loss_order_price 之一",
+            };
+          }
+          let tpSlTriggerPxType = String(a.tp_sl_trigger_price_type || "last").toLowerCase();
+          if (tpSlTriggerPxType !== "mark" && tpSlTriggerPxType !== "index") {
+            tpSlTriggerPxType = "last";
+          }
+          const patch = { instId, algoId, tpSlTriggerPxType };
+          if (newSz !== undefined) patch.newSz = newSz;
+          if (newTpTriggerPx !== undefined) patch.newTpTriggerPx = newTpTriggerPx;
+          if (newSlTriggerPx !== undefined) patch.newSlTriggerPx = newSlTriggerPx;
+          if (newTpOrdPx !== undefined) patch.newTpOrdPx = newTpOrdPx;
+          if (newSlOrdPx !== undefined) patch.newSlOrdPx = newSlOrdPx;
+          await amendSwapAlgoOrder(triplet.client, patch);
+          sendOkxStatus({ ok: true, message: `改算法止盈止损 algoId=${algoId}` });
+          return { ok: true, message: `止盈止损算法单已提交修改 algoId=${algoId}` };
         }
         default:
           return { ok: false, message: `未知工具：${name}` };

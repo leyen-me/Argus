@@ -562,6 +562,47 @@ test("amend_order：new_price 为 0 视为有效（交给 OKX）", async () => {
   assert.equal(patch.newPx, 0);
 });
 
+test("amend_tp_sl：缺少可调字段", async () => {
+  const exec = createTradingToolExecutor(
+    { cfg: baseCfg(), tvSymbol: TV_OKX, barCloseId: BAR_ID, win: null },
+    depsWith({
+      createOkxClient: () => ({}),
+      tvSymbolToSwapInstId: () => "BTC-USDT-SWAP",
+      amendSwapAlgoOrder: async () => {
+        throw new Error("不应调用");
+      },
+    }),
+  );
+  const out = await exec("amend_tp_sl", { algo_id: "2510789768709120" });
+  assert.equal(out.ok, false);
+  assert.match(out.message, /至少/);
+});
+
+test("amend_tp_sl：仅改止盈触发价", async () => {
+  let patch = null;
+  const exec = createTradingToolExecutor(
+    { cfg: baseCfg(), tvSymbol: TV_OKX, barCloseId: BAR_ID, win: null },
+    depsWith({
+      createOkxClient: () => ({}),
+      tvSymbolToSwapInstId: () => "BTC-USDT-SWAP",
+      amendSwapAlgoOrder: async (_c, p) => {
+        patch = p;
+      },
+    }),
+  );
+  const out = await exec("amend_tp_sl", {
+    algo_id: "2510789768709120",
+    take_profit_trigger_price: 99_000,
+    tp_sl_trigger_price_type: "mark",
+  });
+  assert.equal(out.ok, true);
+  assert.equal(patch.instId, "BTC-USDT-SWAP");
+  assert.equal(patch.algoId, "2510789768709120");
+  assert.equal(patch.newTpTriggerPx, 99_000);
+  assert.equal(patch.tpSlTriggerPxType, "mark");
+  assert.equal(patch.newSlTriggerPx, undefined);
+});
+
 test("未知工具名", async () => {
   const exec = createTradingToolExecutor({
     cfg: baseCfg(),

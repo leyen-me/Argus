@@ -21,7 +21,7 @@ const SHARED_AGENT_TOOLS_BLOCK =
   "6. 限价单提交后可能仍处于未成交状态；应在后续轮次根据挂单快照继续判断，而不是默认已成交。\n" +
   "\n" +
   "纪律要求：\n" +
-  "1. 已有持仓时，不要重复开同向仓，除非有明确加仓理由且工具语义允许。\n" +
+  "1. open_position 允许同向多次加仓；仅在仍有明确 edge 时使用，避免无谓摊薄。若当前为反向持仓须先平仓，否则执行层会拒绝。\n" +
   "2. 方向不清、位置不佳或证据不足时，优先观望，避免为了交易而交易。\n";
 
 const BUILTIN_DEFAULT_BODY =
@@ -106,7 +106,7 @@ const BUILTIN_EMA20_BODY =
   "- 回踩未完成就出现反向位移。\n" +
   "\n" +
   "执行纪律：\n" +
-  "1. 已有持仓时不要重复开同向仓；若 EMA20 与价格关系含糊、不满足入场四要素，少调用工具。\n" +
+  "1. 同向可多次 open_position 加仓，但仍须符合趋势与入场逻辑；若 EMA20 与价格关系含糊、不满足入场四要素，少调用工具。\n" +
   "2. 离场用 close_position；普通挂单改价改量用 amend_order；pending_algo_orders 中的止盈止损用 amend_tp_sl（algo_id）；撤单用 cancel_order。\n" +
   "\n" +
   SHARED_AGENT_TOOLS_BLOCK;

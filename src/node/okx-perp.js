@@ -556,9 +556,10 @@ async function waitSwapOrderFilled(client, instId, ordId) {
 /**
  * @param {ReturnType<createOkxClient>} client
  * @param {string} instId
+ * @param {object[] | null} [cachedRows] 若已拉取过 {@link fetchSwapPositionRows} 可传入以避免重复请求
  */
-async function fetchSwapPositionDetail(client, instId) {
-  const rows = await fetchSwapPositionRows(client, instId);
+async function fetchSwapPositionDetail(client, instId, cachedRows = null) {
+  const rows = Array.isArray(cachedRows) ? cachedRows : await fetchSwapPositionRows(client, instId);
   const { detail, row } = pickBestSwapPositionRowData(rows);
   if (!row || row.mgnMode == null) return detail;
   const raw = String(row.mgnMode).toLowerCase();
@@ -633,6 +634,44 @@ function resolveCloseParams(posMode, detail) {
   if (detail.posNum > 0) return { closeSide: "sell", orderPosSide: null };
   if (detail.posNum < 0) return { closeSide: "buy", orderPosSide: null };
   return { closeSide: "sell", orderPosSide: null };
+}
+
+/**
+ * Agent 开仓：允许同向加仓；单向持仓下禁止「已有反向仓仍开反向单」（易先减仓/反手）。
+ * 双向模式下若仅对侧有仓则拒绝，避免在无本侧腿时误开对侧对冲腿。
+ * @param {object[]} rows {@link fetchSwapPositionRows}
+ * @param {"hedge"|"net"} posMode
+ * @param {boolean} wantLong
+ * @returns {{ ok: true } | { ok: false, message: string }}
+ */
+function validateAgentOpenAgainstPositions(rows, posMode, wantLong) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return { ok: true };
+  if (posMode === "hedge") {
+    const targetSide = wantLong ? "long" : "short";
+    const oppSide = wantLong ? "short" : "long";
+    const hasTarget = list.some(
+      (r) => String(r.posSide || "").toLowerCase() === targetSide && swapPositionRowAbsContracts(r) > 0,
+    );
+    const hasOpp = list.some(
+      (r) => String(r.posSide || "").toLowerCase() === oppSide && swapPositionRowAbsContracts(r) > 0,
+    );
+    if (hasOpp && !hasTarget) {
+      return {
+        ok: false,
+        message: `${wantLong ? "多" : "空"}侧无持仓但对侧有仓；请先处理对侧仓位，或仅在同侧加仓`,
+      };
+    }
+    return { ok: true };
+  }
+  const { detail } = pickBestSwapPositionRowData(list);
+  if (detail.absPos <= 0) return { ok: true };
+  const existingLong = detail.posNum > 0;
+  if (existingLong === wantLong) return { ok: true };
+  return {
+    ok: false,
+    message: `已有${existingLong ? "多" : "空"}仓，本次为${wantLong ? "做多" : "做空"}；请先平仓或仅同向加仓`,
+  };
 }
 
 /**
@@ -1498,6 +1537,7 @@ function buildAttachAlgoOrdsForAgentOpen(o) {
 
 /**
  * Agent：市价/限价开仓（杠杆/保证金比例/保证金模式优先来自工具入参，缺省用应用配置）。
+ * 同方向已有持仓时视为加仓（可与 {@link validateAgentOpenAgainstPositions} 规则一致地多次下单）。
  * @param {object} cfg
  * @param {{ tvSymbol: string, side: "long"|"short", orderType: "market"|"limit", limitPrice?: number, barCloseId: string, tpTriggerPx?: number, slTriggerPx?: number, tpSlTriggerPxType?: "last"|"mark"|"index", leverage?: unknown, marginFraction?: unknown, margin_fraction?: unknown, marginMode?: unknown, margin_mode?: unknown, td_mode?: unknown }} args
  */
@@ -1526,10 +1566,20 @@ async function executeAgentPerpOpen(cfg, args) {
 
   const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
   const posMode = await fetchAccountPosMode(client);
-  const existing = await fetchSwapPositionDetail(client, instId);
-  if (existing.absPos > 0) {
-    return { ok: false, message: `${instId} 已有持仓，拒绝重复开仓` };
+  const posRows = await fetchSwapPositionRows(client, instId);
+  const openDirCheck = validateAgentOpenAgainstPositions(posRows, posMode, isLong);
+  if (!openDirCheck.ok) {
+    return { ok: false, message: openDirCheck.message };
   }
+  const existing = await fetchSwapPositionDetail(client, instId, posRows);
+  const addOn =
+    posMode === "hedge"
+      ? posRows.some(
+          (r) =>
+            String(r.posSide || "").toLowerCase() === (isLong ? "long" : "short") &&
+            swapPositionRowAbsContracts(r) > 0,
+        )
+      : existing.absPos > 0;
 
   const avail = await fetchUsdtAvailEq(client);
   if (avail <= 0) return { ok: false, message: "USDT 可用权益为 0" };
@@ -1624,6 +1674,7 @@ async function executeAgentPerpOpen(cfg, args) {
     ordId,
     instId,
     sz: String(sz),
+    addOn,
     orderType: orderType || "market",
     accFillSz: filled?.accFillSz != null ? String(filled.accFillSz) : "",
     avgPx: Number.isFinite(avgPx) ? avgPx : null,

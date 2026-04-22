@@ -392,7 +392,11 @@ const CARD_SUMMARY_MAX_INPUT_CHARS = 12_000;
 const SUMMARY_LLM_MAX_MS = 60_000;
 
 /**
- * 主 Agent 成功后再调一次小模型/同模型，生成右侧「无成交」卡片的极短中文摘要（额外交费 + 约数十秒级延迟，失败不阻断主流程）。
+ * 主 Agent 成功后再调一次同兼容接口，生成右侧「无成交」卡片的极短中文摘要（额外交费 + 约数十秒级延迟，失败不阻断主流程）。
+ *
+ * **不传入 `tools`**：请求体为纯文本多轮缺省形态，与 `runTradingAgentTurn` 不同；本函数只读 `message.content`，
+ * 不执行 `executeTool`，模型无法通过此路径触发开仓/平仓等副作用（即使网关误返回 `tool_calls` 也会被忽略）。
+ *
  * @param {string} assistantFull
  * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
  * @returns {Promise<{ ok: boolean, text?: string }>}
@@ -411,8 +415,9 @@ async function summarizeAgentAnalysisForCard(assistantFull, options) {
       ? `${bodyText.slice(0, CARD_SUMMARY_MAX_INPUT_CHARS)}\n\n…（后文已省略）`
       : bodyText;
   const system =
-    "你是交易日志编辑。用户会给你一根 K 线收盘的 Agent 分析全文。请用**一两句**中文写「卡片外显摘要」：\n" +
-    "仅结论与操作含义（多/空/观望/未下单等），不要列表、小标题、Markdown、引号。总字数 120 字以内。";
+    "你是交易日志编辑。用户会给你一根 K 线收盘的 Agent 分析全文。本对话没有交易或工具接口，你只需输出纯文本摘要。\n" +
+    "请用**一两句**中文写「卡片外显摘要」：仅结论与操作含义（多/空/观望/未下单等），" +
+    "不要列表、小标题、Markdown、引号。总字数 120 字以内。不要编造已执行下单。";
   const user = `以下为本轮分析内容，请直接输出摘要句子：\n\n${cut}`;
   const built = buildChatCompletionRequestFromMessages(
     [
@@ -445,7 +450,8 @@ async function summarizeAgentAnalysisForCard(assistantFull, options) {
   });
   try {
     const completion = await client.chat.completions.create(/** @type {any} */ (body), { signal });
-    const rawMsg = completion?.choices?.[0]?.message?.content;
+    const msg = completion?.choices?.[0]?.message;
+    const rawMsg = msg?.content;
     const text = messageContentToString(rawMsg).trim();
     if (!text) {
       return { ok: false };

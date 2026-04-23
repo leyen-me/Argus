@@ -144,16 +144,17 @@ async function getDashboardSnapshot(cfg) {
       dashboardAgentToolStatsSince && Number.isFinite(Date.parse(dashboardAgentToolStatsSince.trim()))
         ? Date.parse(dashboardAgentToolStatsSince.trim())
         : NaN;
-    /** @type {Awaited<ReturnType<typeof okxPerp.aggregateSwapCloseFillStats>> | null} */
-    let swapCloseFillStats = null;
+    /** @type {Awaited<ReturnType<typeof okxPerp.aggregateSwapClosePositionStats>> | null} */
+    let swapClosePositionStats = null;
     if (Number.isFinite(sinceMs)) {
       try {
-        swapCloseFillStats = await okxPerp.aggregateSwapCloseFillStats(client, {
+        swapClosePositionStats = await okxPerp.aggregateSwapClosePositionStats(client, {
           beginMs: sinceMs,
+          tvSymbol: cfg?.defaultSymbol,
           maxPages: 25,
         });
       } catch {
-        swapCloseFillStats = null;
+        swapClosePositionStats = null;
       }
     }
 
@@ -168,7 +169,7 @@ async function getDashboardSnapshot(cfg) {
       pnlVsBaselineUsdt: pnlVsBaseline,
       positions,
       equitySeries,
-      swapCloseFillStats,
+      swapClosePositionStats,
       ...metaPack,
     };
   } catch (e) {

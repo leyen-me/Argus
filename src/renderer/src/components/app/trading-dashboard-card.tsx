@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 
 type EquityPoint = { t: string; equity: number }
 
-type SwapCloseFillStats = {
+type SwapClosePositionStats = {
   wins: number
   losses: number
   breakeven: number
@@ -33,7 +33,7 @@ type DashboardPayload = {
   pnlVsBaselineUsdt?: number | null
   dashboardAgentToolStatsSince?: string | null
   equitySeries?: EquityPoint[]
-  swapCloseFillStats?: SwapCloseFillStats | null
+  swapClosePositionStats?: SwapClosePositionStats | null
 }
 
 type SymbolOption = {
@@ -213,7 +213,7 @@ function AccountOverviewCard({
   snap: DashboardPayload | null
   strategyRunning: boolean
 }) {
-  const winRate = snap?.swapCloseFillStats?.winRate ?? null
+  const winRate = snap?.swapClosePositionStats?.winRate ?? null
   const totalPnl = snap?.pnlVsBaselineUsdt ?? null
   const baseline = snap?.baselineEquityUsdt ?? null
   const totalPnlRatio =

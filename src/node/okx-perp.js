@@ -1818,37 +1818,16 @@ async function executeAgentPerpClose(cfg, args) {
 }
 
 /**
- * SWAP 平仓类成交的 subType（OKX `GET /api/v5/trade/fills-history`）。
- * 含普通平仓、止盈止损触发的平仓、强平、ADL 等；与委托是否由 Agent 发起无关。
- */
-const SWAP_CLOSE_FILL_SUB_TYPES = new Set([
-  "5",
-  "6",
-  "100",
-  "101",
-  "104",
-  "105",
-  "125",
-  "126",
-  "208",
-  "209",
-  "274",
-  "275",
-  "328",
-  "329",
-]);
-
-/**
- * @param {unknown} row fills-history data item
+ * @param {unknown} row positions-history data item
  * @returns {number | null}
  */
-function parseSwapFillPnl(row) {
+function parseSwapPositionHistoryRealizedPnl(row) {
   if (!row || typeof row !== "object") return null;
   const o = /** @type {Record<string, unknown>} */ (row);
   const raw =
-    o.fillPnl != null && String(o.fillPnl).trim() !== ""
-      ? o.fillPnl
-      : o.pnl != null
+    o.realizedPnl != null && String(o.realizedPnl).trim() !== ""
+      ? o.realizedPnl
+      : o.pnl != null && String(o.pnl).trim() !== ""
         ? o.pnl
         : null;
   if (raw == null) return null;
@@ -1857,13 +1836,46 @@ function parseSwapFillPnl(row) {
 }
 
 /**
- * 汇总 SWAP 平仓成交笔数与已实现盈亏，用于仪表盘胜率（模型平仓与 TP/SL 触发均计入）。
- * 数据来自 `fills-history`（约最近 3 个月），分页拉取。
+ * positions-history 以 uTime 为主、cTime 为辅，作为该历史仓位结束/更新时点。
+ * @param {unknown} row positions-history data item
+ * @returns {number}
+ */
+function swapPositionHistoryEffectiveTimeMs(row) {
+  if (!row || typeof row !== "object") return Number.NaN;
+  const o = /** @type {Record<string, unknown>} */ (row);
+  const raw =
+    o.uTime != null && String(o.uTime).trim() !== ""
+      ? o.uTime
+      : o.cTime != null && String(o.cTime).trim() !== ""
+        ? o.cTime
+        : null;
+  if (raw == null) return Number.NaN;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : Number.NaN;
+}
+
+/**
+ * 汇总单一 SWAP 合约的历史仓位表现，用于仪表盘胜率。
+ * 统计对象是 `positions-history` 的完整历史仓位，而不是零散平仓成交。
  *
  * @param {{ request: Function }} client {@link createOkxClient}
- * @param {{ beginMs?: number | null, maxPages?: number }} [opts]
+ * @param {{ beginMs?: number | null, tvSymbol?: string | null, maxPages?: number }} [opts]
  */
-async function aggregateSwapCloseFillStats(client, opts = {}) {
+async function aggregateSwapClosePositionStats(client, opts = {}) {
+  const instId = tvSymbolToSwapInstId(opts?.tvSymbol);
+  if (!instId) {
+    return {
+      wins: 0,
+      losses: 0,
+      breakeven: 0,
+      closeFills: 0,
+      realizedPnlUsdtSum: 0,
+      winRate: null,
+      pagesFetched: 0,
+      capped: false,
+    };
+  }
+
   const maxPagesRaw =
     typeof opts.maxPages === "number" && Number.isFinite(opts.maxPages) && opts.maxPages > 0
       ? Math.floor(opts.maxPages)
@@ -1878,24 +1890,30 @@ async function aggregateSwapCloseFillStats(client, opts = {}) {
   let losses = 0;
   let breakeven = 0;
   let realizedPnlSum = 0;
-  /** @type {string | undefined} */
-  let after = undefined;
   let pagesFetched = 0;
   let capped = false;
+  /** @type {number | null} */
+  let endMs = null;
 
   for (let page = 0; page < maxPages; page++) {
-    const q = new URLSearchParams({ instType: "SWAP", limit: "100" });
+    const q = new URLSearchParams({ instType: "SWAP", instId, limit: "100" });
     if (beginMs != null) q.set("begin", String(beginMs));
-    if (after) q.set("after", after);
+    if (endMs != null && Number.isFinite(endMs) && endMs > 0) q.set("end", String(endMs));
 
-    const json = await client.request("GET", `/api/v5/trade/fills-history?${q.toString()}`, "");
+    const json = await client.request("GET", `/api/v5/account/positions-history?${q.toString()}`, "");
     const rows = Array.isArray(json?.data) ? json.data : [];
     pagesFetched += 1;
 
+    if (rows.length === 0) break;
+
+    let oldestMs = Number.POSITIVE_INFINITY;
     for (const row of rows) {
-      const st = row && typeof row === "object" && "subType" in row ? String(row.subType ?? "") : "";
-      if (!SWAP_CLOSE_FILL_SUB_TYPES.has(st)) continue;
-      const pnl = parseSwapFillPnl(row);
+      if (!row || typeof row !== "object") continue;
+      if (row.instId != null && String(row.instId) !== instId) continue;
+      const effectiveMs = swapPositionHistoryEffectiveTimeMs(row);
+      if (Number.isFinite(effectiveMs)) oldestMs = Math.min(oldestMs, effectiveMs);
+      if (beginMs != null && Number.isFinite(effectiveMs) && effectiveMs < beginMs) continue;
+      const pnl = parseSwapPositionHistoryRealizedPnl(row);
       if (pnl == null) continue;
       realizedPnlSum += pnl;
       if (pnl > 0) wins += 1;
@@ -1904,10 +1922,10 @@ async function aggregateSwapCloseFillStats(client, opts = {}) {
     }
 
     if (rows.length < 100) break;
-    const lastBill = rows[rows.length - 1]?.billId;
-    const nextAfter = lastBill != null ? String(lastBill) : "";
-    if (!nextAfter || nextAfter === after) break;
-    after = nextAfter;
+    if (!Number.isFinite(oldestMs)) break;
+    if (beginMs != null && oldestMs <= beginMs) break;
+    endMs = oldestMs - 1;
+    if (!(Number.isFinite(endMs) && endMs > 0)) break;
     if (page === maxPages - 1) {
       capped = true;
       break;
@@ -2011,6 +2029,6 @@ module.exports = {
   smokeSwapOpenLong,
   smokeSwapClosePosition,
   smokeSwapOpenLongThenClose,
-  aggregateSwapCloseFillStats,
+  aggregateSwapClosePositionStats,
   fetchRecentSwapPositionsHistoryForBar,
 };

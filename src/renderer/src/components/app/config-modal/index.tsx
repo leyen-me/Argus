@@ -18,7 +18,6 @@ import { ConfigModalFooter } from "./config-modal-footer";
 import { ConfigModalIntro } from "./intro";
 import { ConfigModalLlmSection } from "./llm-section";
 import { ConfigModalOkxSection } from "./okx-section";
-import { ConfigModalStrategySection } from "./strategy-section";
 import { ConfigModalSymbolsAndInterval } from "./symbols-and-interval";
 
 /**
@@ -90,10 +89,6 @@ export function ConfigModal() {
               <section className="space-y-0">
                 <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">OKX 永续</h3>
                 <ConfigModalOkxSection />
-              </section>
-              <section className="space-y-0">
-                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">交易策略</h3>
-                <ConfigModalStrategySection />
               </section>
             </div>
           </div>

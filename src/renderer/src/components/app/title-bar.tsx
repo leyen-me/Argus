@@ -2,12 +2,18 @@ import { BookOpen, EyeOff, LayoutDashboard, Settings, Terminal } from "lucide-re
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PromptStrategySelect } from "@/components/prompt-strategy-select"
 
 export function TitleBar() {
   return (
     <header className="titlebar">
       <span className="titlebar-traffic-guard" aria-hidden="true" />
-      <span className="titlebar-title">Argus</span>
+      <div className="titlebar-title">
+        <PromptStrategySelect
+          className="justify-start"
+          triggerClassName="max-w-[180px] justify-start"
+        />
+      </div>
       <div className="titlebar-actions">
         <Button
           type="button"

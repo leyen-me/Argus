@@ -55,8 +55,10 @@ body,
 }
 
 .titlebar-title {
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
 }
 
 .titlebar-hint {

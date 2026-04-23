@@ -1439,6 +1439,42 @@ function applyChartIntervalSelect(interval) {
 }
 
 /**
+ * 同步顶栏当前策略下拉；仍沿用隐藏原生 select 供 imperative 逻辑读写。
+ * @param {{ promptStrategies?: string[], promptStrategy?: string }} cfg
+ */
+function applyPromptStrategySelect(cfg) {
+  const sel = document.getElementById("config-prompt-strategy");
+  const list =
+    Array.isArray(cfg?.promptStrategies) && cfg.promptStrategies.length > 0
+      ? cfg.promptStrategies
+      : [cfg?.promptStrategy || "default"];
+  const cur =
+    cfg?.promptStrategy && list.includes(cfg.promptStrategy)
+      ? cfg.promptStrategy
+      : list.includes("default")
+        ? "default"
+        : list[0];
+  if (sel) {
+    sel.replaceChildren();
+    for (const name of list) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    }
+    sel.value = cur;
+  }
+  window.dispatchEvent(
+    new CustomEvent("argus:prompt-strategy-sync", {
+      detail: {
+        options: list.map((name) => ({ value: name, label: name })),
+        value: cur,
+      },
+    }),
+  );
+}
+
+/**
  * 配置弹窗内「K 线周期 / 默认打开」与快捷栏一致（弹窗未打开时元素可能不存在）。
  * @param {{ interval?: string, defaultSymbol?: string }} fields
  */
@@ -1476,6 +1512,29 @@ async function persistChartPreferences(partial) {
   } catch (err) {
     console.error(err);
     setLlmStatus("保存行情设置失败");
+  }
+}
+
+/**
+ * 将顶栏当前策略写入本地设置；切换即生效。
+ * @param {string} promptStrategy
+ */
+async function persistPromptStrategyPreference(promptStrategy) {
+  const next = String(promptStrategy ?? "").trim() || "default";
+  if (!window.argus || typeof window.argus.saveConfig !== "function") {
+    applyPromptStrategySelect({
+      promptStrategies: [next],
+      promptStrategy: next,
+    });
+    return;
+  }
+  try {
+    const saved = await window.argus.saveConfig({ promptStrategy: next });
+    applyPromptStrategySelect(saved);
+    setLlmStatus(`已切换策略：${saved.promptStrategy || next}`);
+  } catch (err) {
+    console.error(err);
+    setLlmStatus("切换策略失败");
   }
 }
 
@@ -1652,27 +1711,7 @@ function initConfigCenter() {
     if (okxMf) okxMf.value = String(cfg.okxSwapMarginFraction ?? FALLBACK_APP_CONFIG.okxSwapMarginFraction);
     const okxTd = document.getElementById("config-okx-td-mode");
     if (okxTd) okxTd.value = cfg.okxTdMode === "isolated" ? "isolated" : "cross";
-    const stratSel = document.getElementById("config-prompt-strategy");
-    if (stratSel) {
-      const list =
-        Array.isArray(cfg.promptStrategies) && cfg.promptStrategies.length > 0
-          ? cfg.promptStrategies
-          : [cfg.promptStrategy || "default"];
-      stratSel.replaceChildren();
-      for (const name of list) {
-        const opt = document.createElement("option");
-        opt.value = name;
-        opt.textContent = name;
-        stratSel.appendChild(opt);
-      }
-      const cur =
-        cfg.promptStrategy && list.includes(cfg.promptStrategy)
-          ? cfg.promptStrategy
-          : list.includes("default")
-            ? "default"
-            : list[0];
-      stratSel.value = cur;
-    }
+    applyPromptStrategySelect(cfg);
   };
 
   window.addEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, () => {
@@ -2021,6 +2060,14 @@ function initChartIntervalSelect() {
       refreshExchangeContextBarFromCache();
       void refreshOkxPositionBar();
     })();
+  });
+}
+
+function initPromptStrategySelect() {
+  const sel = document.getElementById("config-prompt-strategy");
+  if (!sel) return;
+  sel.addEventListener("change", () => {
+    void persistPromptStrategyPreference(sel.value);
   });
 }
 
@@ -2467,6 +2514,7 @@ export function initArgusApp() {
     const cfg = await loadAppConfig();
     applySymbolSelect(cfg);
     applyChartIntervalSelect(cfg.interval || "5");
+    applyPromptStrategySelect(cfg);
     const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
     createTradingViewWidget(sym, chartInterval);
     if (window.argus && typeof window.argus.setMarketContext === "function") {
@@ -2474,6 +2522,7 @@ export function initArgusApp() {
     }
     initSymbolSelect();
     initChartIntervalSelect();
+    initPromptStrategySelect();
     initChartCaptureBridge();
     initConfigCenter();
     initDashboardModal();

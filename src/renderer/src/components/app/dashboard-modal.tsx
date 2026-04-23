@@ -29,7 +29,7 @@ export function DashboardModal() {
         showCloseButton={false}
         forceMount
         className={cn(
-          "flex max-h-[min(92vh,880px)] w-[min(640px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[640px]",
+          "flex h-[min(84vh,820px)] w-[min(980px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[980px]",
         )}
       >
         <DialogHeader className="shrink-0 space-y-0 border-b border-border px-5 py-4 text-left">
@@ -53,7 +53,7 @@ export function DashboardModal() {
           </div>
           <DialogDescription className="sr-only">账户资金、持仓与 Agent 统计</DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-4">
+        <div className="min-h-0 flex-1 overflow-hidden px-5 pt-5 pb-5">
           <TradingDashboardCard embedded />
         </div>
       </DialogContent>

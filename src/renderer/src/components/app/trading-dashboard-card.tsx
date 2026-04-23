@@ -1,18 +1,9 @@
-import { useCallback, useEffect, useId, useState, type ComponentType, type ReactNode } from "react"
-import {
-  AlertCircle,
-  ArrowDownRight,
-  ArrowUpRight,
-  LayoutDashboard,
-  LineChart,
-  List,
-  Percent,
-  Plug,
-  RefreshCw,
-  Wallet,
-} from "lucide-react"
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react"
+import { AlertCircle, Pause, Play } from "lucide-react"
+
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
 type EquityPoint = { t: string; equity: number }
@@ -28,15 +19,6 @@ type SwapCloseFillStats = {
   capped: boolean
 }
 
-type PositionRow = {
-  instId?: string
-  posSide?: string
-  pos?: string | number
-  upl?: string | number
-  margin?: string | number
-  lever?: string | number
-}
-
 type DashboardPayload = {
   ok?: boolean
   skipped?: boolean
@@ -49,10 +31,25 @@ type DashboardPayload = {
   uplUsdt?: number | null
   baselineEquityUsdt?: number | null
   pnlVsBaselineUsdt?: number | null
-  positions?: PositionRow[]
   dashboardAgentToolStatsSince?: string | null
   equitySeries?: EquityPoint[]
   swapCloseFillStats?: SwapCloseFillStats | null
+}
+
+type SymbolOption = {
+  label: string
+  value: string
+}
+
+type DashboardConfig = {
+  promptStrategy?: string
+  defaultSymbol?: string
+  symbols?: SymbolOption[]
+}
+
+type StrategyMeta = {
+  id: string
+  label: string
 }
 
 function fmtUsd(n: number | null | undefined, digits = 2) {
@@ -76,564 +73,6 @@ function fmtPct(ratio: number | null | undefined, digits = 1) {
   })}%`
 }
 
-function EquitySparkline({ series }: { series: EquityPoint[] }) {
-  const gradId = useId().replace(/:/g, "")
-  const w = 320
-  const h = 80
-  const pad = 6
-  if (!series.length) {
-    return (
-      <div
-        className="flex h-[92px] items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 text-center text-xs leading-snug text-muted-foreground"
-        role="status"
-        aria-live="polite"
-      >
-        暂无采样数据
-        <span className="mt-0.5 block text-[11px] opacity-80">启用 OKX 并刷新后将记录权益曲线</span>
-      </div>
-    )
-  }
-  const vals = series.map((p) => p.equity)
-  const min = Math.min(...vals)
-  const max = Math.max(...vals)
-  const span = max - min || 1
-  const innerW = w - pad * 2
-  const innerH = h - pad * 2
-  const pts = series.map((p, i) => {
-    const x = pad + (innerW * i) / Math.max(1, series.length - 1)
-    const y = pad + innerH - (innerH * (p.equity - min)) / span
-    return `${x},${y}`
-  })
-  const lineD = `M ${pts.join(" L ")}`
-  const lastX = pad + innerW
-  const bottomY = pad + innerH
-  const areaD = `${lineD} L ${lastX} ${bottomY} L ${pad} ${bottomY} Z`
-  const first = series[0]?.equity
-  const last = series[series.length - 1]?.equity
-  const delta = first != null && last != null ? last - first : null
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-end justify-between gap-2 text-[11px] tabular-nums">
-        <div className="text-muted-foreground">
-          <span className="text-[10px] uppercase tracking-wide">区间</span>
-          <span className="ml-1.5 font-medium text-foreground">
-            {fmtUsd(min)} – {fmtUsd(max)}
-          </span>
-        </div>
-        {delta != null && Number.isFinite(delta) ? (
-          <div
-            className={cn(
-              "flex items-center gap-0.5 font-medium",
-              delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400",
-            )}
-          >
-            {delta >= 0 ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
-            {fmtSignedUsd(delta)} <span className="font-normal text-muted-foreground">（首尾点）</span>
-          </div>
-        ) : null}
-      </div>
-      <div className="rounded-lg border border-border/50 bg-linear-to-b from-primary/5 to-transparent p-1.5 ring-1 ring-inset ring-border/30">
-        <svg
-          className="w-full max-w-full text-primary"
-          viewBox={`0 0 ${w} ${h}`}
-          preserveAspectRatio="none"
-          aria-label="资金曲线"
-        >
-          <defs>
-            <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="currentColor" stopOpacity={0.22} />
-              <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <path d={areaD} fill={`url(#${gradId})`} className="text-primary" />
-          <path
-            d={lineD}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        </svg>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] tabular-nums text-muted-foreground">
-        <span>起点 {fmtUsd(first)}</span>
-        <span>末点 {fmtUsd(last)}</span>
-        <span>采样点 {series.length}</span>
-      </div>
-    </div>
-  )
-}
-
-function DashboardSectionCard({
-  title,
-  description,
-  icon: Icon,
-  className,
-  children,
-  contentClassName,
-}: {
-  title: string
-  description?: ReactNode
-  icon?: ComponentType<{ className?: string }>
-  className?: string
-  children: ReactNode
-  contentClassName?: string
-}) {
-  return (
-    <Card
-      size="sm"
-      className={cn(
-        "gap-0 overflow-hidden py-0 shadow-none ring-border/60 data-[size=sm]:gap-0 data-[size=sm]:py-0",
-        className,
-      )}
-    >
-      <CardHeader className="rounded-none border-b border-border/60 bg-muted/45 px-3 pb-2.5 pt-3">
-        <div className="flex items-start gap-2.5">
-          {Icon ? (
-            <div
-              className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-background/90 shadow-sm ring-1 ring-border/55"
-              aria-hidden
-            >
-              <Icon className="size-3.5 text-muted-foreground" />
-            </div>
-          ) : null}
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <CardTitle className="text-xs font-semibold tracking-tight text-foreground">
-              {title}
-            </CardTitle>
-            {description ? (
-              <div className="text-[11px] leading-snug text-muted-foreground">{description}</div>
-            ) : null}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className={cn("px-3 pb-3 pt-3", contentClassName)}>{children}</CardContent>
-    </Card>
-  )
-}
-
-function MetricTile({
-  label,
-  children,
-  className,
-  emphasized,
-}: {
-  label: string
-  children: ReactNode
-  className?: string
-  emphasized?: boolean
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-lg border border-border/55 bg-background/60 px-2.5 py-2 shadow-sm ring-1 ring-inset ring-border/20",
-        emphasized && "border-primary/25 bg-linear-to-br from-primary/[0.07] to-transparent ring-primary/15",
-        className,
-      )}
-    >
-      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
-      <div className="mt-1.5 text-[13px] leading-tight">{children}</div>
-    </div>
-  )
-}
-
-function DashboardToolbarCard({
-  embedded,
-  simulated,
-  simBadge,
-  strategyRunning,
-  loading,
-  equityUsdt,
-  onToggleStrategy,
-  onRefresh,
-}: {
-  embedded: boolean
-  simulated: boolean | undefined
-  simBadge: ReactNode
-  strategyRunning: boolean
-  loading: boolean
-  equityUsdt: number | null | undefined
-  onToggleStrategy: () => void
-  onRefresh: () => void
-}) {
-  const actionsPullRight = embedded && simulated !== true
-  const strategyStatusClassName = strategyRunning
-    ? "bg-emerald-500/12 text-emerald-700 ring-emerald-500/20 dark:text-emerald-400"
-    : "bg-muted/70 text-muted-foreground ring-border/40"
-  return (
-    <Card
-      size="sm"
-      className="gap-0 overflow-hidden py-0 shadow-none ring-border/60 data-[size=sm]:gap-0 data-[size=sm]:py-0"
-    >
-      <CardHeader
-        className={cn(
-          "grid auto-rows-min grid-cols-1 items-center gap-2 rounded-none border-b border-border/60 bg-muted/45 px-3 pb-3 pt-3 sm:grid-cols-[1fr_auto]",
-          embedded && "has-data-[slot=card-action]:grid-cols-1",
-        )}
-      >
-        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-          {!embedded ? (
-            <>
-              <div
-                className="flex size-7 shrink-0 items-center justify-center rounded-md bg-background/90 shadow-sm ring-1 ring-border/55"
-                aria-hidden
-              >
-                <LayoutDashboard className="size-3.5 text-muted-foreground" />
-              </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <CardTitle className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                  仪表盘
-                </CardTitle>
-                <span
-                  className={cn(
-                    "rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
-                    strategyStatusClassName,
-                  )}
-                >
-                  {strategyRunning ? "策略进行中" : "未设置策略区间"}
-                </span>
-                {simBadge}
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={cn(
-                  "rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset",
-                  strategyStatusClassName,
-                )}
-              >
-                {strategyRunning ? "策略进行中" : "未设置策略区间"}
-              </span>
-              {simBadge}
-            </div>
-          )}
-        </div>
-        <CardAction
-          className={cn(
-            "flex flex-wrap items-center gap-1.5 justify-self-stretch sm:justify-self-end",
-            actionsPullRight && "ml-auto justify-end",
-          )}
-        >
-          <Button
-            type="button"
-            variant={strategyRunning ? "default" : "outline"}
-            size="sm"
-            className="h-8 px-3 text-xs shadow-none"
-            disabled={
-              loading || (!strategyRunning && (equityUsdt == null || !Number.isFinite(equityUsdt)))
-            }
-            title={
-              strategyRunning
-                ? "策略进行中：点击将结束策略并清除初始资金与统计起点"
-                : "开始策略：以当前权益为初始资金，并从此刻起统计胜率与资金曲线"
-            }
-            aria-pressed={strategyRunning}
-            onClick={() => void onToggleStrategy()}
-          >
-            {strategyRunning ? "结束策略" : "开始策略"}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="h-8 gap-1 px-3 text-xs shadow-none"
-            disabled={loading}
-            onClick={() => void onRefresh()}
-          >
-            <RefreshCw className={cn("size-3", loading && "animate-spin")} aria-hidden />
-            {loading ? "刷新中…" : "刷新"}
-          </Button>
-        </CardAction>
-      </CardHeader>
-    </Card>
-  )
-}
-
-function SwapCloseWinRateCard({
-  stats,
-  sinceIso,
-  sinceValid,
-}: {
-  stats: SwapCloseFillStats | null | undefined
-  sinceIso: string | null | undefined
-  sinceValid: boolean
-}) {
-  const sinceHint =
-    sinceValid && typeof sinceIso === "string" && sinceIso.length > 0
-      ? `仅统计 ${fmtSampleTime(sinceIso) ?? sinceIso} 之后（与资金曲线同一统计起点）。`
-      : null
-  const decided = (stats?.wins ?? 0) + (stats?.losses ?? 0)
-
-  return (
-    <DashboardSectionCard
-      title="平仓胜率（OKX 成交）"
-      description={
-        <>
-          按永续平仓成交统计，含模型平仓与止盈/止损触发；分批平仓记为多笔。胜率 = 盈利笔数 /（盈利 + 亏损）；保本单独列出。
-          {sinceHint ? <span className="mt-1 block">{sinceHint}</span> : null}
-          {stats?.capped ? (
-            <span className="mt-1 block text-amber-700/90 dark:text-amber-300/90">
-              已拉取分页上限，更早记录未计入。
-            </span>
-          ) : null}
-        </>
-      }
-      icon={Percent}
-    >
-      {!sinceValid ? (
-        <div className="rounded-lg border border-dashed border-border/60 bg-muted/15 px-3 py-3 text-[11px] leading-snug text-muted-foreground">
-          请先通过上方工具栏「开始策略范围」设置基准时间与统计起点；胜率仅统计该时点之后的平仓成交，不会纳入更早历史。
-        </div>
-      ) : !stats ? (
-        <div className="rounded-lg border border-dashed border-border/60 bg-muted/15 px-3 py-3 text-[11px] leading-snug text-muted-foreground">
-          暂无法拉取成交明细，请稍后刷新。
-        </div>
-      ) : stats.closeFills === 0 ? (
-        <div className="rounded-lg border border-dashed border-border/60 bg-muted/15 px-3 py-3 text-[11px] leading-snug text-muted-foreground">
-          当前时间窗内尚无平仓类成交。
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <div className="rounded-lg border border-border/55 bg-background/50 p-2.5 ring-1 ring-inset ring-border/25">
-            <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              胜率（盈 / 盈+亏）
-            </div>
-            <div
-              className={cn(
-                "mt-1 text-lg font-semibold tabular-nums",
-                stats.winRate != null && stats.winRate >= 0.5
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : stats.winRate != null
-                    ? "text-amber-700 dark:text-amber-400"
-                    : "text-foreground",
-              )}
-            >
-              {fmtPct(stats.winRate)}
-              {decided > 0 ? (
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {stats.wins} / {decided}
-                </span>
-              ) : null}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <MetricTile label="平仓成交笔数">
-              <span className="font-semibold tabular-nums text-foreground">{stats.closeFills}</span>
-            </MetricTile>
-            <MetricTile label="盈利 / 亏损">
-              <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                {stats.wins}
-              </span>
-              <span className="text-muted-foreground"> / </span>
-              <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">
-                {stats.losses}
-              </span>
-            </MetricTile>
-            <MetricTile label="保本">
-              <span className="font-semibold tabular-nums text-foreground">{stats.breakeven}</span>
-            </MetricTile>
-            <MetricTile label="已实现盈亏（估）">
-              <span
-                className={cn(
-                  "font-semibold tabular-nums",
-                  stats.realizedPnlUsdtSum >= 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-red-600 dark:text-red-400",
-                )}
-              >
-                {fmtSignedUsd(stats.realizedPnlUsdtSum)}
-              </span>
-              <span className="text-[10px] font-normal text-muted-foreground"> USDT</span>
-            </MetricTile>
-          </div>
-        </div>
-      )}
-    </DashboardSectionCard>
-  )
-}
-
-function AccountMetricsCard({ snap }: { snap: DashboardPayload }) {
-  const upl = snap.uplUsdt
-  const uplTone =
-    upl != null && Number.isFinite(Number(upl))
-      ? Number(upl) >= 0
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-red-600 dark:text-red-400"
-      : "text-foreground"
-
-  return (
-    <DashboardSectionCard
-      title="账户与盈亏"
-      description="相对策略基准的资金变化与账户快照"
-      icon={Wallet}
-    >
-      <div className="space-y-2">
-        <MetricTile label="总盈亏（相对基准）" emphasized className="sm:col-span-3">
-          <div
-            className={cn(
-              "text-[1.125rem] font-semibold tabular-nums tracking-tight",
-              snap.pnlVsBaselineUsdt != null && snap.pnlVsBaselineUsdt >= 0
-                ? "text-emerald-600 dark:text-emerald-400"
-                : snap.pnlVsBaselineUsdt != null
-                  ? "text-red-600 dark:text-red-400"
-                  : "text-foreground",
-            )}
-          >
-            {snap.pnlVsBaselineUsdt != null ? `${fmtSignedUsd(snap.pnlVsBaselineUsdt)} USDT` : "—"}
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-            <span
-              className={cn(
-                "rounded-md px-1.5 py-px font-medium ring-1 ring-inset",
-                snap.pnlVsBaselineUsdt == null
-                  ? "bg-muted/70 text-muted-foreground ring-border/40"
-                  : snap.pnlVsBaselineUsdt >= 0
-                    ? "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-400"
-                    : "bg-red-500/10 text-red-700 ring-red-500/20 dark:text-red-400",
-              )}
-            >
-              {snap.pnlVsBaselineUsdt == null ? "未设置基准" : snap.pnlVsBaselineUsdt >= 0 ? "盈利" : "亏损"}
-            </span>
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-            <span className="rounded-md bg-muted/80 px-1.5 py-px tabular-nums ring-1 ring-border/40">
-              初始 {fmtUsd(snap.baselineEquityUsdt ?? null)}
-            </span>
-            <span className="text-muted-foreground/70">→</span>
-            <span className="rounded-md bg-muted/80 px-1.5 py-px tabular-nums ring-1 ring-border/40">
-              当前 {fmtUsd(snap.equityUsdt ?? null)}
-            </span>
-          </div>
-        </MetricTile>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <MetricTile label="未实现盈亏">
-            <span className={cn("font-semibold tabular-nums", uplTone)}>
-              {fmtSignedUsd(snap.uplUsdt ?? null)}
-            </span>
-          </MetricTile>
-          <MetricTile label="当前权益（USDT）">
-            <span className="font-semibold tabular-nums text-foreground">
-              {fmtUsd(snap.equityUsdt ?? null)}
-            </span>
-          </MetricTile>
-          <MetricTile label="可用资金" className="sm:col-span-1">
-            <span className="font-semibold tabular-nums text-foreground">
-              {fmtUsd(snap.availEqUsdt ?? null)}
-            </span>
-          </MetricTile>
-          <MetricTile label="占用资金" className="col-span-2 sm:col-span-1">
-            <span className="font-semibold tabular-nums text-foreground">
-              {fmtUsd(snap.marginUsedUsdt ?? null)}
-            </span>
-          </MetricTile>
-        </div>
-      </div>
-    </DashboardSectionCard>
-  )
-}
-
-function positionSideStyle(posSide: string | undefined) {
-  const s = String(posSide ?? "").toLowerCase()
-  if (s === "long") {
-    return "bg-emerald-500/12 text-emerald-800 ring-emerald-500/25 dark:text-emerald-300"
-  }
-  if (s === "short") {
-    return "bg-red-500/12 text-red-800 ring-red-500/25 dark:text-red-300"
-  }
-  return "bg-muted/70 text-muted-foreground ring-border/40"
-}
-
-function PositionsCard({ positions }: { positions: PositionRow[] }) {
-  return (
-    <DashboardSectionCard
-      title={`持仓（${positions.length}）`}
-      description={positions.length ? "SWAP 持仓明细 · 可滚动查看" : "当前无永续持仓"}
-      icon={List}
-    >
-      {positions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border/60 bg-muted/15 py-6 text-center">
-          <span className="text-xs font-medium text-muted-foreground">无 SWAP 持仓</span>
-          <span className="text-[11px] text-muted-foreground/80">开仓后将在此列出合约与盈亏</span>
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          <div className="hidden grid-cols-[minmax(0,1.5fr)_auto_repeat(4,minmax(0,0.8fr))] gap-3 px-2.5 text-[10px] font-medium tracking-wide text-muted-foreground sm:grid">
-            <span>合约</span>
-            <span>方向</span>
-            <span className="text-right">张数</span>
-            <span className="text-right">未实现盈亏</span>
-            <span className="text-right">保证金</span>
-            <span className="text-right">杠杆</span>
-          </div>
-          <ul className="max-h-[184px] space-y-1.5 overflow-y-auto pr-0.5 [-ms-overflow-style:none] [scrollbar-width:thin]">
-          {positions.map((p, i) => {
-            const side = String(p.posSide ?? "").trim() || "—"
-            const uplNum = Number(p.upl)
-            const uplOk = Number.isFinite(uplNum)
-            return (
-              <li
-                key={`${String(p.instId ?? "x")}-${String(p.posSide ?? "")}-${i}`}
-                className="rounded-lg border border-border/50 bg-background/70 px-2.5 py-2.5 text-xs shadow-sm ring-1 ring-inset ring-border/20 transition-colors hover:bg-muted/30"
-              >
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1.5fr)_auto_repeat(4,minmax(0,0.8fr))] sm:items-center sm:gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate font-semibold tracking-tight text-foreground">{p.instId ?? "—"}</div>
-                  </div>
-                  <span
-                    className={cn(
-                      "w-fit rounded-md px-1.5 py-px text-[10px] font-bold uppercase tracking-wide ring-1 ring-inset",
-                      positionSideStyle(p.posSide),
-                    )}
-                  >
-                    {side}
-                  </span>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:contents">
-                    <div>
-                      <div className="text-[10px] text-muted-foreground sm:hidden">张数</div>
-                      <div className="tabular-nums font-medium text-foreground sm:text-right">{p.pos ?? "—"}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-muted-foreground sm:hidden">未实现盈亏</div>
-                      <div
-                        className={cn(
-                          "tabular-nums font-medium sm:text-right",
-                          uplOk && uplNum >= 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : uplOk
-                              ? "text-red-600 dark:text-red-400"
-                              : "text-foreground",
-                        )}
-                      >
-                        {fmtSignedUsd(uplOk ? uplNum : Number.NaN)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-muted-foreground sm:hidden">保证金</div>
-                      <div className="tabular-nums font-medium text-muted-foreground sm:text-right">
-                        {fmtUsd(Number(p.margin))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-muted-foreground sm:hidden">杠杆</div>
-                      <div className="tabular-nums font-medium text-muted-foreground sm:text-right">
-                        {p.lever != null ? `${p.lever}x` : "—"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            )
-          })}
-          </ul>
-        </div>
-      )}
-    </DashboardSectionCard>
-  )
-}
-
 function fmtSampleTime(t: string | undefined) {
   if (!t) return null
   try {
@@ -650,53 +89,327 @@ function fmtSampleTime(t: string | undefined) {
   }
 }
 
-function EquityCurveCard({
-  series,
-  scopedToStatsSince,
-  statsSinceIso,
-}: {
-  series: EquityPoint[]
-  scopedToStatsSince: boolean
-  statsSinceIso?: string | null
-}) {
-  const last = series[series.length - 1]
-  const lastEq = last?.equity
-  const scopeLine =
-    scopedToStatsSince && statsSinceIso
-      ? `仅展示 ${fmtSampleTime(statsSinceIso) ?? statsSinceIso} 之后的采样（与胜率同一统计起点）。`
-      : "未设置策略统计起点时，展示最近本地采样（与胜率统计范围无关）。"
-  const desc =
-    series.length && last
-      ? `${scopeLine} 最近点 ${fmtSampleTime(last.t) ?? last.t} · 共 ${series.length} 点${
-          lastEq != null && Number.isFinite(lastEq) ? ` · 末值 ${fmtUsd(lastEq)}` : ""
-        }`
-      : scopedToStatsSince
-        ? `${scopeLine} 该时间之后尚无权益采样，请启用 OKX 并刷新以积累曲线。`
-        : "启用 OKX 后持续写入本地，可用于回顾资金形状。"
+function toneForSignedValue(v: number | null | undefined) {
+  if (v == null || !Number.isFinite(v)) return "text-foreground"
+  return v >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+}
 
+function resolveStrategyName(config: DashboardConfig | null, rows: StrategyMeta[]) {
+  const id = typeof config?.promptStrategy === "string" ? config.promptStrategy.trim() : ""
+  if (!id) return "未命名策略"
+  const matched = rows.find((row) => row.id === id)
+  return matched?.label?.trim() || matched?.id || id
+}
+
+function resolveSymbolLabel(config: DashboardConfig | null) {
+  const current = typeof config?.defaultSymbol === "string" ? config.defaultSymbol.trim() : ""
+  const options = Array.isArray(config?.symbols) ? config.symbols : []
+  const matched = options.find((item) => item?.value === current)
+  return matched?.label?.trim() || current || "未选择品种"
+}
+
+function MetricCard({
+  label,
+  value,
+  desc,
+  valueClassName,
+}: {
+  label: string
+  value: ReactNode
+  desc?: ReactNode
+  valueClassName?: string
+}) {
   return (
-    <DashboardSectionCard
-      title="资金曲线（本地采样）"
-      description={desc}
-      icon={LineChart}
-      contentClassName="space-y-0"
-    >
-      <EquitySparkline series={series} />
-    </DashboardSectionCard>
+    <Card className="h-full gap-0 py-0 shadow-none ring-border/60">
+      <CardContent className="flex h-full flex-col justify-between gap-4 px-4 py-4">
+        <div className="text-[11px] font-medium tracking-wide text-muted-foreground">{label}</div>
+        <div className={cn("space-y-1", valueClassName)}>
+          {typeof value === "string" ? (
+            <div className="text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums">{value}</div>
+          ) : (
+            value
+          )}
+        </div>
+        <div className="min-h-4 text-[11px] text-muted-foreground">{desc ?? <span>&nbsp;</span>}</div>
+      </CardContent>
+    </Card>
   )
 }
 
-function SkippedHintCard() {
+function StrategyInfoCard({
+  strategyName,
+  symbolLabel,
+  simulated,
+  strategyRunning,
+  loading,
+  disabled,
+  statusText,
+  onToggle,
+}: {
+  strategyName: string
+  symbolLabel: string
+  simulated: boolean
+  strategyRunning: boolean
+  loading: boolean
+  disabled: boolean
+  statusText: string
+  onToggle: () => void
+}) {
   return (
-    <DashboardSectionCard
-      title="OKX 未启用"
-      description="资金与持仓卡片已隐藏，其他数据仍可用"
-      icon={Plug}
-    >
-      <div className="rounded-lg border border-amber-500/20 bg-amber-500/6 px-3 py-2.5 text-[11px] leading-relaxed text-amber-950/90 dark:text-amber-100/90">
-        请在配置中心启用「OKX 永续」并填写 API，即可查看资金、持仓与基于成交的平仓胜率。本地仍会保留已采样的资金曲线。
+    <Card className="gap-0 py-0 shadow-none ring-border/60">
+      <CardContent className="flex h-full flex-col px-6 py-5">
+        <div className="flex items-start justify-between gap-6">
+          <div className="min-w-0 flex-1">
+            <div className="text-[2rem] leading-none font-semibold tracking-tight text-foreground">
+              {strategyName}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="h-7 rounded-full px-3 text-xs font-medium">
+                {symbolLabel}
+              </Badge>
+              {simulated ? (
+                <Badge
+                  variant="outline"
+                  className="h-7 rounded-full border-amber-500/25 bg-amber-500/10 px-3 text-xs font-medium text-amber-700 dark:text-amber-300"
+                >
+                  模拟盘
+                </Badge>
+              ) : null}
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            size="lg"
+            variant={strategyRunning ? "secondary" : "default"}
+            className="h-11 min-w-28 gap-2 px-4 text-sm shadow-none"
+            disabled={disabled}
+            title={
+              strategyRunning
+                ? "暂停后会清空当前统计范围与初始资金。"
+                : "启动后会以当前权益作为初始资金，并开始统计胜率和净值曲线。"
+            }
+            aria-pressed={strategyRunning}
+            onClick={onToggle}
+          >
+            {strategyRunning ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
+            {loading ? "更新中…" : strategyRunning ? "暂停" : "启动"}
+          </Button>
+        </div>
+
+        <div className="mt-5 flex items-center gap-2 rounded-xl border border-border/60 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+          <AlertCircle className="size-3.5 shrink-0" aria-hidden />
+          <span className="truncate">{statusText}</span>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function AccountOverviewCard({
+  snap,
+  strategyRunning,
+}: {
+  snap: DashboardPayload | null
+  strategyRunning: boolean
+}) {
+  const winRate = snap?.swapCloseFillStats?.winRate ?? null
+  const totalPnl = snap?.pnlVsBaselineUsdt ?? null
+  const baseline = snap?.baselineEquityUsdt ?? null
+  const totalPnlRatio =
+    totalPnl != null && baseline != null && Number.isFinite(totalPnl) && Number.isFinite(baseline) && baseline > 0
+      ? totalPnl / baseline
+      : null
+  const unrealizedPnl = snap?.uplUsdt ?? null
+  const avail = snap?.availEqUsdt ?? null
+  const equity = snap?.equityUsdt ?? null
+  const freeRatio =
+    avail != null && equity != null && Number.isFinite(avail) && Number.isFinite(equity) && equity > 0
+      ? avail / equity
+      : null
+
+  return (
+    <Card className="gap-0 py-0 shadow-none ring-border/60">
+      <CardHeader className="gap-1 border-b border-border/60 px-5 py-4">
+        <CardTitle className="text-base font-semibold">账户模块</CardTitle>
+        <CardDescription>
+          {strategyRunning ? "聚合展示当前策略范围内的核心账户指标。" : "启动策略后会按当前权益生成基准。"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="px-5 py-5">
+        <div className="grid grid-cols-4 gap-3">
+          <MetricCard
+            label="胜率"
+            value={
+              <div
+                className={cn(
+                  "text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums",
+                  toneForSignedValue(winRate != null ? winRate - 0.5 : null),
+                )}
+              >
+                {fmtPct(winRate)}
+              </div>
+            }
+          />
+
+          <MetricCard
+            label="总盈亏"
+            value={
+              <div className="space-y-1">
+                <div className={cn("text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums", toneForSignedValue(totalPnl))}>
+                  {fmtSignedUsd(totalPnl)}
+                </div>
+                <div className={cn("text-sm font-medium tabular-nums", toneForSignedValue(totalPnl))}>
+                  {fmtPct(totalPnlRatio)}
+                </div>
+              </div>
+            }
+            desc={baseline != null ? `初始 ${fmtUsd(baseline)} USDT` : "初始 —"}
+          />
+
+          <MetricCard
+            label="未实现盈亏"
+            value={
+              <div className={cn("text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums", toneForSignedValue(unrealizedPnl))}>
+                {fmtSignedUsd(unrealizedPnl)}
+              </div>
+            }
+          />
+
+          <MetricCard
+            label="可用资金"
+            value={
+              <div className="space-y-1">
+                <div className="text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums">
+                  {fmtUsd(avail)}
+                </div>
+              </div>
+            }
+            desc={`空闲 ${fmtPct(freeRatio)}`}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function EquityCurveChart({ series }: { series: EquityPoint[] }) {
+  const gradId = useId().replace(/:/g, "")
+  const w = 1000
+  const h = 300
+  const padX = 24
+  const padY = 20
+
+  if (!series.length) {
+    return (
+      <div className="flex h-full min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 text-center text-sm text-muted-foreground">
+        暂无账户净值采样数据
       </div>
-    </DashboardSectionCard>
+    )
+  }
+
+  const vals = series.map((p) => p.equity)
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  const span = max - min || 1
+  const innerW = w - padX * 2
+  const innerH = h - padY * 2
+  const points = series.map((p, idx) => {
+    const x = padX + (innerW * idx) / Math.max(1, series.length - 1)
+    const y = padY + innerH - (innerH * (p.equity - min)) / span
+    return { x, y }
+  })
+  const lineD = points.map((pt, idx) => `${idx === 0 ? "M" : "L"} ${pt.x} ${pt.y}`).join(" ")
+  const last = points[points.length - 1]
+  const areaD = `${lineD} L ${last?.x ?? padX} ${padY + innerH} L ${padX} ${padY + innerH} Z`
+  const ticks = [max, min + span / 2, min]
+
+  return (
+    <div className="h-full rounded-2xl border border-border/60 bg-linear-to-b from-primary/8 via-background to-background p-3 ring-1 ring-inset ring-border/25">
+      <svg className="h-full w-full" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-label="账户净值曲线">
+        <defs>
+          <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="currentColor" stopOpacity={0.22} />
+            <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+
+        {ticks.map((tick) => {
+          const y = padY + innerH - (innerH * (tick - min)) / span
+          return (
+            <g key={tick}>
+              <line
+                x1={padX}
+                y1={y}
+                x2={w - padX}
+                y2={y}
+                stroke="currentColor"
+                strokeOpacity="0.08"
+                strokeDasharray="5 5"
+              />
+              <text
+                x={w - padX}
+                y={y - 6}
+                textAnchor="end"
+                className="fill-muted-foreground text-[11px] tabular-nums"
+              >
+                {fmtUsd(tick)}
+              </text>
+            </g>
+          )
+        })}
+
+        <path d={areaD} fill={`url(#${gradId})`} className="text-primary" />
+        <path
+          d={lineD}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+          className="text-primary"
+        />
+        {last ? <circle cx={last.x} cy={last.y} r="5" className="fill-primary stroke-background" strokeWidth="3" /> : null}
+      </svg>
+    </div>
+  )
+}
+
+function EquityCurveCard({
+  series,
+  sinceIso,
+}: {
+  series: EquityPoint[]
+  sinceIso?: string | null
+}) {
+  const first = series[0]?.equity
+  const last = series[series.length - 1]?.equity
+  const delta =
+    first != null && last != null && Number.isFinite(first) && Number.isFinite(last) ? last - first : null
+  const latestAt = series.length ? fmtSampleTime(series[series.length - 1]?.t) : null
+  const scopeLabel = sinceIso ? `统计起点 ${fmtSampleTime(sinceIso) ?? sinceIso}` : "展示最近本地采样"
+
+  return (
+    <Card className="min-h-0 gap-0 py-0 shadow-none ring-border/60">
+      <CardHeader className="border-b border-border/60 px-5 py-4">
+        <div className="flex items-end justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle className="text-base font-semibold">账户净值曲线</CardTitle>
+            <CardDescription>{scopeLabel}</CardDescription>
+          </div>
+          <div className="text-right text-xs text-muted-foreground">
+            <div>最新采样 {latestAt ?? "—"}</div>
+            <div className={cn("mt-1 font-medium tabular-nums", toneForSignedValue(delta))}>
+              区间变化 {fmtSignedUsd(delta)}
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="flex min-h-0 flex-1 px-5 py-5">
+        <EquityCurveChart series={series} />
+      </CardContent>
+    </Card>
   )
 }
 
@@ -704,15 +417,29 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
   const [snap, setSnap] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [config, setConfig] = useState<DashboardConfig | null>(null)
+  const [strategies, setStrategies] = useState<StrategyMeta[]>([])
 
   const load = useCallback(async () => {
     if (!window.argus?.getDashboard) return
     setLoading(true)
     setErr(null)
+
     try {
-      const p = (await window.argus.getDashboard()) as DashboardPayload
-      setSnap(p)
-      if (p && p.ok === false && typeof p.message === "string") setErr(p.message)
+      const [dashboardPayload, rawConfig, rawStrategies] = await Promise.all([
+        window.argus.getDashboard(),
+        window.argus.getConfig ? window.argus.getConfig() : Promise.resolve({}),
+        window.argus.listPromptStrategiesMeta ? window.argus.listPromptStrategiesMeta() : Promise.resolve([]),
+      ])
+
+      const nextSnap = dashboardPayload as DashboardPayload
+      setSnap(nextSnap)
+      setConfig((rawConfig ?? {}) as DashboardConfig)
+      setStrategies(Array.isArray(rawStrategies) ? (rawStrategies as StrategyMeta[]) : [])
+
+      if (nextSnap && nextSnap.ok === false && typeof nextSnap.message === "string") {
+        setErr(nextSnap.message)
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {
@@ -742,7 +469,7 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }, [snap?.equityUsdt, load])
+  }, [load, snap?.equityUsdt])
 
   const endStrategyRange = useCallback(async () => {
     try {
@@ -757,82 +484,49 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
     }
   }, [load])
 
-  const skipped = snap?.skipped === true
-  const series = Array.isArray(snap?.equitySeries) ? snap!.equitySeries! : []
-  const positions = Array.isArray(snap?.positions) ? snap!.positions! : []
-  const showLive = !skipped && snap?.ok === true
-
+  const series = useMemo(
+    () => (Array.isArray(snap?.equitySeries) ? snap?.equitySeries.filter((item) => Number.isFinite(item?.equity)) : []),
+    [snap?.equitySeries],
+  )
   const baselinePresent =
     snap?.baselineEquityUsdt != null && Number.isFinite(Number(snap.baselineEquityUsdt))
   const sincePresent =
-    typeof snap?.dashboardAgentToolStatsSince === "string" &&
-    snap.dashboardAgentToolStatsSince.length > 0
-  const sinceRaw = snap?.dashboardAgentToolStatsSince
-  const sinceValid =
-    typeof sinceRaw === "string" && sinceRaw.trim().length > 0 && Number.isFinite(Date.parse(sinceRaw.trim()))
+    typeof snap?.dashboardAgentToolStatsSince === "string" && snap.dashboardAgentToolStatsSince.trim().length > 0
   const strategyRunning = baselinePresent && sincePresent
-
-  const simBadge =
-    snap?.simulated === true ? (
-      <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-        模拟盘
-      </span>
-    ) : null
+  const canStartStrategy = snap?.equityUsdt != null && Number.isFinite(Number(snap.equityUsdt))
+  const strategyName = useMemo(() => resolveStrategyName(config, strategies), [config, strategies])
+  const symbolLabel = useMemo(() => resolveSymbolLabel(config), [config])
+  const statusText = err
+    ? err
+    : snap?.skipped
+      ? "未启用 OKX 永续，当前账户数据将显示为空。"
+      : loading
+        ? "正在同步最新账户数据。"
+        : strategyRunning
+          ? "策略已启动，胜率、盈亏和净值曲线都按当前范围统计。"
+          : "策略尚未启动，点击右侧按钮即可开始统计。"
 
   return (
     <div
       className={cn(
-        "flex min-h-0 min-w-0 shrink-0 flex-col gap-4",
-        embedded ? "px-1 pt-0 pb-3" : "border-b border-border/60 px-3 pt-3 pb-3",
+        "grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-4",
+        embedded ? "px-0 py-0" : "px-3 py-3",
       )}
     >
-      <DashboardToolbarCard
-        embedded={embedded}
-        simulated={snap?.simulated}
-        simBadge={simBadge}
+      <StrategyInfoCard
+        strategyName={strategyName}
+        symbolLabel={symbolLabel}
+        simulated={snap?.simulated === true}
         strategyRunning={strategyRunning}
         loading={loading}
-        equityUsdt={snap?.equityUsdt}
-        onToggleStrategy={() => void (strategyRunning ? endStrategyRange() : startStrategyRange())}
-        onRefresh={() => void load()}
+        disabled={loading || (!strategyRunning && !canStartStrategy)}
+        statusText={statusText}
+        onToggle={() => void (strategyRunning ? endStrategyRange() : startStrategyRange())}
       />
 
-      {err ? (
-        <Card
-          size="sm"
-          className="gap-0 overflow-hidden border-destructive/35 py-0 shadow-none ring-destructive/20 data-[size=sm]:gap-0 data-[size=sm]:py-0"
-        >
-          <CardContent className="flex gap-2.5 px-3 py-2.5" role="alert" aria-live="polite">
-            <div
-              className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-destructive/10"
-              aria-hidden
-            >
-              <AlertCircle className="size-3.5 text-destructive" />
-            </div>
-            <p className="min-w-0 flex-1 text-xs leading-snug text-destructive">{err}</p>
-          </CardContent>
-        </Card>
-      ) : null}
+      <AccountOverviewCard snap={snap} strategyRunning={strategyRunning} />
 
-      {skipped ? <SkippedHintCard /> : null}
-
-      {showLive && snap ? (
-        <>
-          <AccountMetricsCard snap={snap} />
-          <SwapCloseWinRateCard
-            stats={snap.swapCloseFillStats}
-            sinceIso={snap.dashboardAgentToolStatsSince}
-            sinceValid={sinceValid}
-          />
-          <PositionsCard positions={positions} />
-        </>
-      ) : null}
-
-      <EquityCurveCard
-        series={series}
-        scopedToStatsSince={sinceValid}
-        statsSinceIso={snap?.dashboardAgentToolStatsSince}
-      />
+      <EquityCurveCard series={series} sinceIso={snap?.dashboardAgentToolStatsSince} />
     </div>
   )
 }

@@ -28,11 +28,6 @@ export function LlmSessionDetailModal() {
         </div>
         <div className="llm-session-detail-error" id="llm-session-detail-error" hidden />
         <div
-          className="llm-session-detail-chart-wrap"
-          id="llm-session-detail-chart-wrap"
-          hidden
-        />
-        <div
           className="llm-session-detail-body"
           id="llm-session-detail-body"
           role="list"

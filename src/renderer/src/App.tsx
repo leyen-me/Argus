@@ -27,8 +27,8 @@ export default function App() {
       <ConfigModal />
       <DashboardModal />
       <StrategyCenterModal />
-      <LlmChartPreviewModal />
       <LlmSessionDetailModal />
+      <LlmChartPreviewModal />
     </>
   );
 }

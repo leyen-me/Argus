@@ -690,12 +690,116 @@ function sanitizeSessionMsgRoleClass(role) {
 }
 
 /**
+ * @param {string | null | undefined} capturedAt
+ * @returns {string}
+ */
+function formatSessionCapturedAt(capturedAt) {
+  if (!capturedAt) return "";
+  const dt = new Date(capturedAt);
+  if (Number.isNaN(dt.getTime())) return "";
+  const pad2 = (n) => String(n).padStart(2, "0");
+  return [
+    `${dt.getFullYear()}/${dt.getMonth() + 1}/${dt.getDate()}`,
+    `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}:${pad2(dt.getSeconds())}`,
+  ].join(" ");
+}
+
+/**
+ * @param {string} dataUrl
+ * @returns {HTMLDivElement}
+ */
+function createSessionChartRow(dataUrl) {
+  const row = document.createElement("div");
+  row.className = "llm-session-msg llm-session-msg--chart";
+  row.setAttribute("role", "listitem");
+
+  const roleEl = document.createElement("div");
+  roleEl.className = "llm-session-msg-role";
+  roleEl.textContent = "chart";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "llm-round-card-thumb llm-session-detail-chart-thumb";
+  btn.title = "放大查看本轮截图";
+  btn.setAttribute("aria-label", "放大预览图表截图");
+
+  const img = document.createElement("img");
+  img.src = dataUrl;
+  img.alt = "本轮 K 线收盘时的图表截图";
+  img.decoding = "async";
+
+  btn.appendChild(img);
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openLlmChartPreview(dataUrl);
+  });
+
+  row.append(roleEl, btn);
+  return row;
+}
+
+/**
+ * @param {string} role
+ * @param {string} text
+ * @returns {boolean}
+ */
+function shouldCollapseSessionMessage(role, text) {
+  const normalizedRole = String(role || "").toLowerCase();
+  if (normalizedRole !== "system" && normalizedRole !== "user") return false;
+  const body = String(text || "");
+  if (!body) return false;
+  const lineCount = body.split("\n").length;
+  return body.length > 600 || lineCount > 10;
+}
+
+/**
+ * @param {string} text
+ * @returns {HTMLDivElement}
+ */
+function createCollapsibleSessionContent(text) {
+  const wrap = document.createElement("div");
+  wrap.className = "llm-session-msg-collapse";
+
+  const preview = document.createElement("pre");
+  preview.className = "llm-session-msg-pre llm-session-msg-pre--collapsed";
+  preview.textContent = text;
+
+  const full = document.createElement("pre");
+  full.className = "llm-session-msg-pre llm-session-msg-pre--full";
+  full.textContent = text;
+  full.hidden = true;
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "llm-session-msg-collapse-toggle";
+  toggle.textContent = "展开全文";
+  toggle.setAttribute("aria-expanded", "false");
+
+  toggle.addEventListener("click", () => {
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
+    toggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+    toggle.textContent = expanded ? "展开全文" : "收起";
+    preview.hidden = !expanded;
+    full.hidden = expanded;
+  });
+
+  wrap.append(preview, full, toggle);
+  return wrap;
+}
+
+/**
  * @param {HTMLElement} container
  * @param {object[]} msgs
+ * @param {string} [chartDataUrl]
  */
-function renderSessionMessagesInto(container, msgs) {
+function renderSessionMessagesInto(container, msgs, chartDataUrl = "") {
   container.replaceChildren();
-  for (const m of msgs) {
+  const lastUserIdx = msgs.reduce((acc, m, idx) => {
+    return String(m?.role || "").toLowerCase() === "user" ? idx : acc;
+  }, -1);
+  let chartInserted = false;
+
+  for (const [idx, m] of msgs.entries()) {
     const row = document.createElement("div");
     row.className = `llm-session-msg llm-session-msg--${sanitizeSessionMsgRoleClass(m.role)}`;
     row.setAttribute("role", "listitem");
@@ -729,12 +833,27 @@ function renderSessionMessagesInto(container, msgs) {
       toolsWrap.append(toolsLabel, preTools);
       row.appendChild(toolsWrap);
     } else {
-      const pre = document.createElement("pre");
-      pre.className = "llm-session-msg-pre";
-      pre.textContent = formatSessionMessageRowBody(m);
-      row.append(roleEl, pre);
+      const bodyText = formatSessionMessageRowBody(m);
+      row.appendChild(roleEl);
+      if (shouldCollapseSessionMessage(m.role, bodyText)) {
+        row.appendChild(createCollapsibleSessionContent(bodyText));
+      } else {
+        const pre = document.createElement("pre");
+        pre.className = "llm-session-msg-pre";
+        pre.textContent = bodyText;
+        row.appendChild(pre);
+      }
     }
     container.appendChild(row);
+
+    if (!chartInserted && chartDataUrl && lastUserIdx === idx) {
+      container.appendChild(createSessionChartRow(chartDataUrl));
+      chartInserted = true;
+    }
+  }
+
+  if (!chartInserted && chartDataUrl) {
+    container.appendChild(createSessionChartRow(chartDataUrl));
   }
 }
 
@@ -745,29 +864,25 @@ async function openLlmSessionDetailModal(barCloseId) {
   const errEl = document.getElementById("llm-session-detail-error");
   const subtitle = document.getElementById("llm-session-detail-subtitle");
   const title = document.getElementById("llm-session-detail-title");
-  const chartWrap = document.getElementById("llm-session-detail-chart-wrap");
   if (!modal || !bodyEl) return;
 
   const root = findLlmRoundRoot(barCloseId);
   const sym = root?.dataset.tvSymbol?.trim() || "";
   const cap = root?.dataset.capturedAt || "";
-  const timeLine = cap ? new Date(cap).toLocaleString("zh-CN", { hour12: false }) : "";
+  const timeLine = formatSessionCapturedAt(cap);
 
   if (subtitle) {
-    const sub = [sym, timeLine].filter(Boolean).join(" · ");
-    subtitle.textContent = sub;
-    subtitle.hidden = !sub;
+    subtitle.textContent = "";
+    subtitle.hidden = true;
   }
-  if (title) title.textContent = "Agent 多轮对话";
+  if (title) {
+    title.textContent = [sym, timeLine].filter(Boolean).join(" · ") || "Agent 多轮对话";
+  }
 
   bodyEl.replaceChildren();
   if (errEl) {
     errEl.textContent = "";
     errEl.hidden = true;
-  }
-  if (chartWrap) {
-    chartWrap.hidden = true;
-    chartWrap.replaceChildren();
   }
   if (loading) loading.hidden = false;
   modal.hidden = false;
@@ -792,24 +907,6 @@ async function openLlmSessionDetailModal(barCloseId) {
       }
     }
     if (loading) loading.hidden = true;
-    if (chartData?.dataUrl && chartWrap) {
-      chartWrap.hidden = false;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "llm-round-card-thumb";
-      btn.title = "放大查看本轮截图";
-      btn.setAttribute("aria-label", "放大预览图表截图");
-      const img = document.createElement("img");
-      img.src = chartData.dataUrl;
-      img.alt = "";
-      img.decoding = "async";
-      btn.appendChild(img);
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openLlmChartPreview(chartData.dataUrl);
-      });
-      chartWrap.appendChild(btn);
-    }
     if (!Array.isArray(msgs) || msgs.length === 0) {
       if (errEl) {
         errEl.textContent = "暂无消息记录（可能尚未落库）";
@@ -817,7 +914,7 @@ async function openLlmSessionDetailModal(barCloseId) {
       }
       return;
     }
-    renderSessionMessagesInto(bodyEl, msgs);
+    renderSessionMessagesInto(bodyEl, msgs, chartData?.dataUrl || "");
   } catch (e) {
     if (loading) loading.hidden = true;
     const msg = e instanceof Error ? e.message : String(e);

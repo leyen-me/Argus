@@ -36,10 +36,10 @@ export function LlmPanel() {
   return (
     <Card className="bg-background flex min-h-0 min-w-0 flex-[0.75] gap-0 rounded-none border-0 py-0 shadow-none ring-0">
       <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
-        <div className="shrink-0 border-b border-border/60 px-3 pt-3 pb-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-muted-foreground">Argus</span>
-            <div className="flex items-center gap-2">
+        <div className="flex h-10 shrink-0 items-center border-b border-border/60 px-3 py-0">
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            <span className="shrink-0 text-[11px] leading-none font-medium text-muted-foreground">Argus</span>
+            <div className="flex min-w-0 shrink items-center gap-2">
               <Button
                 type="button"
                 variant={barCloseAgentAuto ? "default" : "secondary"}

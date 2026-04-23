@@ -93,7 +93,7 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
     const a = args && typeof args === "object" ? args : {};
     const assistantPreview =
       meta && typeof meta.assistantPreview === "string" ? meta.assistantPreview : "";
-    const summarizeForIntent = (fallback) => summarizeIntentText(assistantPreview, fallback);
+    const summarizeForIntent = (fallback) => summarizeIntentText("", fallback);
     const rememberIntent = (payload) => {
       try {
         upsertOrderIntent(payload);

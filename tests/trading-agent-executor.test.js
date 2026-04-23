@@ -247,7 +247,8 @@ test("open_position：限价成功会写入订单意图", async () => {
   assert.equal(remembered.interval, "5");
   assert.equal(remembered.limitPrice, 98_000);
   assert.equal(remembered.stopLossTriggerPrice, 96_500);
-  assert.match(remembered.summary, /回踩关键支撑/);
+  assert.equal(remembered.summary, "在 98000 挂多限价单，等待更优位置成交。");
+  assert.equal(remembered.thesis, "回踩关键支撑，先挂限价多单等成交。");
 });
 
 test("open_position：止盈止损与触发类型传入 executeAgentPerpOpen", async () => {
@@ -625,7 +626,8 @@ test("amend_order：成功后会更新订单意图", async () => {
   assert.ok(fallbackCall);
   assert.equal(fallbackCall.entityId, "55");
   assert.equal(fallbackCall.limitPrice, 100.5);
-  assert.match(fallbackCall.summary, /现价附近/);
+  assert.equal(fallbackCall.summary, "调整普通限价挂单参数。");
+  assert.equal(fallbackCall.thesis, "挂单价格太远了，往现价附近收一档。");
 });
 
 test("amend_order：仅 new_size", async () => {

@@ -790,6 +790,53 @@ body,
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.llm-session-copy-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.llm-session-copy-btn {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in oklch, var(--border) 78%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--background) 92%, var(--muted));
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.55;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.llm-session-copy-btn-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+.llm-session-copy-btn-label {
+  display: inline-block;
+}
+
+.llm-session-copy-btn:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--foreground) 14%, var(--border));
+  background: color-mix(in oklch, var(--background) 84%, var(--muted));
+  color: var(--foreground);
+}
+
+.llm-session-copy-btn:disabled {
+  cursor: default;
+  opacity: 0.9;
+}
+
 .llm-session-msg-collapse {
   display: flex;
   flex-direction: column;

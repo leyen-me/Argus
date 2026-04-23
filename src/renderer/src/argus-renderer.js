@@ -751,11 +751,116 @@ function shouldCollapseSessionMessage(role, text) {
 
 /**
  * @param {string} text
+ * @returns {Promise<boolean>}
+ */
+async function copySessionText(text) {
+  const value = String(text || "");
+  if (!value) return false;
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Fall through to legacy copy path.
+  }
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = value;
+    ta.setAttribute("readonly", "true");
+    ta.style.position = "fixed";
+    ta.style.top = "-9999px";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return copied === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @param {string} text
+ * @returns {HTMLButtonElement}
+ */
+function createSessionCopyButton(text) {
+  const setLabel = (label) => {
+    labelEl.textContent = label;
+  };
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "llm-session-copy-btn";
+  btn.setAttribute("aria-label", "复制当前内容块");
+
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "currentColor");
+  icon.setAttribute("stroke-width", "1.8");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("stroke-linejoin", "round");
+  icon.classList.add("llm-session-copy-btn-icon");
+  icon.setAttribute("aria-hidden", "true");
+
+  const rectBack = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  rectBack.setAttribute("x", "9");
+  rectBack.setAttribute("y", "9");
+  rectBack.setAttribute("width", "11");
+  rectBack.setAttribute("height", "11");
+  rectBack.setAttribute("rx", "2");
+  rectBack.setAttribute("ry", "2");
+
+  const pathFront = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  pathFront.setAttribute("d", "M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3");
+
+  icon.append(rectBack, pathFront);
+
+  const labelEl = document.createElement("span");
+  labelEl.className = "llm-session-copy-btn-label";
+  setLabel("复制");
+
+  btn.append(icon, labelEl);
+
+  let resetTimer = 0;
+  btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    btn.disabled = true;
+    const copied = await copySessionText(text);
+    setLabel(copied ? "已复制" : "复制失败");
+    window.clearTimeout(resetTimer);
+    resetTimer = window.setTimeout(() => {
+      setLabel("复制");
+      btn.disabled = false;
+    }, copied ? 1200 : 1600);
+  });
+
+  return btn;
+}
+
+/**
+ * @param {HTMLElement} contentEl
+ * @param {string} text
+ * @returns {HTMLDivElement}
+ */
+function createSessionCopyBlock(contentEl, text) {
+  const wrap = document.createElement("div");
+  wrap.className = "llm-session-copy-block";
+  wrap.append(createSessionCopyButton(text), contentEl);
+  return wrap;
+}
+
+/**
+ * @param {string} text
  * @returns {HTMLDivElement}
  */
 function createCollapsibleSessionContent(text) {
   const wrap = document.createElement("div");
-  wrap.className = "llm-session-msg-collapse";
+  wrap.className = "llm-session-msg-collapse llm-session-copy-block";
 
   const preview = document.createElement("pre");
   preview.className = "llm-session-msg-pre llm-session-msg-pre--collapsed";
@@ -780,7 +885,7 @@ function createCollapsibleSessionContent(text) {
     full.hidden = expanded;
   });
 
-  wrap.append(preview, full, toggle);
+  wrap.append(createSessionCopyButton(text), preview, full, toggle);
   return wrap;
 }
 
@@ -815,7 +920,7 @@ function renderSessionMessagesInto(container, msgs, chartDataUrl = "") {
         preMain.className = "llm-session-msg-pre";
         preMain.textContent = mainText;
         row.appendChild(roleEl);
-        row.appendChild(preMain);
+        row.appendChild(createSessionCopyBlock(preMain, mainText));
       } else {
         row.appendChild(roleEl);
       }
@@ -824,10 +929,11 @@ function renderSessionMessagesInto(container, msgs, chartDataUrl = "") {
       const toolsLabel = document.createElement("div");
       toolsLabel.className = "llm-session-msg-toolcalls-label";
       toolsLabel.textContent = "工具调用";
+      const toolText = JSON.stringify(toolCalls, null, 2);
       const preTools = document.createElement("pre");
       preTools.className = "llm-session-msg-pre llm-session-msg-pre--toolcalls";
-      preTools.textContent = JSON.stringify(toolCalls, null, 2);
-      toolsWrap.append(toolsLabel, preTools);
+      preTools.textContent = toolText;
+      toolsWrap.append(toolsLabel, createSessionCopyBlock(preTools, toolText));
       row.appendChild(toolsWrap);
     } else {
       const bodyText = formatSessionMessageRowBody(m);
@@ -838,7 +944,7 @@ function renderSessionMessagesInto(container, msgs, chartDataUrl = "") {
         const pre = document.createElement("pre");
         pre.className = "llm-session-msg-pre";
         pre.textContent = bodyText;
-        row.appendChild(pre);
+        row.appendChild(createSessionCopyBlock(pre, bodyText));
       }
     }
     container.appendChild(row);

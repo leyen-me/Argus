@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { PauseCircle, PlayCircle } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -38,27 +39,37 @@ export function LlmPanel() {
         <div className="shrink-0 border-b border-border/60 px-3 pt-3 pb-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[11px] font-medium text-muted-foreground">Argus</span>
-            <Button
-              type="button"
-              variant={barCloseAgentAuto ? "default" : "secondary"}
-              size="sm"
-              className={
-                barCloseAgentAuto
-                  ? "h-7 rounded-full gap-1.5 bg-emerald-600 px-3 text-[11px] text-white shadow-none hover:bg-emerald-600/90 dark:bg-emerald-500 dark:hover:bg-emerald-500/90"
-                  : "h-7 rounded-full gap-1.5 border-border/80 bg-muted/40 px-3 text-[11px] text-muted-foreground shadow-none hover:bg-muted/70"
-              }
-              id="btn-bar-close-agent-toggle"
-              title="开启后，须在已配 LLM Key、截图成功、OKX 账户/仓位/挂单快照就绪时，K 线收盘才会自动调用 Agent"
-              aria-pressed={barCloseAgentAuto}
-              onClick={() => void toggleBarCloseAgent()}
-            >
-              {barCloseAgentAuto ? <PlayCircle className="size-3.5" aria-hidden /> : <PauseCircle className="size-3.5" aria-hidden />}
-              <span
-                className={barCloseAgentAuto ? "size-1.5 rounded-full bg-white/90" : "size-1.5 rounded-full bg-muted-foreground/70"}
-                aria-hidden
-              />
-              {barCloseAgentAuto ? "自动运行" : "已暂停"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant={barCloseAgentAuto ? "default" : "secondary"}
+                size="sm"
+                className={
+                  barCloseAgentAuto
+                    ? "h-7 rounded-full gap-1.5 bg-emerald-600 px-3 text-[11px] text-white shadow-none hover:bg-emerald-600/90 dark:bg-emerald-500 dark:hover:bg-emerald-500/90"
+                    : "h-7 rounded-full gap-1.5 border-border/80 bg-muted/40 px-3 text-[11px] text-muted-foreground shadow-none hover:bg-muted/70"
+                }
+                id="btn-bar-close-agent-toggle"
+                title="开启后，须在已配 LLM Key、截图成功、OKX 账户/仓位/挂单快照就绪时，K 线收盘才会自动调用 Agent"
+                aria-pressed={barCloseAgentAuto}
+                onClick={() => void toggleBarCloseAgent()}
+              >
+                {barCloseAgentAuto ? <PlayCircle className="size-3.5" aria-hidden /> : <PauseCircle className="size-3.5" aria-hidden />}
+                <span
+                  className={barCloseAgentAuto ? "size-1.5 rounded-full bg-white/90" : "size-1.5 rounded-full bg-muted-foreground/70"}
+                  aria-hidden
+                />
+                {barCloseAgentAuto ? "自动运行" : "已暂停"}
+              </Button>
+              <Badge
+                id="llm-status"
+                variant="outline"
+                className="panel-badge panel-badge--status h-7 min-w-14 max-w-[84px] shrink-0 truncate rounded-lg border border-emerald-500/35 bg-emerald-500/8 px-2.5 text-emerald-500 shadow-sm"
+                title=""
+              >
+                就绪
+              </Badge>
+            </div>
           </div>
         </div>
         <div

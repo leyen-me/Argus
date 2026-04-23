@@ -1,11 +1,13 @@
 import { ChartSymbolSelect } from "@/components/chart-symbol-select"
 import { FishModeOverlay } from "@/components/app/fish-mode-overlay"
+import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { EyeOff } from "lucide-react"
 
 const MULTI_TIMEFRAME_CARDS = [
   { interval: "1D", label: "日线", containerId: "tradingview_chart_1d" },
@@ -27,6 +29,18 @@ export function ChartPanel() {
           </span>
         </div>
         <div className="flex min-w-0 shrink items-center gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 px-2.5 text-xs font-semibold shadow-none"
+            id="btn-fish-mode"
+            title="遮盖图表与侧栏内容，离开座位时可用。按 ESC 退出。"
+            aria-pressed="false"
+          >
+            <EyeOff className="size-3.5 opacity-80" aria-hidden />
+            <span id="btn-fish-mode-label">隐私遮挡</span>
+          </Button>
           <ChartSymbolSelect />
         </div>
       </CardHeader>

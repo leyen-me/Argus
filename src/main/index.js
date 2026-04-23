@@ -17,7 +17,11 @@ const promptStrategiesStore = require(path.join(nodeRoot, "prompt-strategies-sto
 const { closeDatabase } = require(path.join(nodeRoot, "local-db", "index.js"));
 const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context.js"));
 const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp.js"));
-const { getDashboardSnapshot } = require(path.join(nodeRoot, "dashboard-service.js"));
+const {
+  BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS,
+  getDashboardSnapshot,
+  sampleDashboardEquityOnce,
+} = require(path.join(nodeRoot, "dashboard-service.js"));
 const {
   listAgentBarTurnsPage,
   getAgentBarTurnChart,
@@ -58,12 +62,14 @@ ipcMain.handle("devtools:open", () => {
 ipcMain.handle("config:save", async (_event, payload) => {
   const next = saveMergedConfigPayload(payload ?? {});
   await routeMarket(next, next.defaultSymbol);
+  void runBackgroundEquitySample();
   return next;
 });
 
 ipcMain.handle("config:reset", async () => {
   const next = resetAppConfig();
   await routeMarket(next, next.defaultSymbol);
+  void runBackgroundEquitySample();
   return next;
 });
 
@@ -115,6 +121,35 @@ ipcMain.handle("llm-request-analysis", async (_event, payload) => {
 
 /** @type {import("electron").BrowserWindow | null} */
 let mainWindow = null;
+/** @type {NodeJS.Timeout | null} */
+let dashboardEquitySamplerTimer = null;
+let dashboardEquitySamplerInFlight = false;
+
+async function runBackgroundEquitySample() {
+  if (dashboardEquitySamplerInFlight) return;
+  dashboardEquitySamplerInFlight = true;
+  try {
+    await sampleDashboardEquityOnce(loadAppConfig());
+  } catch {
+    // 后台采样失败不打断主流程；下个周期继续尝试。
+  } finally {
+    dashboardEquitySamplerInFlight = false;
+  }
+}
+
+function startBackgroundEquitySampler() {
+  stopBackgroundEquitySampler();
+  void runBackgroundEquitySample();
+  dashboardEquitySamplerTimer = setInterval(() => {
+    void runBackgroundEquitySample();
+  }, BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS);
+}
+
+function stopBackgroundEquitySampler() {
+  if (!dashboardEquitySamplerTimer) return;
+  clearInterval(dashboardEquitySamplerTimer);
+  dashboardEquitySamplerTimer = null;
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -152,6 +187,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+  startBackgroundEquitySampler();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -162,6 +198,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  stopBackgroundEquitySampler();
   wipeConversationStore();
   closeDatabase();
 });

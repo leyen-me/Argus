@@ -54,7 +54,7 @@ export function DashboardModal() {
           <DialogDescription className="sr-only">账户资金、持仓与 Agent 统计</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-hidden px-5 pt-5 pb-5">
-          <TradingDashboardCard embedded />
+          <TradingDashboardCard embedded active={open} />
         </div>
       </DialogContent>
     </Dialog>

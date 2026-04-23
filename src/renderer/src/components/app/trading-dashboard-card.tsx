@@ -294,7 +294,6 @@ function AccountOverviewCard({
 }
 
 function EquityCurveChart({ series }: { series: EquityPoint[] }) {
-  const gradId = useId().replace(/:/g, "")
   const w = 1000
   const h = 300
   const padX = 24
@@ -302,7 +301,7 @@ function EquityCurveChart({ series }: { series: EquityPoint[] }) {
 
   if (!series.length) {
     return (
-      <div className="flex h-full min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 text-center text-sm text-muted-foreground">
+      <div className="flex h-full w-full min-h-[220px] flex-1 items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 text-center text-sm text-muted-foreground">
         暂无账户净值采样数据
       </div>
     )
@@ -325,15 +324,8 @@ function EquityCurveChart({ series }: { series: EquityPoint[] }) {
   const ticks = [max, min + span / 2, min]
 
   return (
-    <div className="h-full rounded-2xl border border-border/60 bg-linear-to-b from-primary/8 via-background to-background p-3 ring-1 ring-inset ring-border/25">
+    <div className="h-full w-full min-w-0 flex-1 rounded-2xl border border-border/60 bg-background p-3 ring-1 ring-inset ring-border/25">
       <svg className="h-full w-full" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-label="账户净值曲线">
-        <defs>
-          <linearGradient id={gradId} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="currentColor" stopOpacity={0.22} />
-            <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
-          </linearGradient>
-        </defs>
-
         {ticks.map((tick) => {
           const y = padY + innerH - (innerH * (tick - min)) / span
           return (
@@ -359,7 +351,6 @@ function EquityCurveChart({ series }: { series: EquityPoint[] }) {
           )
         })}
 
-        <path d={areaD} fill={`url(#${gradId})`} className="text-primary" />
         <path
           d={lineD}
           fill="none"
@@ -413,7 +404,13 @@ function EquityCurveCard({
   )
 }
 
-export function TradingDashboardCard({ embedded = false }: { embedded?: boolean }) {
+export function TradingDashboardCard({
+  embedded = false,
+  active = true,
+}: {
+  embedded?: boolean
+  active?: boolean
+}) {
   const [snap, setSnap] = useState<DashboardPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -448,10 +445,11 @@ export function TradingDashboardCard({ embedded = false }: { embedded?: boolean 
   }, [])
 
   useEffect(() => {
+    if (!active) return
     void load()
     const t = window.setInterval(() => void load(), 45_000)
     return () => window.clearInterval(t)
-  }, [load])
+  }, [active, load])
 
   const startStrategyRange = useCallback(async () => {
     const eq = snap?.equityUsdt

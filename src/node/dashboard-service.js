@@ -1,6 +1,8 @@
 const okxPerp = require("./okx-perp");
 const dashboardStore = require("./dashboard-store");
 
+const BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS = 60_000;
+
 /**
  * @param {object} metrics {@link okxPerp.fetchUsdtAccountMetrics}
  * @returns {number | null}
@@ -73,6 +75,32 @@ function buildEquitySeriesForDashboard(sinceIso) {
 }
 
 /**
+ * 后台定时采样入口：仅拉取账户权益并按去重规则落库，不依赖任何前端界面。
+ * @param {object} cfg loadAppConfig()
+ */
+async function sampleDashboardEquityOnce(cfg) {
+  if (!cfg || cfg.okxSwapTradingEnabled !== true) {
+    return { ok: true, skipped: true, reason: "okx_swap_disabled" };
+  }
+  const apiKey = typeof cfg.okxApiKey === "string" ? cfg.okxApiKey.trim() : "";
+  const secretKey = typeof cfg.okxSecretKey === "string" ? cfg.okxSecretKey.trim() : "";
+  const passphrase = typeof cfg.okxPassphrase === "string" ? cfg.okxPassphrase.trim() : "";
+  if (!apiKey || !secretKey || !passphrase) {
+    return { ok: true, skipped: true, reason: "okx_api_incomplete" };
+  }
+
+  const simulated = cfg.okxSimulated !== false;
+  const client = okxPerp.createOkxClient({ apiKey, secretKey, passphrase, simulated });
+
+  const metrics = await okxPerp.fetchUsdtAccountMetrics(client);
+  const equityUsdt = pickDisplayEquityUsdt(metrics);
+  if (equityUsdt != null) {
+    dashboardStore.appendEquitySampleIfNeeded(equityUsdt);
+  }
+  return { ok: true, skipped: equityUsdt == null, equityUsdt: equityUsdt ?? null };
+}
+
+/**
  * @param {object} cfg loadAppConfig()
  */
 async function getDashboardSnapshot(cfg) {
@@ -129,10 +157,6 @@ async function getDashboardSnapshot(cfg) {
     const availEq = metrics?.usdtAvailEq ?? null;
     const marginUsedUsdt = pickMarginUsedUsdt(equityUsdt, availEq, metrics);
 
-    if (equityUsdt != null) {
-      dashboardStore.appendEquitySampleIfNeeded(equityUsdt);
-    }
-
     const equitySeries = buildEquitySeriesForDashboard(dashboardAgentToolStatsSince);
 
     let pnlVsBaseline = null;
@@ -184,4 +208,8 @@ async function getDashboardSnapshot(cfg) {
   }
 }
 
-module.exports = { getDashboardSnapshot };
+module.exports = {
+  BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS,
+  getDashboardSnapshot,
+  sampleDashboardEquityOnce,
+};

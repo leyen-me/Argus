@@ -26,7 +26,7 @@ export function FishModeOverlay() {
         </p>
         <div className="fish-mode-hint-row">
           <Keyboard className="size-3.5 shrink-0 opacity-70" aria-hidden />
-          <span>也可按</span>
+          <span>按</span>
           <kbd className="fish-mode-kbd">Esc</kbd>
           <span>退出</span>
         </div>

@@ -1,14 +1,6 @@
-import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
-
-const nativeSelectClass = cn(
-  "flex h-8 w-full min-w-0 rounded-lg border border-input bg-background px-2.5 text-sm shadow-sm outline-none",
-  "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30",
-);
-
 export function ConfigModalSymbolsAndInterval() {
   return (
-    <div className="space-y-4 pt-1">
+    <div className="space-y-3 pt-1">
       <div className="config-table-head">
         <span>展示名称</span>
         <span>TradingView 代码</span>
@@ -18,15 +10,6 @@ export function ConfigModalSymbolsAndInterval() {
       <button type="button" className="btn-add-row" id="btn-config-add">
         + 添加品种
       </button>
-      <div className="config-default-row flex flex-wrap items-center gap-3 sm:gap-4">
-        <Label htmlFor="config-default-symbol" className="shrink-0 text-muted-foreground">
-          默认打开
-        </Label>
-        <select
-          id="config-default-symbol"
-          className={cn("symbol-select config-default-select", nativeSelectClass)}
-        />
-      </div>
     </div>
   );
 }

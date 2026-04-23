@@ -1,13 +1,16 @@
 /**
  * OKX USDT 永续（SWAP）REST：Agent 工具与快照，仅处理 OKX: 前缀品种。
  * 开仓张数：保证金 = 可用 USDT × margin_fraction，名义 ≈ 保证金 × 杠杆；fraction / 杠杆 / 逐仓|全仓
- * 优先取自 open_position 工具入参，缺省回退到应用配置（okxSwapMarginFraction 等）。
+ * 优先取自 open_position 工具入参；未传时回退到内置默认值。
  */
 const crypto = require("crypto");
 const https = require("https");
 const { inferFeed } = require("./market");
 
 const OKX_REST = "https://www.okx.com";
+const DEFAULT_OKX_SWAP_LEVERAGE = 10;
+const DEFAULT_OKX_SWAP_MARGIN_FRACTION = 0.25;
+const DEFAULT_OKX_TD_MODE = "isolated";
 
 /**
  * OKX 失败时顶层 `msg` 常为「All operations failed」，具体原因在 `data[].sCode` / `data[].sMsg`。
@@ -569,7 +572,7 @@ async function fetchSwapPositionDetail(client, instId, cachedRows = null) {
 }
 
 /**
- * 开仓风险参数：优先工具入参，缺省回退到应用配置（测试或部分调用可省略）。
+ * 开仓风险参数：优先工具入参；缺省时使用内置默认值。
  * @param {object} cfg
  * @param {{ leverage?: unknown, marginFraction?: unknown, margin_fraction?: unknown, marginMode?: unknown, margin_mode?: unknown, td_mode?: unknown, lever?: unknown }} [args]
  * @returns {{ lever: number, marginFrac: number, tdMode: "cross"|"isolated" }}
@@ -578,20 +581,18 @@ function resolveOpenRiskParams(cfg, args) {
   const a = args && typeof args === "object" ? args : {};
   const rawLev = a.leverage ?? a.lever;
   let lever = Number(rawLev);
-  if (!Number.isFinite(lever)) lever = Number(cfg?.okxSwapLeverage);
-  if (!Number.isFinite(lever) || lever < 1) lever = 10;
+  if (!Number.isFinite(lever) || lever < 1) lever = DEFAULT_OKX_SWAP_LEVERAGE;
   lever = Math.min(125, Math.max(1, Math.floor(lever)));
 
   const rawMf = a.marginFraction ?? a.margin_fraction;
   let marginFrac = Number(rawMf);
-  if (!Number.isFinite(marginFrac)) marginFrac = Number(cfg?.okxSwapMarginFraction);
-  if (!Number.isFinite(marginFrac) || marginFrac <= 0) marginFrac = 0.25;
+  if (!Number.isFinite(marginFrac) || marginFrac <= 0) marginFrac = DEFAULT_OKX_SWAP_MARGIN_FRACTION;
   marginFrac = Math.min(1, Math.max(0.01, marginFrac));
 
   const mm = String(a.marginMode ?? a.margin_mode ?? a.td_mode ?? "").toLowerCase();
   let tdMode = mm === "cross" ? "cross" : mm === "isolated" ? "isolated" : undefined;
   if (tdMode === undefined) {
-    tdMode = cfg?.okxTdMode === "cross" ? "cross" : "isolated";
+    tdMode = DEFAULT_OKX_TD_MODE;
   }
   return { lever, marginFrac, tdMode };
 }
@@ -1773,9 +1774,7 @@ async function executeAgentPerpClose(cfg, args) {
       ? "cross"
       : detail.mgnMode === "isolated"
         ? "isolated"
-        : cfg.okxTdMode === "cross"
-          ? "cross"
-          : "isolated";
+        : DEFAULT_OKX_TD_MODE;
 
   const { closeSide } = resolveCloseParams(posMode, detail);
   const closeBase = {

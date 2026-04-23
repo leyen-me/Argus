@@ -17,7 +17,7 @@ const SHARED_AGENT_TOOLS_BLOCK =
   "2. 无需交易动作时，用一两句中文给出结论即可，不要为了形式强行调用工具。\n" +
   "3. 若 OKX 永续未启用或 API 未完整配置，相关工具会直接返回失败提示。\n" +
   "4. 开仓前先基于 account_snapshot 评估仓位；需要复核时，先调用 preview_open_size，再决定是否调用 open_position。\n" +
-  "5. 调用 open_position 时，应显式提供 leverage、margin_fraction、margin_mode；应用配置中的对应项只作为缺省回退。\n" +
+  "5. 调用 open_position 时，应显式提供 leverage、margin_fraction、margin_mode；若确实缺参，执行层会使用内置默认值兜底。\n" +
   "6. 限价单提交后可能仍处于未成交状态；应在后续轮次根据挂单快照继续判断，而不是默认已成交。\n" +
   "\n" +
   "纪律要求：\n" +

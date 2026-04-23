@@ -139,7 +139,7 @@ async function captureMultiTimeframeCharts() {
 
 /**
  * 与 app-config 中 `MIN_FALLBACK_*` 一致：仅当非 Electron 打开页面时用于界面预览兜底。
- * 正式内容由本地库表 `prompt_strategies` 提供（内置种子见主进程 `builtin-prompts.js`）；策略在「策略中心」维护，在配置中心选用。
+ * 正式内容由本地库表 `prompt_strategies` 提供（内置种子见主进程 `builtin-prompts.js`）；策略在「策略中心」维护，并在顶部快捷栏切换。
  */
 const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你是资深加密市场价格行为分析助手。每轮会收到已收盘 K 线、可选图表截图，以及 OKX 永续持仓与挂单快照（若已配置 API）。" +
@@ -175,9 +175,6 @@ const FALLBACK_APP_CONFIG = {
   okxApiKey: "",
   okxSecretKey: "",
   okxPassphrase: "",
-  okxSwapLeverage: 10,
-  okxSwapMarginFraction: 0.25,
-  okxTdMode: "isolated",
   dashboardBaselineEquityUsdt: null,
   dashboardAgentToolStatsSince: null,
 };
@@ -1663,29 +1660,12 @@ function applyPromptStrategySelect(cfg) {
 }
 
 /**
- * 配置弹窗内「K 线周期 / 默认打开」与快捷栏一致（弹窗未打开时元素可能不存在）。
- * @param {{ interval?: string, defaultSymbol?: string }} fields
- */
-function syncConfigModalMarketFields(fields) {
-  if (!fields || typeof fields !== "object") return;
-  if (fields.interval != null) {
-    const intEl = document.getElementById("config-interval");
-    if (intEl) intEl.value = String(fields.interval);
-  }
-  if (fields.defaultSymbol != null) {
-    const defEl = document.getElementById("config-default-symbol");
-    if (defEl) defEl.value = String(fields.defaultSymbol);
-  }
-}
-
-/**
  * 将快捷栏选的标的 / 周期写入本地设置（合并保存），并刷新主进程行情路由。
  * @param {{ defaultSymbol?: string, interval?: string }} partial
  */
 async function persistChartPreferences(partial) {
   if (!partial || typeof partial !== "object") return;
   if (!window.argus || typeof window.argus.saveConfig !== "function") {
-    syncConfigModalMarketFields(partial);
     return;
   }
   try {
@@ -1693,10 +1673,6 @@ async function persistChartPreferences(partial) {
     chartInterval = saved.interval || chartInterval;
     applyChartIntervalSelect(chartInterval);
     applySymbolSelect(saved);
-    syncConfigModalMarketFields({
-      interval: saved.interval,
-      defaultSymbol: saved.defaultSymbol,
-    });
   } catch (err) {
     console.error(err);
     setLlmStatus("保存行情设置失败");
@@ -1735,32 +1711,6 @@ function collectSymbolsFromConfigRows() {
     if (label && value) symbols.push({ label, value });
   });
   return symbols;
-}
-
-function fillDefaultSymbolSelect(symbols, selectedValue) {
-  const sel = document.getElementById("config-default-symbol");
-  if (!sel) return;
-  sel.replaceChildren();
-  if (!symbols || symbols.length === 0) return;
-  for (const s of symbols) {
-    const opt = document.createElement("option");
-    opt.value = s.value;
-    opt.textContent = s.label;
-    sel.appendChild(opt);
-  }
-  const pick = symbols.some((s) => s.value === selectedValue) ? selectedValue : symbols[0].value;
-  sel.value = pick;
-}
-
-function onConfigRowRemoved() {
-  const syms = collectSymbolsFromConfigRows();
-  const defSel = document.getElementById("config-default-symbol");
-  const prev = defSel?.value;
-  if (syms.length === 0) {
-    fillDefaultSymbolSelect([], "");
-    return;
-  }
-  fillDefaultSymbolSelect(syms, prev);
 }
 
 function renderConfigRows(symbols) {
@@ -1864,9 +1814,6 @@ function initConfigCenter() {
 
   const fillConfigModalFields = (cfg) => {
     renderConfigRows(cfg.symbols);
-    fillDefaultSymbolSelect(cfg.symbols, cfg.defaultSymbol);
-    const intSel = document.getElementById("config-interval");
-    if (intSel) intSel.value = cfg.interval || "5";
     const openaiUrlEl = document.getElementById("config-openai-base-url");
     const openaiModelEl = document.getElementById("config-openai-model");
     if (openaiUrlEl) openaiUrlEl.value = cfg.openaiBaseUrl || FALLBACK_APP_CONFIG.openaiBaseUrl;
@@ -1893,12 +1840,6 @@ function initConfigCenter() {
     if (okxAk) okxAk.value = cfg.okxApiKey ?? FALLBACK_APP_CONFIG.okxApiKey;
     if (okxSk) okxSk.value = cfg.okxSecretKey ?? FALLBACK_APP_CONFIG.okxSecretKey;
     if (okxPh) okxPh.value = cfg.okxPassphrase ?? FALLBACK_APP_CONFIG.okxPassphrase;
-    const okxLev = document.getElementById("config-okx-leverage");
-    const okxMf = document.getElementById("config-okx-margin-fraction");
-    if (okxLev) okxLev.value = String(cfg.okxSwapLeverage ?? FALLBACK_APP_CONFIG.okxSwapLeverage);
-    if (okxMf) okxMf.value = String(cfg.okxSwapMarginFraction ?? FALLBACK_APP_CONFIG.okxSwapMarginFraction);
-    const okxTd = document.getElementById("config-okx-td-mode");
-    if (okxTd) okxTd.value = cfg.okxTdMode === "isolated" ? "isolated" : "cross";
     applyPromptStrategySelect(cfg);
   };
 
@@ -1921,17 +1862,6 @@ function initConfigCenter() {
     const cfg = await loadAppConfig();
     window.dispatchEvent(new CustomEvent(ARGUS_CONFIG_MODAL_OPEN));
     const fillAfterOpen = async () => {
-      const pathEl = document.getElementById("config-file-path");
-      if (pathEl && window.argus && typeof window.argus.getConfigPath === "function") {
-        try {
-          const p = await window.argus.getConfigPath();
-          pathEl.textContent = `本地数据库（应用设置存于此）：${p}`;
-        } catch {
-          pathEl.textContent = "";
-        }
-      } else if (pathEl) {
-        pathEl.textContent = "";
-      }
       fillConfigModalFields(cfg);
     };
     requestAnimationFrame(() => {
@@ -1958,9 +1888,7 @@ function initConfigCenter() {
 
     if (el.classList.contains("btn-row-remove")) {
       ev.preventDefault();
-      const row = el.closest(".config-row");
-      row?.remove();
-      onConfigRowRemoved();
+      el.closest(".config-row")?.remove();
       return;
     }
 
@@ -2031,18 +1959,11 @@ function initConfigCenter() {
     if (id === "btn-config-save") {
       ev.preventDefault();
       void (async () => {
-        let symbols = collectSymbolsFromConfigRows();
-        const defEl = document.getElementById("config-default-symbol");
-        let defaultSymbol = defEl?.value?.trim() ?? "";
+        const symbols = collectSymbolsFromConfigRows();
         if (symbols.length === 0) {
           setLlmStatus("请至少填写一行品种");
           return;
         }
-        if (!symbols.some((s) => s.value === defaultSymbol)) {
-          defaultSymbol = symbols[0].value;
-        }
-        const intEl = document.getElementById("config-interval");
-        const interval = intEl?.value?.trim() || "5";
         const openaiUrlEl = document.getElementById("config-openai-base-url");
         const openaiModelEl = document.getElementById("config-openai-model");
         const openaiKeyEl = document.getElementById("config-openai-api-key");
@@ -2064,28 +1985,19 @@ function initConfigCenter() {
         const okxAk = document.getElementById("config-okx-api-key");
         const okxSk = document.getElementById("config-okx-secret-key");
         const okxPh = document.getElementById("config-okx-passphrase");
-        const okxLev = document.getElementById("config-okx-leverage");
-        const okxMf = document.getElementById("config-okx-margin-fraction");
-        const okxTd = document.getElementById("config-okx-td-mode");
         const okxSwapTradingEnabled = okxEn?.checked === true;
         const okxSimulated = okxSim?.checked !== false;
         const okxApiKey = okxAk?.value?.trim() ?? "";
         const okxSecretKey = okxSk?.value?.trim() ?? "";
         const okxPassphrase = okxPh?.value?.trim() ?? "";
-        const okxSwapLeverage = Math.min(125, Math.max(1, Math.floor(Number(okxLev?.value) || 10)));
-        const okxSwapMarginFraction = Math.min(
-          1,
-          Math.max(0.01, Number(okxMf?.value) || 0.25),
-        );
-        const okxTdMode = okxTd?.value === "isolated" ? "isolated" : "cross";
-        const stratEl = document.getElementById("config-prompt-strategy");
-        const promptStrategy = stratEl?.value?.trim() || "default";
+        const currentSymbolEl = document.getElementById("symbol-select");
+        const currentSymbol = currentSymbolEl?.value?.trim() ?? "";
+        const fallbackSymbol = symbols[0]?.value ?? "OKX:BTCUSDT";
+        const nextDefaultSymbol = symbols.some((s) => s.value === currentSymbol) ? currentSymbol : fallbackSymbol;
 
         if (!window.argus || typeof window.argus.saveConfig !== "function") {
-          applySymbolSelect({ symbols, defaultSymbol });
-          chartInterval = interval;
-          applyChartIntervalSelect(chartInterval);
-          createTradingViewWidget(defaultSymbol, chartInterval);
+          applySymbolSelect({ symbols, defaultSymbol: nextDefaultSymbol });
+          createTradingViewWidget(nextDefaultSymbol, chartInterval);
           closeModal();
           refreshExchangeContextBarFromCache();
           void refreshOkxPositionBar();
@@ -2094,9 +2006,6 @@ function initConfigCenter() {
         try {
           const saved = await window.argus.saveConfig({
             symbols,
-            defaultSymbol,
-            interval,
-            promptStrategy,
             openaiBaseUrl,
             openaiModel,
             openaiApiKey,
@@ -2110,12 +2019,9 @@ function initConfigCenter() {
             okxApiKey,
             okxSecretKey,
             okxPassphrase,
-            okxSwapLeverage,
-            okxSwapMarginFraction,
-            okxTdMode,
           });
           applySymbolSelect(saved);
-          chartInterval = saved.interval || interval;
+          chartInterval = saved.interval || chartInterval;
           applyChartIntervalSelect(chartInterval);
           createTradingViewWidget(saved.defaultSymbol, chartInterval);
           closeModal();

@@ -15,7 +15,6 @@ import {
 } from "@/lib/argus-config-modal-events";
 import { ConfigModalEmailSection } from "./email-section";
 import { ConfigModalFooter } from "./config-modal-footer";
-import { ConfigModalIntro } from "./intro";
 import { ConfigModalLlmSection } from "./llm-section";
 import { ConfigModalOkxSection } from "./okx-section";
 import { ConfigModalSymbolsAndInterval } from "./symbols-and-interval";
@@ -70,12 +69,9 @@ export function ConfigModal() {
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
           <div className="space-y-1">
-            <ConfigModalIntro />
-            <p className="modal-path m-0 text-[11px] leading-snug text-muted-foreground" id="config-file-path" />
-
-            <div className="flex flex-col gap-6 pt-4">
+            <div className="flex flex-col gap-6">
               <section className="space-y-0">
-                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">行情与周期</h3>
+                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">交易标的</h3>
                 <ConfigModalSymbolsAndInterval />
               </section>
               <section className="space-y-0">

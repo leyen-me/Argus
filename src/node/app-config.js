@@ -43,9 +43,6 @@ const APP_SETTINGS_SEED = Object.freeze({
   okxApiKey: "",
   okxSecretKey: "",
   okxPassphrase: "",
-  okxSwapLeverage: 10,
-  okxSwapMarginFraction: 0.25,
-  okxTdMode: "isolated",
   /** 仪表盘「初始资金」基准（USDT 权益）；null 表示未设定，可在界面一键写入当前权益。 */
   dashboardBaselineEquityUsdt: null,
   /** 仪表盘「Agent 工具统计」起点：仅统计 captured_at 不早于此 ISO 时间的回合；null 表示自始累计。 */
@@ -275,18 +272,6 @@ function normalizeConfig(raw) {
   const okxPassphrase =
     typeof raw.okxPassphrase === "string" ? raw.okxPassphrase.trim() : base.okxPassphrase;
 
-  let okxSwapLeverage = base.okxSwapLeverage;
-  const ol = Number(raw.okxSwapLeverage);
-  if (Number.isFinite(ol) && ol >= 1) okxSwapLeverage = Math.min(125, Math.floor(ol));
-
-  let okxSwapMarginFraction = base.okxSwapMarginFraction;
-  const omf = Number(raw.okxSwapMarginFraction);
-  if (Number.isFinite(omf) && omf > 0) okxSwapMarginFraction = Math.min(1, omf);
-
-  let okxTdMode = base.okxTdMode;
-  if (raw.okxTdMode === "isolated") okxTdMode = "isolated";
-  else if (raw.okxTdMode === "cross") okxTdMode = "cross";
-
   let dashboardBaselineEquityUsdt = base.dashboardBaselineEquityUsdt;
   if ("dashboardBaselineEquityUsdt" in raw) {
     const v = raw.dashboardBaselineEquityUsdt;
@@ -334,9 +319,6 @@ function normalizeConfig(raw) {
     okxApiKey,
     okxSecretKey,
     okxPassphrase,
-    okxSwapLeverage,
-    okxSwapMarginFraction,
-    okxTdMode,
     dashboardBaselineEquityUsdt,
     dashboardAgentToolStatsSince,
   };

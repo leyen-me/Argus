@@ -8,22 +8,22 @@ const TRADING_AGENT_TOOLS = [
     function: {
       name: "preview_open_size",
       description:
-        "仅做预估，不会下单。基于当前 OKX 账户可用权益、最新价格和给定风险参数，计算预估可开张数、保证金、名义价值及是否满足最小下单张数。适合在开仓前复核 sizing；省略 leverage、margin_fraction、margin_mode 时会回退到应用配置默认值。",
+        "仅做预估，不会下单。基于当前 OKX 账户可用权益、最新价格和给定风险参数，计算预估可开张数、保证金、名义价值及是否满足最小下单张数。适合在开仓前复核 sizing；省略 leverage、margin_fraction、margin_mode 时会回退到内置默认值。",
       parameters: {
         type: "object",
         properties: {
           leverage: {
             type: "integer",
-            description: "可选，杠杆倍数，范围 1-125；省略时回退到应用配置默认值。",
+            description: "可选，杠杆倍数，范围 1-125；省略时回退到内置默认值。",
           },
           margin_fraction: {
             type: "number",
-            description: "可选，占用当前可用 USDT 权益的比例，建议范围 0.01-1；省略时回退到应用配置默认值。",
+            description: "可选，占用当前可用 USDT 权益的比例，建议范围 0.01-1；省略时回退到内置默认值。",
           },
           margin_mode: {
             type: "string",
             enum: ["isolated", "cross"],
-            description: "可选，保证金模式；isolated=逐仓，cross=全仓。省略时回退到应用配置默认值。",
+            description: "可选，保证金模式；isolated=逐仓，cross=全仓。省略时回退到内置默认值。",
           },
         },
         required: [],

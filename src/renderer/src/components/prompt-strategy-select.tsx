@@ -56,7 +56,7 @@ export function PromptStrategySelect({
       {options.length === 0 ? (
         <div
           className={cn(
-            "flex h-7 w-[min(180px,34vw)] max-w-full items-center rounded-lg border border-border bg-background px-2.5 text-sm text-muted-foreground",
+            "flex h-7 min-w-0 max-w-full items-center rounded-lg border border-border bg-background px-2.5 text-sm text-muted-foreground",
             triggerClassName,
           )}
           aria-hidden
@@ -67,7 +67,7 @@ export function PromptStrategySelect({
         <Select value={resolvedValue} onValueChange={onValueChange}>
           <SelectTrigger
             size="sm"
-            className={cn("h-7 w-[min(180px,34vw)] max-w-full border-border bg-background shadow-none", triggerClassName)}
+            className={cn("h-7 min-w-0 max-w-full border-border bg-background shadow-none", triggerClassName)}
             title="当前策略"
           >
             <SelectValue placeholder="选择策略" />

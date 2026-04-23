@@ -71,6 +71,17 @@ const MD_ALGO_ORDER_HEADERS = [
   "ordPx",
 ];
 
+const MD_ORDER_INTENT_HEADERS = [
+  "entityType",
+  "entityId",
+  "action",
+  "side",
+  "liveState",
+  "livePx",
+  "liveSz",
+  "summary",
+];
+
 const OKX_POSITION_HISTORY_LLM_HEADERS = [
   "标的",
   "方向",
@@ -187,6 +198,30 @@ function pickRow(o, keys) {
 }
 
 /**
+ * @param {Array<object> | null | undefined} intents
+ */
+function orderIntentMemoryBlock(intents) {
+  const rows = Array.isArray(intents) ? intents : [];
+  if (rows.length === 0) return "（当前无本地挂单意图记忆。）";
+  return mdTable(
+    MD_ORDER_INTENT_HEADERS,
+    rows.map((row) => {
+      const live = row && typeof row === "object" && row.live && typeof row.live === "object" ? row.live : null;
+      return [
+        row?.entityType === "algo" ? "algo" : "order",
+        row?.entityId ?? "—",
+        row?.action ?? "—",
+        row?.side ?? "—",
+        live?.state ?? "—",
+        live?.px ?? live?.ordPx ?? live?.triggerPx ?? "—",
+        live?.sz ?? "—",
+        row?.summary ?? "—",
+      ];
+    }),
+  );
+}
+
+/**
  * @param {object | null | undefined} fields
  */
 function positionFieldsTable(fields) {
@@ -282,6 +317,8 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory) {
         )
       : "（当前无算法挂单。）";
 
+  const orderIntentBlock = orderIntentMemoryBlock(exchangeCtx.order_intents);
+
   const contractBlock = mdTable(
     ["项目", "值"],
     [
@@ -315,6 +352,12 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory) {
     posSummary,
     "",
     posFieldsSection,
+    "",
+    "### 挂单意图记忆（本地）",
+    "",
+    "> **说明**：仅展示当前仍能在交易所 pending 快照里匹配到的本地意图摘要，用来说明这些挂单当初为什么存在；若当前结构已变化，不必机械坚持原判断。",
+    "",
+    orderIntentBlock,
     "",
     "### 普通挂单",
     "",
@@ -429,7 +472,7 @@ async function emitBarClose(winGetter, ctx) {
 
   const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
   const [exchangeCtx, recentCandlesPack, positionsHistory] = await Promise.all([
-    getOkxExchangeContextForBar(cfg, ctx.tvSymbol),
+    getOkxExchangeContextForBar(cfg, ctx.tvSymbol, ctx.interval),
     Promise.all(
       MULTI_TIMEFRAME_CAPTURE_SPECS.map(async (spec) => [
         spec.interval,
@@ -586,7 +629,7 @@ async function emitBarClose(winGetter, ctx) {
         : Promise.resolve(/** @type {{ ok: boolean, text?: string }} */ ({ ok: false }));
     const [sumResult, exchangeAfter] = await Promise.all([
       summaryP,
-      getOkxExchangeContextForBar(cfg, ctx.tvSymbol),
+      getOkxExchangeContextForBar(cfg, ctx.tvSymbol, ctx.interval),
     ]);
     if (sumResult.ok && sumResult.text) {
       llm.cardSummary = sumResult.text;

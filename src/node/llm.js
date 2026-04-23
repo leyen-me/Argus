@@ -826,7 +826,10 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
         } catch {
           args = {};
         }
-        const result = await executeTool(String(name), args);
+        const result = await executeTool(String(name), args, {
+          step,
+          assistantPreview: messageContentToString(msg.content).trim(),
+        });
         toolTrace.push({ name: String(name), args, result });
         thread.push({
           role: "tool",

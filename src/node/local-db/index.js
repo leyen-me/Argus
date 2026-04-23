@@ -9,6 +9,7 @@
  * - `agent_sessions` / `agent_session_messages`：收盘 Agent 会话与有序消息（user_version ≥ 6）。
  * - `dashboard_equity_samples`：仪表盘权益曲线采样（user_version ≥ 7）。
  * - `agent_sessions.card_summary`：收盘后二次 LLM 卡片短摘要（user_version ≥ 8）。
+ * - `order_intents`：未完成挂单的本地意图记忆（user_version ≥ 9）。
  * - 其他强关系数据可在同一库中新建表并递增 user_version；业务模块仅依赖 `getDatabase()`。
  *
  * 约定命名空间（namespace）示例：
@@ -180,6 +181,36 @@ function applyMigrations(database) {
       ALTER TABLE agent_sessions ADD COLUMN card_summary TEXT;
     `);
     database.pragma("user_version = 8");
+    v = 8;
+  }
+  if (v < 9) {
+    database.exec(`
+      CREATE TABLE order_intents (
+        intent_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        tv_symbol TEXT NOT NULL,
+        interval TEXT NOT NULL DEFAULT '',
+        bar_close_id TEXT NOT NULL DEFAULT '',
+        action TEXT NOT NULL DEFAULT '',
+        side TEXT,
+        summary TEXT NOT NULL DEFAULT '',
+        thesis TEXT NOT NULL DEFAULT '',
+        limit_price TEXT,
+        size TEXT,
+        take_profit_trigger_price TEXT,
+        stop_loss_trigger_price TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        inactive_reason TEXT,
+        raw_args_json TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        resolved_at TEXT
+      );
+      CREATE UNIQUE INDEX idx_order_intents_entity ON order_intents (entity_type, entity_id);
+      CREATE INDEX idx_order_intents_active ON order_intents (tv_symbol, interval, status, updated_at DESC);
+    `);
+    database.pragma("user_version = 9");
   }
 }
 

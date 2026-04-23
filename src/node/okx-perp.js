@@ -4,6 +4,7 @@
  * 优先取自 open_position 工具入参；未传时回退到内置默认值。
  */
 const crypto = require("crypto");
+const { reconcileAndListActiveOrderIntents } = require("./order-intents-store");
 const https = require("https");
 const { inferFeed } = require("./market");
 
@@ -1396,7 +1397,7 @@ function describeOkxExchangeContextGateFailure(exchangeCtx) {
  * @param {object} cfg
  * @param {string} tvSymbol
  */
-async function getOkxExchangeContextForBar(cfg, tvSymbol) {
+async function getOkxExchangeContextForBar(cfg, tvSymbol, interval = "") {
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
     return { ok: true, enabled: false, reason: "okx_swap_disabled" };
   }
@@ -1418,6 +1419,12 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol) {
     const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
     const position = await fetchSwapPositionSnapshot(client, instId);
     const { pending_orders, pending_algo_orders } = await fetchSwapPendingOrderSummaries(client, instId);
+    const order_intents = reconcileAndListActiveOrderIntents({
+      tvSymbol,
+      interval,
+      pendingOrders: pending_orders,
+      pendingAlgoOrders: pending_algo_orders,
+    });
 
     /** @type {number | null} */
     let usdt_avail_eq = null;
@@ -1468,6 +1475,7 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol) {
       position,
       pending_orders,
       pending_algo_orders,
+      order_intents,
       usdt_avail_eq,
       contract_sizing,
       sizing_examples,

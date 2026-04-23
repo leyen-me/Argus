@@ -50,7 +50,13 @@ function mockWin() {
 }
 
 function depsWith(overrides) {
-  return { ...TRADING_EXECUTOR_DEFAULT_DEPS, ...overrides };
+  return {
+    ...TRADING_EXECUTOR_DEFAULT_DEPS,
+    upsertOrderIntent: () => true,
+    updateOrderIntent: () => true,
+    markOrderIntentStatus: () => true,
+    ...overrides,
+  };
 }
 
 test("requireOkx：未启用永续", () => {
@@ -203,6 +209,45 @@ test("open_position：限价成功文案", async () => {
   });
   assert.equal(out.ok, true);
   assert.match(out.message, /限价/);
+});
+
+test("open_position：限价成功会写入订单意图", async () => {
+  let remembered = null;
+  const exec = createTradingToolExecutor(
+    { cfg: baseCfg(), tvSymbol: TV_OKX, barCloseId: BAR_ID, interval: "5", win: null },
+    depsWith({
+      executeAgentPerpOpen: async () => ({
+        ok: true,
+        ordId: "ord-limit-memory",
+        sz: "0.02",
+        avgPx: null,
+      }),
+      upsertOrderIntent: (row) => {
+        remembered = row;
+        return true;
+      },
+      summarizeIntentText: (text, fallback) => (text && String(text).trim() ? text : fallback),
+    }),
+  );
+  await exec(
+    "open_position",
+    {
+      ...OPEN_RISK,
+      side: "long",
+      order_type: "limit",
+      limit_price: 98_000,
+      stop_loss_trigger_price: 96_500,
+    },
+    { assistantPreview: "回踩关键支撑，先挂限价多单等成交。" },
+  );
+  assert.ok(remembered);
+  assert.equal(remembered.entityType, "order");
+  assert.equal(remembered.entityId, "ord-limit-memory");
+  assert.equal(remembered.action, "open_long_limit");
+  assert.equal(remembered.interval, "5");
+  assert.equal(remembered.limitPrice, 98_000);
+  assert.equal(remembered.stopLossTriggerPrice, 96_500);
+  assert.match(remembered.summary, /回踩关键支撑/);
 });
 
 test("open_position：止盈止损与触发类型传入 executeAgentPerpOpen", async () => {
@@ -446,6 +491,28 @@ test("cancel_order：成功", async () => {
   assert.equal(cancelArgs.ordId, "998877");
 });
 
+test("cancel_order：成功后会关闭订单意图", async () => {
+  let statusCall = null;
+  const exec = createTradingToolExecutor(
+    { cfg: baseCfg(), tvSymbol: TV_OKX, barCloseId: BAR_ID, interval: "5", win: null },
+    depsWith({
+      createOkxClient: () => ({}),
+      tvSymbolToSwapInstId: () => "BTC-USDT-SWAP",
+      cancelSwapOrder: async () => {},
+      markOrderIntentStatus: (...args) => {
+        statusCall = args;
+        return true;
+      },
+    }),
+  );
+  await exec("cancel_order", { order_id: "998877" }, { assistantPreview: "成交概率下降，直接撤掉旧单。" });
+  assert.ok(statusCall);
+  assert.equal(statusCall[0], "order");
+  assert.equal(statusCall[1], "998877");
+  assert.equal(statusCall[2], "cancelled");
+  assert.equal(statusCall[3], "cancel_order");
+});
+
 test("cancel_order：order_id 为数字时转为字符串", async () => {
   let ordId = null;
   const exec = createTradingToolExecutor(
@@ -525,6 +592,40 @@ test("amend_order：仅 new_price", async () => {
   assert.equal(patch.ordId, "55");
   assert.equal(patch.newPx, 100.5);
   assert.equal(patch.newSz, undefined);
+});
+
+test("amend_order：成功后会更新订单意图", async () => {
+  let patchCall = null;
+  let fallbackCall = null;
+  const exec = createTradingToolExecutor(
+    { cfg: baseCfg(), tvSymbol: TV_OKX, barCloseId: BAR_ID, interval: "5", win: null },
+    depsWith({
+      createOkxClient: () => ({}),
+      tvSymbolToSwapInstId: () => "BTC-USDT-SWAP",
+      amendSwapOrder: async () => {},
+      updateOrderIntent: (...args) => {
+        patchCall = args;
+        return false;
+      },
+      upsertOrderIntent: (row) => {
+        fallbackCall = row;
+        return true;
+      },
+      summarizeIntentText: (text, fallback) => (text && String(text).trim() ? text : fallback),
+    }),
+  );
+  await exec(
+    "amend_order",
+    { order_id: "55", new_price: 100.5 },
+    { assistantPreview: "挂单价格太远了，往现价附近收一档。" },
+  );
+  assert.ok(patchCall);
+  assert.equal(patchCall[0], "order");
+  assert.equal(patchCall[1], "55");
+  assert.ok(fallbackCall);
+  assert.equal(fallbackCall.entityId, "55");
+  assert.equal(fallbackCall.limitPrice, 100.5);
+  assert.match(fallbackCall.summary, /现价附近/);
 });
 
 test("amend_order：仅 new_size", async () => {

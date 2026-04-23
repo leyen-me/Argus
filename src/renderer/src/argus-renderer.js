@@ -634,12 +634,62 @@ function updateLlmRoundAfterAgentFinished(barCloseId, outcome) {
 }
 
 /**
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeSessionDisplayText(text) {
+  return String(text || "").replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n");
+}
+
+/**
+ * 仅用于弹窗展示：把多模态 content 提炼成人可读文本。
+ * - `type: "text"` 提取其中的 text
+ * - `type: "image_url"` 直接忽略
+ * 其他结构仍交回 JSON 回退逻辑处理。
+ *
+ * @param {unknown} content
+ * @returns {string | null}
+ */
+function extractReadableSessionContent(content) {
+  if (Array.isArray(content)) {
+    const textParts = [];
+    let recognized = false;
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const item = /** @type {{ type?: string, text?: string }} */ (part);
+      const type = String(item.type || "");
+      if (type === "text") {
+        recognized = true;
+        textParts.push(normalizeSessionDisplayText(item.text || ""));
+        continue;
+      }
+      if (type === "image_url") {
+        recognized = true;
+      }
+    }
+    if (recognized) return textParts.join("\n\n").trim();
+    return null;
+  }
+
+  if (content && typeof content === "object") {
+    const item = /** @type {{ type?: string, text?: string }} */ (content);
+    const type = String(item.type || "");
+    if (type === "text") return normalizeSessionDisplayText(item.text || "");
+    if (type === "image_url") return "";
+  }
+
+  return null;
+}
+
+/**
  * @param {unknown} content
  * @returns {string}
  */
 function formatSessionMsgContent(content) {
   if (content == null) return "";
-  if (typeof content === "string") return content;
+  if (typeof content === "string") return normalizeSessionDisplayText(content);
+  const readable = extractReadableSessionContent(content);
+  if (readable != null) return readable;
   try {
     return JSON.stringify(content, null, 2);
   } catch {

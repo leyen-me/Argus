@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { AlertCircle, Pause, Play } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
 type EquityPoint = { t: string; equity: number }
@@ -106,6 +106,24 @@ function resolveSymbolLabel(config: DashboardConfig | null) {
   const options = Array.isArray(config?.symbols) ? config.symbols : []
   const matched = options.find((item) => item?.value === current)
   return matched?.label?.trim() || current || "未选择品种"
+}
+
+function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
+  if (!points.length) return ""
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`
+  let d = `M ${points[0].x} ${points[0].y}`
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const p0 = points[i - 1] ?? points[i]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const p3 = points[i + 2] ?? p2
+    const cp1x = p1.x + (p2.x - p0.x) / 6
+    const cp1y = p1.y + (p2.y - p0.y) / 6
+    const cp2x = p2.x - (p3.x - p1.x) / 6
+    const cp2y = p2.y - (p3.y - p1.y) / 6
+    d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`
+  }
+  return d
 }
 
 function MetricCard({
@@ -230,12 +248,6 @@ function AccountOverviewCard({
 
   return (
     <Card className="gap-0 py-0 shadow-none ring-border/60">
-      <CardHeader className="gap-1 border-b border-border/60 px-5 py-4">
-        <CardTitle className="text-base font-semibold">账户模块</CardTitle>
-        <CardDescription>
-          {strategyRunning ? "聚合展示当前策略范围内的核心账户指标。" : "启动策略后会按当前权益生成基准。"}
-        </CardDescription>
-      </CardHeader>
       <CardContent className="px-5 py-5">
         <div className="grid grid-cols-4 gap-3">
           <MetricCard
@@ -318,13 +330,11 @@ function EquityCurveChart({ series }: { series: EquityPoint[] }) {
     const y = padY + innerH - (innerH * (p.equity - min)) / span
     return { x, y }
   })
-  const lineD = points.map((pt, idx) => `${idx === 0 ? "M" : "L"} ${pt.x} ${pt.y}`).join(" ")
-  const last = points[points.length - 1]
-  const areaD = `${lineD} L ${last?.x ?? padX} ${padY + innerH} L ${padX} ${padY + innerH} Z`
+  const lineD = buildSmoothLinePath(points)
   const ticks = [max, min + span / 2, min]
 
   return (
-    <div className="h-full w-full min-w-0 flex-1 rounded-2xl border border-border/60 bg-background p-3 ring-1 ring-inset ring-border/25">
+    <div className="h-full w-full min-w-0 flex-1">
       <svg className="h-full w-full" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-label="账户净值曲线">
         {ticks.map((tick) => {
           const y = padY + innerH - (innerH * (tick - min)) / span
@@ -339,14 +349,6 @@ function EquityCurveChart({ series }: { series: EquityPoint[] }) {
                 strokeOpacity="0.08"
                 strokeDasharray="5 5"
               />
-              <text
-                x={w - padX}
-                y={y - 6}
-                textAnchor="end"
-                className="fill-muted-foreground text-[11px] tabular-nums"
-              >
-                {fmtUsd(tick)}
-              </text>
             </g>
           )
         })}
@@ -354,50 +356,22 @@ function EquityCurveChart({ series }: { series: EquityPoint[] }) {
         <path
           d={lineD}
           fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
+          stroke="var(--chart-2)"
+          strokeWidth="4"
           strokeLinecap="round"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
-          className="text-primary"
+          opacity="0.98"
         />
-        {last ? <circle cx={last.x} cy={last.y} r="5" className="fill-primary stroke-background" strokeWidth="3" /> : null}
       </svg>
     </div>
   )
 }
 
-function EquityCurveCard({
-  series,
-  sinceIso,
-}: {
-  series: EquityPoint[]
-  sinceIso?: string | null
-}) {
-  const first = series[0]?.equity
-  const last = series[series.length - 1]?.equity
-  const delta =
-    first != null && last != null && Number.isFinite(first) && Number.isFinite(last) ? last - first : null
-  const latestAt = series.length ? fmtSampleTime(series[series.length - 1]?.t) : null
-  const scopeLabel = sinceIso ? `统计起点 ${fmtSampleTime(sinceIso) ?? sinceIso}` : "展示最近本地采样"
-
+function EquityCurveCard({ series }: { series: EquityPoint[] }) {
   return (
-    <Card className="min-h-0 gap-0 py-0 shadow-none ring-border/60">
-      <CardHeader className="border-b border-border/60 px-5 py-4">
-        <div className="flex items-end justify-between gap-3">
-          <div className="space-y-1">
-            <CardTitle className="text-base font-semibold">账户净值曲线</CardTitle>
-            <CardDescription>{scopeLabel}</CardDescription>
-          </div>
-          <div className="text-right text-xs text-muted-foreground">
-            <div>最新采样 {latestAt ?? "—"}</div>
-            <div className={cn("mt-1 font-medium tabular-nums", toneForSignedValue(delta))}>
-              区间变化 {fmtSignedUsd(delta)}
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 px-5 py-5">
+    <Card className="min-h-0 gap-0 bg-transparent py-0 shadow-none ring-border/60">
+      <CardContent className="flex min-h-0 flex-1 flex-col px-5 py-5">
         <EquityCurveChart series={series} />
       </CardContent>
     </Card>
@@ -524,7 +498,7 @@ export function TradingDashboardCard({
 
       <AccountOverviewCard snap={snap} strategyRunning={strategyRunning} />
 
-      <EquityCurveCard series={series} sinceIso={snap?.dashboardAgentToolStatsSince} />
+      <EquityCurveCard series={series} />
     </div>
   )
 }

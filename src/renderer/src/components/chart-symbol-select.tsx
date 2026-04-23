@@ -50,7 +50,7 @@ export function ChartSymbolSelect() {
       <select id="symbol-select" className="sr-only" tabIndex={-1} title="交易对" />
       {options.length === 0 ? (
         <div
-          className="flex h-7 w-[min(240px,42vw)] max-w-full items-center rounded-lg border border-border bg-background px-2.5 text-sm text-muted-foreground"
+          className="inline-flex h-7 max-w-[min(240px,42vw)] items-center rounded-lg border border-border bg-background px-2.5 text-sm text-muted-foreground"
           aria-hidden
         >
           加载品种…
@@ -59,12 +59,12 @@ export function ChartSymbolSelect() {
         <Select value={resolvedValue} onValueChange={onValueChange}>
           <SelectTrigger
             size="sm"
-            className="h-7 w-[min(240px,42vw)] max-w-full border-border bg-background shadow-none"
+            className="h-7 w-auto max-w-[min(240px,42vw)] gap-1 border-border bg-background pr-1.5 shadow-none"
             title="交易对"
           >
-            <SelectValue placeholder="选择标的" />
+            <SelectValue className="max-w-48 truncate" placeholder="选择标的" />
           </SelectTrigger>
-          <SelectContent position="popper" className="z-[200]">
+          <SelectContent position="popper" className="z-200">
             {options.map((o) => (
               <SelectItem key={o.value} value={o.value}>
                 {o.label}

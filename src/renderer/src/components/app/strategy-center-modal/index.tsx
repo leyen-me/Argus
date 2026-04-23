@@ -210,7 +210,7 @@ export function StrategyCenterModal() {
         showCloseButton={false}
         forceMount
         className={cn(
-          "flex max-h-[min(92vh,800px)] w-[min(900px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[900px]",
+          "flex h-[min(88vh,920px)] w-[min(1180px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1180px]",
         )}
       >
         <DialogHeader className="shrink-0 space-y-0 border-b border-border px-5 py-4 text-left">

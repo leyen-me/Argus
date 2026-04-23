@@ -247,61 +247,57 @@ function AccountOverviewCard({
       : null
 
   return (
-    <Card className="gap-0 py-0 shadow-none ring-border/60">
-      <CardContent className="px-5 py-5">
-        <div className="grid grid-cols-4 gap-3">
-          <MetricCard
-            label="胜率"
-            value={
-              <div
-                className={cn(
-                  "text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums",
-                  toneForSignedValue(winRate != null ? winRate - 0.5 : null),
-                )}
-              >
-                {fmtPct(winRate)}
-              </div>
-            }
-          />
+    <div className="grid grid-cols-4 gap-3">
+      <MetricCard
+        label="胜率"
+        value={
+          <div
+            className={cn(
+              "text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums",
+              toneForSignedValue(winRate != null ? winRate - 0.5 : null),
+            )}
+          >
+            {fmtPct(winRate)}
+          </div>
+        }
+      />
 
-          <MetricCard
-            label="总盈亏"
-            value={
-              <div className="space-y-1">
-                <div className={cn("text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums", toneForSignedValue(totalPnl))}>
-                  {fmtSignedUsd(totalPnl)}
-                </div>
-                <div className={cn("text-sm font-medium tabular-nums", toneForSignedValue(totalPnl))}>
-                  {fmtPct(totalPnlRatio)}
-                </div>
-              </div>
-            }
-            desc={baseline != null ? `初始 ${fmtUsd(baseline)} USDT` : "初始 —"}
-          />
+      <MetricCard
+        label="总盈亏"
+        value={
+          <div className="space-y-1">
+            <div className={cn("text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums", toneForSignedValue(totalPnl))}>
+              {fmtSignedUsd(totalPnl)}
+            </div>
+            <div className={cn("text-sm font-medium tabular-nums", toneForSignedValue(totalPnl))}>
+              {fmtPct(totalPnlRatio)}
+            </div>
+          </div>
+        }
+        desc={baseline != null ? `初始 ${fmtUsd(baseline)} USDT` : "初始 —"}
+      />
 
-          <MetricCard
-            label="未实现盈亏"
-            value={
-              <div className={cn("text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums", toneForSignedValue(unrealizedPnl))}>
-                {fmtSignedUsd(unrealizedPnl)}
-              </div>
-            }
-          />
+      <MetricCard
+        label="未实现盈亏"
+        value={
+          <div className={cn("text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums", toneForSignedValue(unrealizedPnl))}>
+            {fmtSignedUsd(unrealizedPnl)}
+          </div>
+        }
+      />
 
-          <MetricCard
-            label="可用资金"
-            value={
-              <div className="space-y-1">
-                <div className="text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums">
-                  {fmtUsd(avail)}
-                </div>
-              </div>
-            }
-            desc={`空闲 ${fmtPct(freeRatio)}`}
-          />
-        </div>
-      </CardContent>
-    </Card>
+      <MetricCard
+        label="可用资金"
+        value={
+          <div className="space-y-1">
+            <div className="text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums">
+              {fmtUsd(avail)}
+            </div>
+          </div>
+        }
+        desc={`空闲 ${fmtPct(freeRatio)}`}
+      />
+    </div>
   )
 }
 

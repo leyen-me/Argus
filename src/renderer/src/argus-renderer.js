@@ -30,6 +30,102 @@ const MULTI_TIMEFRAME_SPECS = [
   },
 ];
 let tvWidgets = new Map();
+let tvWidgetRenderTimer = 0;
+let tvWidgetRenderFrameA = 0;
+let tvWidgetRenderFrameB = 0;
+let tvWidgetRenderSeq = 0;
+let tvLayoutObserver = null;
+let lastTvWidgetRequest = {
+  symbol: "OKX:BTCUSDT",
+  interval: AGENT_DECISION_INTERVAL,
+};
+
+function cancelPendingTradingViewRender() {
+  if (tvWidgetRenderTimer) {
+    window.clearTimeout(tvWidgetRenderTimer);
+    tvWidgetRenderTimer = 0;
+  }
+  if (tvWidgetRenderFrameA) {
+    window.cancelAnimationFrame(tvWidgetRenderFrameA);
+    tvWidgetRenderFrameA = 0;
+  }
+  if (tvWidgetRenderFrameB) {
+    window.cancelAnimationFrame(tvWidgetRenderFrameB);
+    tvWidgetRenderFrameB = 0;
+  }
+}
+
+function areTradingViewContainersReady() {
+  return MULTI_TIMEFRAME_SPECS.every((spec) => {
+    const el = document.getElementById(spec.containerId);
+    return el instanceof HTMLElement && el.clientWidth > 0 && el.clientHeight > 0;
+  });
+}
+
+function scheduleTradingViewWidget(symbol, interval, options = {}) {
+  const { debounceMs = 0, attempt = 0 } = options;
+  const nextSymbol = symbol || "OKX:BTCUSDT";
+  const nextInterval = String(interval || AGENT_DECISION_INTERVAL);
+  lastTvWidgetRequest = { symbol: nextSymbol, interval: nextInterval };
+  const seq = ++tvWidgetRenderSeq;
+  cancelPendingTradingViewRender();
+
+  const render = () => {
+    tvWidgetRenderFrameA = window.requestAnimationFrame(() => {
+      tvWidgetRenderFrameB = window.requestAnimationFrame(() => {
+        tvWidgetRenderFrameA = 0;
+        tvWidgetRenderFrameB = 0;
+        if (seq !== tvWidgetRenderSeq) return;
+        if (!areTradingViewContainersReady()) {
+          if (attempt < 8) {
+            scheduleTradingViewWidget(nextSymbol, nextInterval, {
+              attempt: attempt + 1,
+              debounceMs: 80,
+            });
+          }
+          return;
+        }
+        createTradingViewWidgetNow(nextSymbol, nextInterval);
+      });
+    });
+  };
+
+  if (debounceMs > 0) {
+    tvWidgetRenderTimer = window.setTimeout(() => {
+      tvWidgetRenderTimer = 0;
+      render();
+    }, debounceMs);
+    return;
+  }
+
+  render();
+}
+
+function initTradingViewAutoLayout() {
+  if (tvLayoutObserver || typeof ResizeObserver === "undefined") return;
+  const grid = document.querySelector(".chart-grid");
+  if (!(grid instanceof HTMLElement)) return;
+
+  let lastWidth = 0;
+  let lastHeight = 0;
+
+  tvLayoutObserver = new ResizeObserver((entries) => {
+    const entry = entries[0];
+    if (!entry) return;
+    const width = Math.round(entry.contentRect.width);
+    const height = Math.round(entry.contentRect.height);
+    if (width <= 0 || height <= 0) return;
+    const hadStableSize = lastWidth > 0 && lastHeight > 0;
+    if (width === lastWidth && height === lastHeight) return;
+    lastWidth = width;
+    lastHeight = height;
+    if (!hadStableSize) return;
+    if (tvWidgets.size === 0) return;
+    scheduleTradingViewWidget(lastTvWidgetRequest.symbol, lastTvWidgetRequest.interval, { debounceMs: 160 });
+  });
+
+  tvLayoutObserver.observe(grid);
+}
 
 /**
  * 最近一次行情截图（供多模态 LLM 使用）。
@@ -2230,7 +2326,7 @@ function destroyWidget() {
   }
 }
 
-function createTradingViewWidget(symbol, interval) {
+function createTradingViewWidgetNow(symbol, interval) {
   destroyWidget();
 
   if (typeof TradingView === "undefined" || !TradingView.widget) {
@@ -2285,6 +2381,10 @@ function createTradingViewWidget(symbol, interval) {
     });
     tvWidgets.set(spec.interval, widget);
   }
+}
+
+function createTradingViewWidget(symbol, interval) {
+  scheduleTradingViewWidget(symbol, interval);
 }
 
 function initSymbolSelect() {
@@ -2779,6 +2879,7 @@ export function initArgusApp() {
   if (__argusRendererInitPromise) return __argusRendererInitPromise;
   __argusRendererInitPromise = (async () => {
     const cfg = await loadAppConfig();
+    initTradingViewAutoLayout();
     applySymbolSelect(cfg);
     applyChartIntervalSelect(cfg.interval || "5");
     applyPromptStrategySelect(cfg);

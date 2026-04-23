@@ -111,6 +111,37 @@ function keepOnlyLastUserImageInMessages(messages) {
  * 本轮发给 API 的 user 内容（含多模态）。K 线收盘 Agent 为单轮 system+user，历史不落盘到 LLM messages；持久化见 agent_bar_turns 表。
  */
 function buildMultimodalUserContent(userText, imageBase64, mimeType) {
+  if (Array.isArray(imageBase64)) {
+    const images = imageBase64
+      .filter((item) => item && typeof item === "object")
+      .map((item) => ({
+        base64:
+          item.base64 != null && String(item.base64).trim() !== "" ? String(item.base64).trim() : "",
+        mimeType:
+          item.mimeType != null && String(item.mimeType).trim() !== ""
+            ? String(item.mimeType).trim()
+            : "image/png",
+        label: item.label != null && String(item.label).trim() !== "" ? String(item.label).trim() : "",
+      }))
+      .filter((item) => item.base64);
+    if (images.length > 0) {
+      const orderedLabels = images
+        .map((item, index) => item.label || `图 ${index + 1}`)
+        .join("、");
+      return [
+        {
+          type: "text",
+          text:
+            userText +
+            `\n\n（附图：以下按顺序提供 ${orderedLabels} 图表截图。Agent 决策周期固定为 5m，其余周期仅作为趋势与结构过滤参考。）`,
+        },
+        ...images.map((item) => ({
+          type: "image_url",
+          image_url: { url: `data:${item.mimeType};base64,${item.base64}` },
+        })),
+      ];
+    }
+  }
   const image = imageBase64 && String(imageBase64).trim();
   const mt = mimeType || "image/png";
   if (image) {
@@ -600,9 +631,9 @@ function mdTable(headers, rows) {
 /**
  * @param {{ ok: boolean, error?: string, rows?: Array<{ timeIso: string, open: string, high: string, low: string, close: string, volume: string, turnover: string | null }>, instId?: string | null, bar?: string } | null | undefined} recent
  */
-function buildRecentCandlesMarkdownSection(recent) {
+function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线（OKX REST）") {
   if (!recent) return "";
-  const title = "### 最近 K 线（OKX REST）";
+  const title = heading;
   if (!recent.ok) {
     const err = mdCell(recent.error || "未知错误");
     return ["", title, "", `（拉取失败：${err}。请依赖上图与上方「已收盘」一根。）`].join("\n");
@@ -672,6 +703,52 @@ function buildUserPrompt(symbol, periodKey, candle, recentCandles) {
     ),
   ].join("\n");
   return head + buildRecentCandlesMarkdownSection(recentCandles);
+}
+
+const MULTI_TIMEFRAME_PROMPT_SPECS = [
+  { interval: "1D", label: "1D（日线）" },
+  { interval: "60", label: "1H（1 小时）" },
+  { interval: "15", label: "15m（15 分钟）" },
+  { interval: "5", label: "5m（5 分钟，决策周期）" },
+];
+
+/**
+ * @param {string} symbol
+ * @param {string} periodKey
+ * @param {object} candle
+ * @param {Record<string, Parameters<typeof buildRecentCandlesMarkdownSection>[0]>} recentCandlesByInterval
+ */
+function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesByInterval) {
+  const triggerRow = [
+    symbol,
+    `${periodKey}（已收盘 / 决策触发）`,
+    candle.timestamp,
+    candle.open,
+    candle.high,
+    candle.low,
+    candle.close,
+    candle.volume,
+    candle.turnover != null ? candle.turnover : "—",
+  ];
+  const sections = MULTI_TIMEFRAME_PROMPT_SPECS.map((spec) =>
+    buildRecentCandlesMarkdownSection(
+      recentCandlesByInterval?.[spec.interval],
+      `### ${spec.label} 最近 K 线（OKX REST）`,
+    ),
+  ).filter(Boolean);
+  return [
+    "## 决策触发 K 线",
+    "",
+    mdTable(
+      ["标的", "周期", "时间", "Open", "High", "Low", "Close", "Volume", "Turnover"],
+      [triggerRow],
+    ),
+    "",
+    "## 多周期上下文",
+    "",
+    "以下同时给出 1D / 1H / 15m / 5m 四个周期；其中 Agent 执行节奏固定以 5m 收盘为准，其余周期用于趋势、结构与过滤。",
+    ...sections,
+  ].join("\n");
 }
 
 /**
@@ -776,6 +853,7 @@ module.exports = {
   summarizeAgentAnalysisForCard,
   runTradingAgentTurn,
   buildUserPrompt,
+  buildMultiTimeframeUserPrompt,
   computeEmaSeries,
   RECENT_CANDLES_FETCH_LIMIT,
   RECENT_CANDLES_DISPLAY_COUNT,

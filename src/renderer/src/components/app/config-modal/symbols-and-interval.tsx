@@ -27,27 +27,6 @@ export function ConfigModalSymbolsAndInterval() {
           className={cn("symbol-select config-default-select", nativeSelectClass)}
         />
       </div>
-      <div className="config-interval-row flex flex-wrap items-center gap-3 sm:gap-4">
-        <Label htmlFor="config-interval" className="shrink-0 text-muted-foreground">
-          K 线周期
-        </Label>
-        <select
-          id="config-interval"
-          className={cn("symbol-select config-interval-select", nativeSelectClass)}
-          title="与 TradingView、OKX WS 共用"
-        >
-          <option value="1">1 分钟</option>
-          <option value="3">3 分钟</option>
-          <option value="5">5 分钟</option>
-          <option value="15">15 分钟</option>
-          <option value="30">30 分钟</option>
-          <option value="60">1 小时</option>
-          <option value="120">2 小时</option>
-          <option value="240">4 小时</option>
-          <option value="D">日线</option>
-          <option value="1D">1D</option>
-        </select>
-      </div>
     </div>
   );
 }

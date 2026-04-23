@@ -101,9 +101,84 @@ body,
   position: relative;
 }
 
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  background: color-mix(in oklch, var(--background) 92%, var(--card));
+}
+
+.chart-grid-card {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--border) 88%, transparent);
+  border-radius: calc(var(--radius) + 2px);
+  background: color-mix(in oklch, var(--card) 94%, var(--background));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 3%, transparent);
+}
+
+.chart-grid-card--primary {
+  border-color: color-mix(in oklch, var(--primary) 30%, var(--border));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--primary) 10%, transparent),
+    0 10px 26px -22px color-mix(in oklch, var(--primary) 28%, transparent);
+}
+
+.chart-grid-card-head {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in oklch, var(--border) 84%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--background) 76%, transparent);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.chart-grid-card-interval {
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--foreground);
+  text-transform: uppercase;
+}
+
+.chart-grid-card-label {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted-foreground);
+}
+
 .tradingview-chart {
   position: absolute;
   inset: 0;
+}
+
+.chart-agent-cycle-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--primary) 26%, var(--border));
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: color-mix(in oklch, var(--primary) 76%, var(--foreground));
+  text-transform: uppercase;
 }
 
 .llm-chat-history {

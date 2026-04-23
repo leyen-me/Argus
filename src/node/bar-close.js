@@ -7,7 +7,7 @@ const { loadAppConfig } = require("./app-config");
 const { conversationKey } = require("./llm-context");
 const {
   isLlmEnabled,
-  buildUserPrompt,
+  buildMultiTimeframeUserPrompt,
   runTradingAgentTurn,
   buildMultimodalUserContent,
   resolveSystemPrompt,
@@ -26,6 +26,14 @@ const {
 const { TRADING_AGENT_TOOLS } = require("./trading-agent-tools");
 const { createTradingToolExecutor } = require("./trading-agent-executor");
 const { persistAgentBarTurn } = require("./agent-bar-turns-store");
+
+const AGENT_DECISION_INTERVAL = "5";
+const MULTI_TIMEFRAME_CAPTURE_SPECS = [
+  { interval: "1D", label: "1D" },
+  { interval: "60", label: "1H" },
+  { interval: "15", label: "15m" },
+  { interval: "5", label: "5m" },
+];
 
 /** @param {boolean | null | undefined} b */
 function zhBool(b) {
@@ -334,7 +342,7 @@ function formatToolCallPreview(toolCalls) {
 /**
  * @param {import("electron").WebContents} webContents
  * @param {number} [timeoutMs]
- * @returns {Promise<{ mimeType: string, base64: string, dataUrl: string }>}
+ * @returns {Promise<{ mimeType: string, base64: string, dataUrl: string, charts?: Array<{ interval: string, label?: string, mimeType: string, base64: string, dataUrl: string }> }>}
  */
 function requestChartCapture(webContents, timeoutMs = 18000) {
   const requestId = crypto.randomUUID();
@@ -353,6 +361,18 @@ function requestChartCapture(webContents, timeoutMs = 18000) {
           mimeType: result.mimeType || "image/png",
           base64: result.base64,
           dataUrl: result.dataUrl,
+          charts: Array.isArray(result.charts)
+            ? result.charts
+                .filter((item) => item && typeof item === "object")
+                .map((item) => ({
+                  interval: String(item.interval || ""),
+                  label: item.label != null ? String(item.label) : "",
+                  mimeType: item.mimeType || "image/png",
+                  base64: item.base64 || "",
+                  dataUrl: item.dataUrl || "",
+                }))
+                .filter((item) => item.interval && item.base64 && item.dataUrl)
+            : [],
         });
       } else {
         reject(new Error(result.error || "截图失败"));
@@ -379,9 +399,16 @@ async function emitBarClose(winGetter, ctx) {
   if (!win || win.isDestroyed()) return;
 
   let chartImage = null;
+  let chartImages = [];
   let chartCaptureError = null;
   try {
-    chartImage = await requestChartCapture(win.webContents);
+    const capturePack = await requestChartCapture(win.webContents);
+    chartImage = {
+      mimeType: capturePack.mimeType,
+      base64: capturePack.base64,
+      dataUrl: capturePack.dataUrl,
+    };
+    chartImages = Array.isArray(capturePack.charts) ? capturePack.charts : [];
   } catch (e) {
     chartCaptureError = e.message || String(e);
   }
@@ -401,12 +428,23 @@ async function emitBarClose(winGetter, ctx) {
   };
 
   const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
-  const [exchangeCtx, recentCandles, positionsHistory] = await Promise.all([
+  const [exchangeCtx, recentCandlesPack, positionsHistory] = await Promise.all([
     getOkxExchangeContextForBar(cfg, ctx.tvSymbol),
-    fetchRecentCandlesForTv(ctx.tvSymbol, ctx.interval, RECENT_CANDLES_FETCH_LIMIT),
+    Promise.all(
+      MULTI_TIMEFRAME_CAPTURE_SPECS.map(async (spec) => [
+        spec.interval,
+        await fetchRecentCandlesForTv(ctx.tvSymbol, spec.interval, RECENT_CANDLES_FETCH_LIMIT),
+      ]),
+    ),
     fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10),
   ]);
-  const textForLlm = buildUserPrompt(ctx.tvSymbol, ctx.periodLabel, ctx.candle, recentCandles);
+  const recentCandles = Object.fromEntries(recentCandlesPack);
+  const textForLlm = buildMultiTimeframeUserPrompt(
+    ctx.tvSymbol,
+    ctx.periodLabel,
+    ctx.candle,
+    recentCandles,
+  );
   const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx, positionsHistory);
 
   const payloadBase = {
@@ -419,6 +457,7 @@ async function emitBarClose(winGetter, ctx) {
     candle: ctx.candle,
     capturedAt: new Date().toISOString(),
     chartImage,
+    multiChartImages: chartImages,
     chartCaptureError,
     textForLlm,
     exchangeContext: exchangeCtx,
@@ -442,11 +481,27 @@ async function emitBarClose(winGetter, ctx) {
     return;
   }
 
-  if (chartCaptureError || !chartImage?.base64) {
+  const orderedChartImages = MULTI_TIMEFRAME_CAPTURE_SPECS.map((spec) => {
+    const found = chartImages.find((item) => String(item.interval) === spec.interval);
+    if (!found?.base64) return null;
+    return {
+      ...found,
+      label: spec.label,
+    };
+  }).filter(Boolean);
+
+  if (
+    chartCaptureError ||
+    !chartImage?.base64 ||
+    ctx.interval !== AGENT_DECISION_INTERVAL ||
+    orderedChartImages.length !== MULTI_TIMEFRAME_CAPTURE_SPECS.length
+  ) {
     finishSkipped(
       chartCaptureError
         ? `未调用 LLM：图表截图失败（${chartCaptureError}）。`
-        : "未调用 LLM：图表截图不可用。",
+        : ctx.interval !== AGENT_DECISION_INTERVAL
+          ? `未调用 LLM：当前触发周期不是 ${AGENT_DECISION_INTERVAL}m。`
+          : "未调用 LLM：多周期图表截图不完整。",
     );
     return;
   }
@@ -464,7 +519,7 @@ async function emitBarClose(winGetter, ctx) {
   const systemPrompt = resolveSystemPrompt(cfg);
   const currentUserContent = buildMultimodalUserContent(
     llmUserText,
-    chartImage.base64,
+    orderedChartImages,
     chartImage.mimeType || "image/png",
   );
   /** 每根 K 线独立单轮：不传历史 messages，仅 system + 本轮 user（含完整 OKX 快照与图）。 */

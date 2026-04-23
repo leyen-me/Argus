@@ -31,8 +31,10 @@ const {
 /**
  * 左侧当前品种：OKX WS K 线（OKX: 前缀）。
  */
+const AGENT_DECISION_INTERVAL = "5";
+
 async function routeMarket(cfg, tvSymbol) {
-  const interval = cfg.interval || "5";
+  const interval = AGENT_DECISION_INTERVAL;
   const sym = tvSymbol || cfg.defaultSymbol;
   const feed = inferFeed(sym);
 

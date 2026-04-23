@@ -1,9 +1,35 @@
 /* global TradingView */
 
-const chartContainerId = "tradingview_chart";
 /** TradingView 内置：MAExp = EMA，周期由 length 指定 */
 const DEFAULT_EMA_LENGTH = 20;
-let tvWidget = null;
+const AGENT_DECISION_INTERVAL = "5";
+const MULTI_TIMEFRAME_SPECS = [
+  {
+    interval: "1D",
+    label: "1D",
+    caption: "日线",
+    containerId: "tradingview_chart_1d",
+  },
+  {
+    interval: "60",
+    label: "1H",
+    caption: "1 小时",
+    containerId: "tradingview_chart_1h",
+  },
+  {
+    interval: "15",
+    label: "15m",
+    caption: "15 分钟",
+    containerId: "tradingview_chart_15m",
+  },
+  {
+    interval: AGENT_DECISION_INTERVAL,
+    label: "5m",
+    caption: "5 分钟",
+    containerId: "tradingview_chart_5m",
+  },
+];
+let tvWidgets = new Map();
 
 /**
  * 最近一次行情截图（供多模态 LLM 使用）。
@@ -26,13 +52,13 @@ function setLastChartScreenshot(dataUrl) {
  */
 window.argusLastBarClose = null;
 
-async function captureTradingViewPng() {
-  const widget = tvWidget;
+async function captureTradingViewPng(interval = AGENT_DECISION_INTERVAL) {
+  const widget = tvWidgets.get(String(interval));
   if (!widget || typeof widget.ready !== "function") {
-    throw new Error("无图表");
+    throw new Error(`无图表：${interval}`);
   }
   if (typeof widget.imageCanvas !== "function") {
-    throw new Error("不支持截图");
+    throw new Error(`图表不支持截图：${interval}`);
   }
   const canvas = await new Promise((resolve, reject) => {
     widget.ready(() => {
@@ -43,6 +69,72 @@ async function captureTradingViewPng() {
   const comma = dataUrl.indexOf(",");
   const base64 = comma === -1 ? "" : dataUrl.slice(comma + 1);
   return { mimeType: "image/png", dataUrl, base64 };
+}
+
+function loadImageElement(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("图像解码失败"));
+    img.src = dataUrl;
+  });
+}
+
+async function captureMultiTimeframeCharts() {
+  const charts = await Promise.all(
+    MULTI_TIMEFRAME_SPECS.map(async (spec) => {
+      const shot = await captureTradingViewPng(spec.interval);
+      return {
+        interval: spec.interval,
+        label: spec.label,
+        caption: spec.caption,
+        mimeType: shot.mimeType,
+        base64: shot.base64,
+        dataUrl: shot.dataUrl,
+      };
+    }),
+  );
+  const images = await Promise.all(charts.map((chart) => loadImageElement(chart.dataUrl)));
+  const cellWidth = Math.max(...images.map((img) => img.width));
+  const cellHeight = Math.max(...images.map((img) => img.height));
+  const gap = 12;
+  const pad = 16;
+  const titleHeight = 42;
+  const canvas = document.createElement("canvas");
+  canvas.width = pad * 2 + cellWidth * 2 + gap;
+  canvas.height = pad * 2 + cellHeight * 2 + gap;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("无法创建截图画布");
+  ctx.fillStyle = "#0d1117";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  charts.forEach((chart, index) => {
+    const row = Math.floor(index / 2);
+    const col = index % 2;
+    const x = pad + col * (cellWidth + gap);
+    const y = pad + row * (cellHeight + gap);
+    ctx.fillStyle = "#111827";
+    ctx.fillRect(x, y, cellWidth, cellHeight);
+    ctx.drawImage(images[index], x, y, cellWidth, cellHeight);
+    ctx.fillStyle = "rgba(13, 17, 23, 0.78)";
+    ctx.fillRect(x + 10, y + 10, 102, titleHeight);
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.22)";
+    ctx.strokeRect(x + 10, y + 10, 102, titleHeight);
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = "bold 18px system-ui";
+    ctx.fillText(chart.label, x + 22, y + 28);
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "12px system-ui";
+    ctx.fillText(chart.caption, x + 22, y + 45);
+  });
+  const dataUrl = canvas.toDataURL("image/png");
+  const comma = dataUrl.indexOf(",");
+  const base64 = comma === -1 ? "" : dataUrl.slice(comma + 1);
+  return {
+    mimeType: "image/png",
+    dataUrl,
+    base64,
+    charts,
+  };
 }
 
 /**
@@ -90,8 +182,8 @@ const FALLBACK_APP_CONFIG = {
   dashboardAgentToolStatsSince: null,
 };
 
-/** 与配置 `interval` 一致，供 TradingView 与主进程路由共用 */
-let chartInterval = "5";
+/** Agent 决策周期固定为 5 分钟，左侧同时展示 1D / 1H / 15m / 5m */
+let chartInterval = AGENT_DECISION_INTERVAL;
 
 /** 按 `品种|周期` 缓存最近一次 OKX 快照（收盘推送），切换品种时可恢复展示 */
 window.argusExchangeContextCache = window.argusExchangeContextCache || Object.create(null);
@@ -1426,8 +1518,7 @@ const CHART_INTERVAL_ALLOWED = new Set(["1", "3", "5", "15", "30", "60", "120", 
  * @param {string} interval
  */
 function applyChartIntervalSelect(interval) {
-  const raw = String(interval ?? "5").trim() || "5";
-  let iv = CHART_INTERVAL_ALLOWED.has(raw) ? raw : "5";
+  let iv = AGENT_DECISION_INTERVAL;
   const sel = document.getElementById("chart-interval-select");
   if (sel) {
     const has = [...sel.options].some((o) => o.value === iv);
@@ -1964,28 +2055,32 @@ function initDashboardModal() {
 }
 
 function destroyWidget() {
-  if (tvWidget && typeof tvWidget.remove === "function") {
-    try {
-      tvWidget.remove();
-    } catch {
-      /* ignore */
+  for (const widget of tvWidgets.values()) {
+    if (widget && typeof widget.remove === "function") {
+      try {
+        widget.remove();
+      } catch {
+        /* ignore */
+      }
     }
   }
-  tvWidget = null;
-  const el = document.getElementById(chartContainerId);
-  if (el) el.innerHTML = "";
+  tvWidgets = new Map();
+  for (const spec of MULTI_TIMEFRAME_SPECS) {
+    const el = document.getElementById(spec.containerId);
+    if (el) el.innerHTML = "";
+  }
 }
 
 function createTradingViewWidget(symbol, interval) {
   destroyWidget();
 
-  const iv = interval ?? chartInterval ?? "5";
-
   if (typeof TradingView === "undefined" || !TradingView.widget) {
-    const el = document.getElementById(chartContainerId);
-    if (el) {
-      el.innerHTML =
-        '<p style="padding:16px;color:#f85149;font-size:13px;">无法加载 TradingView 脚本，请检查网络或 CSP。</p>';
+    for (const spec of MULTI_TIMEFRAME_SPECS) {
+      const el = document.getElementById(spec.containerId);
+      if (el) {
+        el.innerHTML =
+          '<p style="padding:16px;color:#f85149;font-size:13px;">无法加载 TradingView 脚本，请检查网络或 CSP。</p>';
+      }
     }
     return;
   }
@@ -2002,32 +2097,35 @@ function createTradingViewWidget(symbol, interval) {
    * 另：save_image 为 false 时可关闭保存图片；show_popup_button 控制弹出大图等。
    * enabled_features / disabled_features 会传给 iframe，主要给 Charting Library 用，免费 embed 是否生效因版本而异。
    */
-  tvWidget = new TradingView.widget({
-    autosize: true,
-    symbol: symbol || "OKX:BTCUSDT",
-    interval: iv,
-    timezone: "Asia/Shanghai",
-    theme: "dark",
-    style: "1",
-    locale: "zh_CN",
-    toolbar_bg: "#161b22",
-    enable_publishing: false,
-    hide_top_toolbar: true,
-    hide_side_toolbar: true,
-    hide_legend: true,
-    hide_volume: true,
-    hideideasbutton: true,
-    /** 为 false 时 iframe 可能拒绝 imageCanvas 截图，需保留导出能力 */
-    save_image: true,
-    container_id: chartContainerId,
-    allow_symbol_change: true,
-    studies: [
-      {
-        id: "MAExp@tv-basicstudies",
-        inputs: { length: DEFAULT_EMA_LENGTH },
-      },
-    ],
-  });
+  for (const spec of MULTI_TIMEFRAME_SPECS) {
+    const widget = new TradingView.widget({
+      autosize: true,
+      symbol: symbol || "OKX:BTCUSDT",
+      interval: spec.interval,
+      timezone: "Asia/Shanghai",
+      theme: "dark",
+      style: "1",
+      locale: "zh_CN",
+      toolbar_bg: "#161b22",
+      enable_publishing: false,
+      hide_top_toolbar: true,
+      hide_side_toolbar: true,
+      hide_legend: true,
+      hide_volume: true,
+      hideideasbutton: true,
+      /** 为 false 时 iframe 可能拒绝 imageCanvas 截图，需保留导出能力 */
+      save_image: true,
+      container_id: spec.containerId,
+      allow_symbol_change: true,
+      studies: [
+        {
+          id: "MAExp@tv-basicstudies",
+          inputs: { length: DEFAULT_EMA_LENGTH },
+        },
+      ],
+    });
+    tvWidgets.set(spec.interval, widget);
+  }
 }
 
 function initSymbolSelect() {
@@ -2091,6 +2189,15 @@ function formatBarClosePreview(payload) {
       ...safe.chartImage,
       base64: `[省略 ${n} 字符，完整数据在 window.argusLastBarClose.chartImage.base64]`,
     };
+  }
+  if (Array.isArray(safe.multiChartImages)) {
+    safe.multiChartImages = safe.multiChartImages.map((item) => {
+      if (!item?.base64) return item;
+      return {
+        ...item,
+        base64: `[省略 ${String(item.base64).length} 字符]`,
+      };
+    });
   }
   if (typeof safe.fullUserPromptForDisplay === "string" && safe.fullUserPromptForDisplay.length > 400) {
     const n = safe.fullUserPromptForDisplay.length;
@@ -2191,13 +2298,14 @@ function initChartCaptureBridge() {
   }
   window.argus.onChartCaptureRequest(async ({ requestId }) => {
     try {
-      const shot = await captureTradingViewPng();
+      const shot = await captureMultiTimeframeCharts();
       window.argus.submitChartCaptureResult({
         requestId,
         ok: true,
         mimeType: shot.mimeType,
         base64: shot.base64,
         dataUrl: shot.dataUrl,
+        charts: shot.charts,
       });
     } catch (e) {
       window.argus.submitChartCaptureResult({

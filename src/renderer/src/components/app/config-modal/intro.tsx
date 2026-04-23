@@ -4,7 +4,7 @@ export function ConfigModalIntro() {
   return (
     <div className="flex items-start gap-2 pb-2">
       <p className="m-0 flex-1 text-sm leading-snug text-muted-foreground">
-        编辑本机 SQLite 中的应用设置：交易品种、K 线周期、LLM 与交易所等。数据库路径见下方。
+        编辑本机 SQLite 中的应用设置：交易品种、LLM 与交易所等。数据库路径见下方。
       </p>
       <ConfigHelpTooltip className="mt-0.5">
         <div className="space-y-2">
@@ -17,7 +17,7 @@ export function ConfigModalIntro() {
           </p>
           <p className="m-0">
             行情订阅仅支持 <code>OKX:</code> 前缀（OKX WebSocket K 线）。
-            <strong>interval</strong> 与图表周期、WS 一致。
+            Agent 决策周期固定为 <strong>5 分钟</strong>；左侧图表固定展示 1D / 1H / 15m / 5m。
           </p>
           <p className="m-0">
             首次启动会用代码中的默认种子写入本地库；保存即写回 SQLite。

@@ -14,7 +14,7 @@ export function TitleBar() {
         />
       </div>
       <div className="titlebar-actions">
-        <Button
+        {/* <Button
           type="button"
           variant="outline"
           size="sm"
@@ -24,7 +24,7 @@ export function TitleBar() {
         >
           <Terminal className="size-3.5 opacity-80" aria-hidden />
           控制台
-        </Button>
+        </Button> */}
         <Button
           type="button"
           variant="outline"

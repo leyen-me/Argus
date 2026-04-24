@@ -1295,7 +1295,7 @@ function buildNeutralTradeStripElement(kind, llm) {
 
   const badge = document.createElement("span");
   badge.className = "llm-round-event-badge llm-round-event-badge--neutral";
-  if (kind === "running") badge.textContent = "IN PROGRESS";
+  if (kind === "running") badge.textContent = "THINK";
   else if (kind === "skipped") badge.textContent = "SKIP";
   else if (kind === "error") badge.textContent = "ERROR";
   else badge.textContent = "NO TRADE";

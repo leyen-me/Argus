@@ -55,7 +55,7 @@ export function LlmPanel() {
                 onClick={() => void toggleBarCloseAgent()}
               >
                 {barCloseAgentAuto ? <PlayCircle className="size-3.5" aria-hidden /> : <PauseCircle className="size-3.5" aria-hidden />}
-                {barCloseAgentAuto ? "自动运行" : "已暂停"}
+                {barCloseAgentAuto ? "运行中" : "已暂停"}
               </Button>
               <Badge
                 id="llm-status"

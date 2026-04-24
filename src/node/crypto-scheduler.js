@@ -6,6 +6,22 @@
 const WebSocket = require("ws");
 const { emitBarClose } = require("./bar-close");
 
+const DEFAULT_RUNTIME = Object.freeze({
+  WebSocketImpl: WebSocket,
+  emitBarCloseImpl: emitBarClose,
+  now: () => Date.now(),
+  setTimeoutFn: setTimeout,
+  clearTimeoutFn: clearTimeout,
+  setIntervalFn: setInterval,
+  clearIntervalFn: clearInterval,
+  reconnectBaseDelayMs: 1000,
+  reconnectMaxDelayMs: 30_000,
+  healthCheckMs: 20_000,
+  stallMs: 90_000,
+});
+
+let runtime = { ...DEFAULT_RUNTIME };
+
 /** OKX channel 名，如 candle5m、candle1H */
 const TV_TO_OKX_CHANNEL = {
   "1": "candle1m",
@@ -25,10 +41,12 @@ const OKX_WS_BUSINESS = "wss://ws.okx.com:8443/ws/v5/business";
 
 let ws = null;
 let reconnectTimer = null;
+let healthCheckTimer = null;
 let intentionalClose = false;
 /** @type {{ winGetter: () => import("electron").BrowserWindow | null, tvSymbol: string, intervalTv: string } | null} */
 let session = null;
 let reconnectAttempt = 0;
+let lastSocketActivityAt = 0;
 
 const seenBarIds = new Set();
 const SEEN_CAP = 2000;
@@ -52,6 +70,10 @@ function send(winGetter, channel, payload) {
   if (w && !w.isDestroyed()) {
     w.webContents.send(channel, payload);
   }
+}
+
+function markSocketActivity() {
+  lastSocketActivityAt = runtime.now();
 }
 
 /**
@@ -113,7 +135,7 @@ function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle) {
     });
 
     try {
-      await emitBarClose(winGetter, {
+      await runtime.emitBarCloseImpl(winGetter, {
         source: "okx_ws",
         tvSymbol,
         interval: intervalTv,
@@ -128,23 +150,69 @@ function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle) {
 
 function clearReconnectTimer() {
   if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
+    runtime.clearTimeoutFn(reconnectTimer);
     reconnectTimer = null;
+  }
+}
+
+function clearHealthCheckTimer() {
+  if (healthCheckTimer) {
+    runtime.clearIntervalFn(healthCheckTimer);
+    healthCheckTimer = null;
   }
 }
 
 function scheduleReconnect() {
   if (intentionalClose || !session) return;
   clearReconnectTimer();
-  const delay = Math.min(30_000, 1000 * 2 ** reconnectAttempt);
+  const delay = Math.min(runtime.reconnectMaxDelayMs, runtime.reconnectBaseDelayMs * 2 ** reconnectAttempt);
   const sec = Math.max(1, Math.round(delay / 1000));
   reconnectAttempt += 1;
   send(session.winGetter, "market-status", {
     text: `OKX WS 断开，${sec}s 后重连…`,
   });
-  reconnectTimer = setTimeout(() => {
+  reconnectTimer = runtime.setTimeoutFn(() => {
     connect();
   }, delay);
+}
+
+function forceReconnect(okxSocket, reasonText) {
+  if (intentionalClose || !session || ws !== okxSocket) return;
+  clearHealthCheckTimer();
+  ws = null;
+  if (reasonText) {
+    send(session.winGetter, "market-status", { text: reasonText });
+  }
+  try {
+    if (typeof okxSocket.terminate === "function") okxSocket.terminate();
+    else okxSocket.close();
+  } catch {
+    /* ignore */
+  }
+  scheduleReconnect();
+}
+
+function startHealthCheck(okxSocket, winGetter, tvSymbol) {
+  clearHealthCheckTimer();
+  markSocketActivity();
+  const openState = Number(runtime.WebSocketImpl?.OPEN ?? WebSocket.OPEN ?? 1);
+  healthCheckTimer = runtime.setIntervalFn(() => {
+    if (intentionalClose || !session || ws !== okxSocket) return;
+    const idleMs = runtime.now() - lastSocketActivityAt;
+    if (idleMs >= runtime.stallMs) {
+      const idleSec = Math.max(1, Math.round(idleMs / 1000));
+      forceReconnect(okxSocket, `OKX WS 超过 ${idleSec}s 未收到消息，正在重连…`);
+      return;
+    }
+    if (okxSocket.readyState === openState && typeof okxSocket.ping === "function") {
+      try {
+        okxSocket.ping();
+      } catch (e) {
+        console.error("OKX WS ping", e);
+        forceReconnect(okxSocket, `OKX WS 心跳失败：${tvSymbol}，正在重连…`);
+      }
+    }
+  }, runtime.healthCheckMs);
 }
 
 function connectOkx() {
@@ -158,9 +226,10 @@ function connectOkx() {
 
   const channel = okxChannelFromInterval(intervalTv);
   clearReconnectTimer();
+  clearHealthCheckTimer();
 
   try {
-    ws = new WebSocket(OKX_WS_BUSINESS);
+    ws = new runtime.WebSocketImpl(OKX_WS_BUSINESS);
   } catch (e) {
     console.error("OKX WS create", e);
     scheduleReconnect();
@@ -169,8 +238,11 @@ function connectOkx() {
 
   // 必须用创建时的实例判断：模块级 `ws` 可能被重连/stop 换掉，旧连接的 `open` 晚到时会误对 null 或新套接字 send
   const okxSocket = ws;
+  startHealthCheck(okxSocket, winGetter, tvSymbol);
   ws.on("open", () => {
-    if (ws !== okxSocket || okxSocket.readyState !== WebSocket.OPEN) return;
+    const openState = Number(runtime.WebSocketImpl?.OPEN ?? WebSocket.OPEN ?? 1);
+    if (ws !== okxSocket || okxSocket.readyState !== openState) return;
+    markSocketActivity();
     reconnectAttempt = 0;
     const sub = {
       op: "subscribe",
@@ -188,7 +260,14 @@ function connectOkx() {
     });
   });
 
+  ws.on("pong", () => {
+    if (ws !== okxSocket) return;
+    markSocketActivity();
+  });
+
   ws.on("message", (raw) => {
+    if (ws !== okxSocket) return;
+    markSocketActivity();
     let msg;
     try {
       msg = JSON.parse(raw.toString());
@@ -214,12 +293,18 @@ function connectOkx() {
   });
 
   ws.on("error", (err) => {
+    if (ws !== okxSocket) return;
     console.error("OKX WS error", err);
   });
 
   ws.on("close", () => {
-    ws = null;
+    const isCurrent = ws === okxSocket;
+    if (isCurrent) {
+      ws = null;
+      clearHealthCheckTimer();
+    }
     if (intentionalClose || !session) return;
+    if (!isCurrent) return;
     scheduleReconnect();
   });
 }
@@ -249,11 +334,14 @@ function start(winGetter, tvSymbol, intervalTv) {
 function stop() {
   intentionalClose = true;
   clearReconnectTimer();
+  clearHealthCheckTimer();
   session = null;
   reconnectAttempt = 0;
+  lastSocketActivityAt = 0;
   if (ws) {
     try {
-      ws.close();
+      if (typeof ws.terminate === "function") ws.terminate();
+      else ws.close();
     } catch {
       /* ignore */
     }
@@ -261,4 +349,26 @@ function stop() {
   }
 }
 
-module.exports = { start, stop, okxInstIdFromTv };
+function __setRuntimeForTests(overrides = {}) {
+  stop();
+  runtime = { ...DEFAULT_RUNTIME, ...overrides };
+  seenBarIds.clear();
+  barCloseChain = Promise.resolve();
+  intentionalClose = false;
+}
+
+function __resetRuntimeForTests() {
+  stop();
+  runtime = { ...DEFAULT_RUNTIME };
+  seenBarIds.clear();
+  barCloseChain = Promise.resolve();
+  intentionalClose = false;
+}
+
+module.exports = {
+  start,
+  stop,
+  okxInstIdFromTv,
+  __setRuntimeForTests,
+  __resetRuntimeForTests,
+};

@@ -24,9 +24,9 @@ export function ChartPanel() {
           <CardTitle className="text-xs leading-none font-semibold tracking-wider text-muted-foreground uppercase">
             行情
           </CardTitle>
-          <span className="chart-agent-cycle-badge" title="Agent 固定以 5 分钟 K 线收盘触发决策">
+          {/* <span className="chart-agent-cycle-badge" title="Agent 固定以 5 分钟 K 线收盘触发决策">
             决策周期 5m
-          </span>
+          </span> */}
         </div>
         <div className="flex min-w-0 shrink items-center gap-1.5">
           <Button

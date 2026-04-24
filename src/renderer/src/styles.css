@@ -171,7 +171,7 @@ body,
   align-items: center;
   height: 20px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 1px solid color-mix(in oklch, var(--primary) 26%, var(--border));
   background: color-mix(in oklch, var(--primary) 10%, transparent);
   font-size: 10px;

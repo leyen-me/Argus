@@ -69,6 +69,7 @@ function equitySamplePullLimit(sinceIso) {
  * @param {string | null} sinceIso
  */
 function buildEquitySeriesForDashboard(sinceIso) {
+  if (!sinceIso || typeof sinceIso !== "string" || !sinceIso.trim()) return [];
   const raw = dashboardStore.listRecentEquitySamples(equitySamplePullLimit(sinceIso));
   const filtered = filterEquitySeriesFromStatsSince(raw, sinceIso);
   return capEquitySeriesTail(filtered);
@@ -210,6 +211,9 @@ async function getDashboardSnapshot(cfg) {
 
 module.exports = {
   BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS,
+  buildEquitySeriesForDashboard,
+  equitySamplePullLimit,
+  filterEquitySeriesFromStatsSince,
   getDashboardSnapshot,
   sampleDashboardEquityOnce,
 };

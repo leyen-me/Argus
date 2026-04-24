@@ -47,6 +47,8 @@ const APP_SETTINGS_SEED = Object.freeze({
   dashboardBaselineEquityUsdt: null,
   /** 仪表盘「Agent 工具统计」起点：仅统计 captured_at 不早于此 ISO 时间的回合；null 表示自始累计。 */
   dashboardAgentToolStatsSince: null,
+  /** 仪表盘统计范围：按策略隔离保存，避免切换策略后混用同一段权益曲线。 */
+  dashboardStrategyRanges: {},
 });
 
 const DEFAULT_OPENAI_BASE_URL = APP_SETTINGS_SEED.openaiBaseUrl;
@@ -184,6 +186,38 @@ function normalizeOpenAiModel(raw) {
   return raw.trim();
 }
 
+function normalizeDashboardStrategyRanges(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [strategyIdRaw, value] of Object.entries(raw)) {
+    const strategyId = typeof strategyIdRaw === "string" ? strategyIdRaw.trim() : "";
+    if (!strategyId || !value || typeof value !== "object" || Array.isArray(value)) continue;
+
+    let baselineEquityUsdt = null;
+    if ("baselineEquityUsdt" in value) {
+      const v = value.baselineEquityUsdt;
+      if (v !== null && v !== "") {
+        const n = Number(v);
+        baselineEquityUsdt = Number.isFinite(n) && n >= 0 ? n : null;
+      }
+    }
+
+    let statsSince = null;
+    if ("statsSince" in value) {
+      const v = value.statsSince;
+      if (typeof v === "string" && v.trim()) {
+        const t = Date.parse(v.trim());
+        statsSince = Number.isFinite(t) ? v.trim() : null;
+      }
+    }
+
+    if (baselineEquityUsdt != null || statsSince != null) {
+      out[strategyId] = { baselineEquityUsdt, statsSince };
+    }
+  }
+  return out;
+}
+
 function normalizeConfig(raw) {
   const base = defaultConfigFallback();
   if (!raw || typeof raw !== "object") return base;
@@ -294,6 +328,31 @@ function normalizeConfig(raw) {
     }
   }
 
+  const hasExplicitDashboardStrategyRanges = "dashboardStrategyRanges" in raw;
+  const dashboardStrategyRanges = normalizeDashboardStrategyRanges(raw.dashboardStrategyRanges);
+  if (
+    !hasExplicitDashboardStrategyRanges &&
+    !(promptStrategy in dashboardStrategyRanges) &&
+    (dashboardBaselineEquityUsdt != null || dashboardAgentToolStatsSince != null)
+  ) {
+    dashboardStrategyRanges[promptStrategy] = {
+      baselineEquityUsdt: dashboardBaselineEquityUsdt,
+      statsSince: dashboardAgentToolStatsSince,
+    };
+  }
+
+  const activeDashboardRange =
+    dashboardStrategyRanges[promptStrategy] && typeof dashboardStrategyRanges[promptStrategy] === "object"
+      ? dashboardStrategyRanges[promptStrategy]
+      : null;
+  if (activeDashboardRange) {
+    dashboardBaselineEquityUsdt = activeDashboardRange.baselineEquityUsdt ?? null;
+    dashboardAgentToolStatsSince = activeDashboardRange.statsSince ?? null;
+  } else {
+    dashboardBaselineEquityUsdt = null;
+    dashboardAgentToolStatsSince = null;
+  }
+
   return {
     symbols,
     defaultSymbol,
@@ -321,6 +380,7 @@ function normalizeConfig(raw) {
     okxPassphrase,
     dashboardBaselineEquityUsdt,
     dashboardAgentToolStatsSince,
+    dashboardStrategyRanges,
   };
 }
 

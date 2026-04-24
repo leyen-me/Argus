@@ -273,6 +273,7 @@ const FALLBACK_APP_CONFIG = {
   okxPassphrase: "",
   dashboardBaselineEquityUsdt: null,
   dashboardAgentToolStatsSince: null,
+  dashboardStrategyRanges: {},
 };
 
 /** Agent 决策周期固定为 5 分钟，左侧同时展示 1D / 1H / 15m / 5m */

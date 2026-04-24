@@ -45,6 +45,13 @@ type DashboardConfig = {
   promptStrategy?: string
   defaultSymbol?: string
   symbols?: SymbolOption[]
+  dashboardStrategyRanges?: Record<
+    string,
+    {
+      baselineEquityUsdt?: number | null
+      statsSince?: string | null
+    }
+  >
 }
 
 type StrategyMeta = {
@@ -106,6 +113,36 @@ function resolveSymbolLabel(config: DashboardConfig | null) {
   const options = Array.isArray(config?.symbols) ? config.symbols : []
   const matched = options.find((item) => item?.value === current)
   return matched?.label?.trim() || current || "未选择品种"
+}
+
+function resolveStrategyId(config: DashboardConfig | null) {
+  return typeof config?.promptStrategy === "string" && config.promptStrategy.trim() ? config.promptStrategy.trim() : "default"
+}
+
+function buildNextStrategyRanges(
+  config: DashboardConfig | null,
+  updater: (
+    current: Record<
+      string,
+      {
+        baselineEquityUsdt?: number | null
+        statsSince?: string | null
+      }
+    >,
+    strategyId: string,
+  ) => Record<
+    string,
+    {
+      baselineEquityUsdt?: number | null
+      statsSince?: string | null
+    }
+  >,
+) {
+  const strategyId = resolveStrategyId(config)
+  const current = config?.dashboardStrategyRanges && typeof config.dashboardStrategyRanges === "object"
+    ? { ...config.dashboardStrategyRanges }
+    : {}
+  return updater(current, strategyId)
 }
 
 function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
@@ -301,7 +338,7 @@ function AccountOverviewCard({
   )
 }
 
-function EquityCurveChart({ series }: { series: EquityPoint[] }) {
+function EquityCurveChart({ series, strategyRunning }: { series: EquityPoint[]; strategyRunning: boolean }) {
   const w = 1000
   const h = 300
   const padX = 24
@@ -310,7 +347,7 @@ function EquityCurveChart({ series }: { series: EquityPoint[] }) {
   if (!series.length) {
     return (
       <div className="flex h-full w-full min-h-[220px] flex-1 items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 text-center text-sm text-muted-foreground">
-        暂无账户净值采样数据
+        {strategyRunning ? "当前策略暂无净值采样数据" : "启动当前策略后开始绘制净值曲线"}
       </div>
     )
   }
@@ -364,11 +401,11 @@ function EquityCurveChart({ series }: { series: EquityPoint[] }) {
   )
 }
 
-function EquityCurveCard({ series }: { series: EquityPoint[] }) {
+function EquityCurveCard({ series, strategyRunning }: { series: EquityPoint[]; strategyRunning: boolean }) {
   return (
     <Card className="min-h-0 gap-0 bg-transparent py-0 shadow-none ring-border/60">
       <CardContent className="flex min-h-0 flex-1 flex-col px-5 py-5">
-        <EquityCurveChart series={series} />
+        <EquityCurveChart series={series} strategyRunning={strategyRunning} />
       </CardContent>
     </Card>
   )
@@ -429,28 +466,35 @@ export function TradingDashboardCard({
     }
     try {
       setErr(null)
-      await window.argus?.saveConfig?.({
-        dashboardBaselineEquityUsdt: eq,
-        dashboardAgentToolStatsSince: new Date().toISOString(),
-      })
+      const statsSince = new Date().toISOString()
+      const dashboardStrategyRanges = buildNextStrategyRanges(config, (current, strategyId) => ({
+        ...current,
+        [strategyId]: {
+          baselineEquityUsdt: eq,
+          statsSince,
+        },
+      }))
+      await window.argus?.saveConfig?.({ dashboardStrategyRanges })
       void load()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }, [load, snap?.equityUsdt])
+  }, [config, load, snap?.equityUsdt])
 
   const endStrategyRange = useCallback(async () => {
     try {
       setErr(null)
-      await window.argus?.saveConfig?.({
-        dashboardBaselineEquityUsdt: null,
-        dashboardAgentToolStatsSince: null,
+      const dashboardStrategyRanges = buildNextStrategyRanges(config, (current, strategyId) => {
+        const next = { ...current }
+        delete next[strategyId]
+        return next
       })
+      await window.argus?.saveConfig?.({ dashboardStrategyRanges })
       void load()
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     }
-  }, [load])
+  }, [config, load])
 
   const series = useMemo(
     () => (Array.isArray(snap?.equitySeries) ? snap?.equitySeries.filter((item) => Number.isFinite(item?.equity)) : []),
@@ -494,7 +538,7 @@ export function TradingDashboardCard({
 
       <AccountOverviewCard snap={snap} strategyRunning={strategyRunning} />
 
-      <EquityCurveCard series={series} />
+      <EquityCurveCard series={series} strategyRunning={strategyRunning} />
     </div>
   )
 }

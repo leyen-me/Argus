@@ -198,11 +198,11 @@ function formatRecentAgentMemoryBlock(memories, exchangeCtx) {
   const rows = Array.isArray(memories) ? memories : [];
   if (rows.length === 0) {
     return [
-      "### 最近策略记忆",
+      "### 最近操作",
       "",
       "> **说明**：这里会提醒你最近几轮自己做过什么，避免把刚刚止盈/止损/离场过的结构当成从未交易过的新世界。",
       "",
-      "（当前无最近策略记忆。）",
+      "（当前无最近操作）",
     ].join("\n");
   }
 
@@ -260,9 +260,6 @@ function positionFieldsTable(fields) {
 }
 
 function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, recentAgentMemories) {
-  const snapshotIntro =
-    "> **说明**：以下为 OKX 永续账户、持仓与挂单快照。**若要开仓、平仓或改单，请调用工具执行**（例如先用 `preview_open_size` 试算张数，再使用下单/平仓/撤单等工具）。**不要只在回复里写交易建议而不调用工具。**";
-
   if (!exchangeCtx || exchangeCtx.enabled !== true) {
     let note;
     if (exchangeCtx?.reason === "okx_swap_disabled") {
@@ -272,12 +269,12 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
     } else {
       note = `（无快照：${exchangeCtx?.reason || "OKX 永续未启用或未配置 API"}。）`;
     }
-    return [marketText, "", "## OKX 永续快照", "", snapshotIntro, note].join("\n");
+    return [marketText, "", "## OKX 永续快照", "", note].join("\n");
   }
 
   if (exchangeCtx.ok !== true) {
     const err = mdCell(exchangeCtx.message || "交易所快照失败");
-    return [marketText, "", "## OKX 永续快照", "", snapshotIntro, `**接口错误**：${err}`].join("\n");
+    return [marketText, "", "## OKX 永续快照", "", `**接口错误**：${err}`].join("\n");
   }
 
   const cs = exchangeCtx.contract_sizing;
@@ -357,7 +354,6 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
     "",
     "## OKX 永续快照",
     "",
-    snapshotIntro,
     "### 合约",
     "",
     contractBlock,

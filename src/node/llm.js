@@ -640,7 +640,7 @@ function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线�
   }
   const meta =
     recent.instId && recent.bar
-      ? ` \`${recent.instId}\` · \`${recent.bar}\` · 共 ${recent.rows?.length ?? 0} 根（UTC，旧→新）`
+      ? ` \`${recent.instId}\` · \`${recent.bar}\` · 共 ${recent.rows?.length ?? 0} 根`
       : "";
   const rows = Array.isArray(recent.rows) ? recent.rows : [];
   if (!rows.length) {
@@ -662,14 +662,9 @@ function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线�
     r.turnover != null && r.turnover !== "" ? r.turnover : "—",
     formatPromptNumber(sliceEma[j]),
   ]);
-  const emaNote = `表：最近 ${show} 根（旧→新）。\`EMA20\`：收盘 EMA(${EMA20_PERIOD})，第 1–${
-    EMA20_PERIOD - 1
-  } 根无该列；本轮拉取 ${rows.length} 根参与计算。`;
   return [
     "",
     `${title}${meta}`,
-    "",
-    emaNote,
     "",
     mdTable(
       ["Time (UTC)", "Open", "High", "Low", "Close", "Volume", "QuoteVol", "EMA20"],
@@ -721,7 +716,7 @@ const MULTI_TIMEFRAME_PROMPT_SPECS = [
 function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesByInterval) {
   const triggerRow = [
     symbol,
-    `${periodKey}（已收盘 / 决策触发）`,
+    `${periodKey}`,
     candle.timestamp,
     candle.open,
     candle.high,
@@ -733,7 +728,7 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
   const sections = MULTI_TIMEFRAME_PROMPT_SPECS.map((spec) =>
     buildRecentCandlesMarkdownSection(
       recentCandlesByInterval?.[spec.interval],
-      `### ${spec.label} 最近 K 线（OKX REST）`,
+      `### ${spec.label} 最近 K 线`,
     ),
   ).filter(Boolean);
   return [
@@ -746,7 +741,6 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
     "",
     "## 多周期上下文",
     "",
-    "以下同时给出 1D / 1H / 15m / 5m 四个周期；其中 Agent 执行节奏固定以 5m 收盘为准，其余周期用于趋势、结构与过滤。",
     ...sections,
   ].join("\n");
 }

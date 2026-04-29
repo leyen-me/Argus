@@ -56,6 +56,7 @@ const SEEN_CAP = 2000;
  * 若并发 `emitBarClose`，渲染进程里 `latestBarCloseId` 会被覆盖，导致大量流式 delta/end 被丢弃（表现为「多半收不到输出」）。
  */
 let barCloseChain = Promise.resolve();
+let latestQueuedBarTs = 0;
 
 function enqueueBarCloseTask(fn) {
   const next = barCloseChain.then(fn);
@@ -77,19 +78,21 @@ function markSocketActivity() {
 }
 
 /**
- * TradingView 写法为 OKX:BTCUSDT（无连字符）；订阅 OKX WS 时需 instId「BASE-QUOTE」，此处转为 BTC-USDT。
- * 仍接受 OKX:BTC-USDT，与官方 instId 一致时直接使用。
+ * TradingView 写法为 OKX:BTCUSDT（无连字符）；订阅 OKX 永续 WS 时需 instId「BASE-QUOTE-SWAP」。
+ * 仍接受 OKX:BTC-USDT，与官方 instId 一致时直接使用并补齐 `-SWAP`。
  * @param {string} tv
  * @returns {string | null}
  */
-function okxInstIdFromTv(tv) {
+function okxSwapInstIdFromTv(tv) {
   const v = String(tv || "").trim();
   if (!v.startsWith("OKX:")) return null;
-  const rest = v.slice("OKX:".length).trim().toUpperCase();
+  let rest = v.slice("OKX:".length).trim().toUpperCase();
+  if (rest.endsWith(".P")) rest = rest.slice(0, -2);
   if (!rest) return null;
-  if (rest.includes("-")) return rest;
+  if (rest.endsWith("-SWAP")) return rest;
+  if (rest.includes("-")) return `${rest}-SWAP`;
   const m = /^(.+)(USDT|USDC|DAI|BUSD|EUR|USD|BTC|ETH)$/.exec(rest);
-  if (m) return `${m[1]}-${m[2]}`;
+  if (m) return `${m[1]}-${m[2]}-SWAP`;
   return null;
 }
 
@@ -124,8 +127,18 @@ function periodDisplayForTv(intervalTv) {
 }
 
 function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle) {
+  const candleTs = Date.parse(candle.timestamp);
+  if (Number.isFinite(candleTs) && candleTs > latestQueuedBarTs) {
+    latestQueuedBarTs = candleTs;
+  }
   return enqueueBarCloseTask(async () => {
     if (seenBarIds.has(candle.barKey)) return;
+    if (Number.isFinite(candleTs) && candleTs < latestQueuedBarTs) {
+      send(winGetter, "market-status", {
+        text: `跳过过期 K 收盘：${tvSymbol} · ${candle.timestamp}（队列里已有更新收盘）`,
+      });
+      return;
+    }
     seenBarIds.add(candle.barKey);
     if (seenBarIds.size > SEEN_CAP) seenBarIds.clear();
 
@@ -218,7 +231,7 @@ function startHealthCheck(okxSocket, winGetter, tvSymbol) {
 function connectOkx() {
   if (!session) return;
   const { winGetter, tvSymbol, intervalTv } = session;
-  const instId = okxInstIdFromTv(tvSymbol);
+  const instId = okxSwapInstIdFromTv(tvSymbol);
   if (!instId) {
     send(winGetter, "market-status", { text: "无效 OKX 代码（示例 OKX:BTCUSDT）" });
     return;
@@ -312,7 +325,7 @@ function connectOkx() {
 function connect() {
   if (!session) return;
   const { tvSymbol } = session;
-  if (!okxInstIdFromTv(tvSymbol)) {
+  if (!okxSwapInstIdFromTv(tvSymbol)) {
     send(session.winGetter, "market-status", {
       text: "请使用 OKX: 前缀（如 OKX:BTCUSDT）",
     });
@@ -327,6 +340,7 @@ function connect() {
 function start(winGetter, tvSymbol, intervalTv) {
   stop();
   intentionalClose = false;
+  latestQueuedBarTs = 0;
   session = { winGetter, tvSymbol, intervalTv };
   connect();
 }
@@ -338,6 +352,7 @@ function stop() {
   session = null;
   reconnectAttempt = 0;
   lastSocketActivityAt = 0;
+  latestQueuedBarTs = 0;
   if (ws) {
     try {
       if (typeof ws.terminate === "function") ws.terminate();
@@ -354,6 +369,7 @@ function __setRuntimeForTests(overrides = {}) {
   runtime = { ...DEFAULT_RUNTIME, ...overrides };
   seenBarIds.clear();
   barCloseChain = Promise.resolve();
+  latestQueuedBarTs = 0;
   intentionalClose = false;
 }
 
@@ -362,13 +378,14 @@ function __resetRuntimeForTests() {
   runtime = { ...DEFAULT_RUNTIME };
   seenBarIds.clear();
   barCloseChain = Promise.resolve();
+  latestQueuedBarTs = 0;
   intentionalClose = false;
 }
 
 module.exports = {
   start,
   stop,
-  okxInstIdFromTv,
+  okxInstIdFromTv: okxSwapInstIdFromTv,
   __setRuntimeForTests,
   __resetRuntimeForTests,
 };

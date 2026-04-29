@@ -73,7 +73,8 @@ const TRADING_AGENT_TOOLS = [
           },
           stop_loss_trigger_price: {
             type: "number",
-            description: "可选，止损触发价。做多时通常应低于入场参考价，做空时通常应高于入场参考价；触发后按市价平仓。",
+            description:
+              "强制要求，止损触发价。做多时通常应低于入场参考价，做空时通常应高于入场参考价；触发后按市价平仓。若缺少该字段，执行层会拒绝下单。",
           },
           tp_sl_trigger_price_type: {
             type: "string",

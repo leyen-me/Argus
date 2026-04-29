@@ -323,10 +323,87 @@ function getAgentSessionMessages(barCloseId) {
   });
 }
 
+function safeJsonParse(text) {
+  if (typeof text !== "string" || !text.trim()) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function holdingStateFromExchangeAfter(exchangeAfter) {
+  const pos = exchangeAfter && typeof exchangeAfter === "object" ? exchangeAfter.position : null;
+  if (!pos || typeof pos !== "object" || pos.hasPosition !== true) return "空仓";
+  if (pos.posSide === "long") return "持多";
+  if (pos.posSide === "short") return "持空";
+  const n = Number(pos.posNum);
+  if (Number.isFinite(n) && n > 0) return "持多";
+  if (Number.isFinite(n) && n < 0) return "持空";
+  return "持仓";
+}
+
+function summarizeToolTrace(toolTrace) {
+  if (!Array.isArray(toolTrace) || toolTrace.length === 0) return "无工具动作";
+  const names = [];
+  for (const item of toolTrace) {
+    if (!item || typeof item !== "object") continue;
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    if (!name) continue;
+    const ok = item.result && typeof item.result === "object" ? item.result.ok === true : false;
+    names.push(ok ? name : `${name}(失败)`);
+  }
+  return names.length ? names.join(" -> ") : "无工具动作";
+}
+
+/**
+ * 供下一轮 user prompt 注入的最近策略记忆：仅返回同品种同周期最近若干条已落库会话摘要。
+ * @param {object} args
+ * @param {string} args.tvSymbol
+ * @param {string} args.interval
+ * @param {number} [args.limit=6]
+ */
+function listRecentAgentMemories(args = {}) {
+  const tvSymbol = String(args.tvSymbol || "").trim();
+  const interval = String(args.interval || "").trim();
+  const limit = Math.min(20, Math.max(1, Math.floor(Number(args.limit) || 6)));
+  if (!tvSymbol || !interval) return [];
+
+  const rows = getDatabase()
+    .prepare(
+      `SELECT
+         bar_close_id, captured_at, assistant_text, card_summary, tool_trace_json,
+         exchange_after_json, agent_ok, agent_error
+       FROM agent_sessions
+       WHERE tv_symbol = ? AND interval = ?
+       ORDER BY captured_at DESC, bar_close_id DESC
+       LIMIT ?`,
+    )
+    .all(tvSymbol, interval, limit);
+
+  return rows.map((row) => {
+    const toolTrace = safeJsonParse(row.tool_trace_json);
+    const exchangeAfter = safeJsonParse(row.exchange_after_json);
+    return {
+      barCloseId: String(row.bar_close_id || ""),
+      capturedAt: String(row.captured_at || ""),
+      agentOk: row.agent_ok === 1,
+      agentError: row.agent_error != null ? String(row.agent_error) : null,
+      assistantText: row.assistant_text != null ? String(row.assistant_text) : null,
+      cardSummary: row.card_summary != null ? String(row.card_summary) : null,
+      toolTrace: Array.isArray(toolTrace) ? toolTrace : [],
+      exchangeAfter,
+      holdingState: holdingStateFromExchangeAfter(exchangeAfter),
+      toolSummary: summarizeToolTrace(toolTrace),
+    };
+  });
+}
+
 module.exports = {
   persistAgentBarTurn,
   listAgentBarTurnsPage,
   getAgentBarTurnChart,
   getAgentSessionMessages,
+  listRecentAgentMemories,
   redactContentForStorage,
 };

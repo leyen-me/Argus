@@ -9,7 +9,7 @@
  * - `agent_sessions` / `agent_session_messages`：收盘 Agent 会话与有序消息（user_version ≥ 6）。
  * - `dashboard_equity_samples`：仪表盘权益曲线采样（user_version ≥ 7）。
  * - `agent_sessions.card_summary`：收盘后二次 LLM 卡片短摘要（user_version ≥ 8）。
- * - `order_intents`：未完成挂单的本地意图记忆（user_version ≥ 9）。
+ * - `order_intents`：旧版挂单意图记忆表（user_version = 9）；v10 起移除。
  * - 其他强关系数据可在同一库中新建表并递增 user_version；业务模块仅依赖 `getDatabase()`。
  *
  * 约定命名空间（namespace）示例：
@@ -211,6 +211,13 @@ function applyMigrations(database) {
       CREATE INDEX idx_order_intents_active ON order_intents (tv_symbol, interval, status, updated_at DESC);
     `);
     database.pragma("user_version = 9");
+    v = 9;
+  }
+  if (v < 10) {
+    database.exec(`
+      DROP TABLE IF EXISTS order_intents;
+    `);
+    database.pragma("user_version = 10");
   }
 }
 

@@ -40,6 +40,15 @@ let lastTvWidgetRequest = {
   interval: AGENT_DECISION_INTERVAL,
 };
 
+function normalizeTradingViewSymbolForPerp(symbol) {
+  const raw = String(symbol || "").trim();
+  if (!raw.startsWith("OKX:")) return raw;
+  const body = raw.slice("OKX:".length).trim().toUpperCase();
+  if (!body) return raw;
+  if (body.endsWith(".P")) return `OKX:${body}`;
+  return `OKX:${body}.P`;
+}
+
 function cancelPendingTradingViewRender() {
   if (tvWidgetRenderTimer) {
     window.clearTimeout(tvWidgetRenderTimer);
@@ -2341,6 +2350,7 @@ function createTradingViewWidgetNow(symbol, interval) {
     return;
   }
 
+  const tvSymbol = normalizeTradingViewSymbolForPerp(symbol || "OKX:BTCUSDT");
   /**
    * tv.js（免费 Advanced Chart）里与「隐藏界面」相关的选项主要来自官方 embed：
    *
@@ -2356,7 +2366,7 @@ function createTradingViewWidgetNow(symbol, interval) {
   for (const spec of MULTI_TIMEFRAME_SPECS) {
     const widget = new TradingView.widget({
       autosize: true,
-      symbol: symbol || "OKX:BTCUSDT",
+      symbol: tvSymbol,
       interval: spec.interval,
       timezone: "Asia/Shanghai",
       theme: "dark",

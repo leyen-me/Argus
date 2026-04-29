@@ -25,7 +25,7 @@ const {
 } = require("./okx-perp");
 const { TRADING_AGENT_TOOLS } = require("./trading-agent-tools");
 const { createTradingToolExecutor } = require("./trading-agent-executor");
-const { persistAgentBarTurn } = require("./agent-bar-turns-store");
+const { persistAgentBarTurn, listRecentAgentMemories } = require("./agent-bar-turns-store");
 
 const AGENT_DECISION_INTERVAL = "5";
 const MULTI_TIMEFRAME_CAPTURE_SPECS = [
@@ -69,17 +69,6 @@ const MD_ALGO_ORDER_HEADERS = [
   "tpTriggerPxType",
   "slTriggerPxType",
   "ordPx",
-];
-
-const MD_ORDER_INTENT_HEADERS = [
-  "entityType",
-  "entityId",
-  "action",
-  "side",
-  "liveState",
-  "livePx",
-  "liveSz",
-  "summary",
 ];
 
 const OKX_POSITION_HISTORY_LLM_HEADERS = [
@@ -197,28 +186,64 @@ function pickRow(o, keys) {
   return keys.map((k) => o[k]);
 }
 
-/**
- * @param {Array<object> | null | undefined} intents
- */
-function orderIntentMemoryBlock(intents) {
-  const rows = Array.isArray(intents) ? intents : [];
-  if (rows.length === 0) return "（当前无本地挂单意图记忆。）";
-  return mdTable(
-    MD_ORDER_INTENT_HEADERS,
-    rows.map((row) => {
-      const live = row && typeof row === "object" && row.live && typeof row.live === "object" ? row.live : null;
-      return [
-        row?.entityType === "algo" ? "algo" : "order",
-        row?.entityId ?? "—",
-        row?.action ?? "—",
-        row?.side ?? "—",
-        live?.state ?? "—",
-        live?.px ?? live?.ordPx ?? live?.triggerPx ?? "—",
-        live?.sz ?? "—",
-        row?.summary ?? "—",
-      ];
-    }),
-  );
+function clipText(text, maxLen = 120) {
+  const s = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!s) return "";
+  return s.length > maxLen ? `${s.slice(0, Math.max(0, maxLen - 3))}...` : s;
+}
+
+function formatRecentAgentMemoryBlock(memories, exchangeCtx) {
+  const rows = Array.isArray(memories) ? memories : [];
+  if (rows.length === 0) {
+    return [
+      "### 最近策略记忆",
+      "",
+      "> **说明**：这里会提醒你最近几轮自己做过什么，避免把刚刚止盈/止损/离场过的结构当成从未交易过的新世界。",
+      "",
+      "（当前无最近策略记忆。）",
+    ].join("\n");
+  }
+
+  const lines = rows.map((row, idx) => {
+    const action = clipText(row?.toolSummary || "无工具动作", 80) || "无工具动作";
+    const holding = clipText(row?.holdingState || "空仓", 20) || "空仓";
+    const note =
+      clipText(row?.cardSummary || row?.assistantText || row?.agentError || "", 110) || "无补充说明";
+    return `${idx + 1}. ${row?.capturedAt || "—"}｜${holding}｜${action}｜${note}`;
+  });
+
+  const latest = rows[0];
+  const latestAfter =
+    latest && latest.exchangeAfter && typeof latest.exchangeAfter === "object" ? latest.exchangeAfter : null;
+  const latestPos =
+    latestAfter && latestAfter.position && typeof latestAfter.position === "object" ? latestAfter.position : null;
+  const latestHadPosition = latestPos && latestPos.hasPosition === true;
+  const currentPos =
+    exchangeCtx && exchangeCtx.position && typeof exchangeCtx.position === "object" ? exchangeCtx.position : null;
+  const currentHasPosition = currentPos && currentPos.hasPosition === true;
+
+  let transitionNote = "";
+  if (latestHadPosition && !currentHasPosition) {
+    transitionNote =
+      "最新记忆显示：上一轮结束时你仍有仓位，但本轮开始已空仓。这说明仓位是在两轮之间离场了（可能止盈、止损或手动平仓）。不要把它当成“从未开过仓”的新机会；若要再进，必须确认有新的结构与新的 5m 触发。";
+  } else if (!latestHadPosition && currentHasPosition) {
+    transitionNote =
+      "最新记忆显示：上一轮结束时空仓，但本轮开始已有仓位。说明这段时间出现了新成交或外部手动操作；优先先解释现有仓位，而不是忽略它。";
+  }
+
+  return [
+    "### 最近策略记忆",
+    "",
+    "> **说明**：以下是同品种同周期最近几轮自己的动作和结果。它是硬上下文，不要忽略。",
+    transitionNote ? "" : null,
+    transitionNote || null,
+    "",
+    ...lines,
+  ]
+    .filter((v) => v != null)
+    .join("\n");
 }
 
 /**
@@ -234,7 +259,7 @@ function positionFieldsTable(fields) {
   );
 }
 
-function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory) {
+function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, recentAgentMemories) {
   const snapshotIntro =
     "> **说明**：以下为 OKX 永续账户、持仓与挂单快照。**若要开仓、平仓或改单，请调用工具执行**（例如先用 `preview_open_size` 试算张数，再使用下单/平仓/撤单等工具）。**不要只在回复里写交易建议而不调用工具。**";
 
@@ -317,7 +342,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory) {
         )
       : "（当前无算法挂单。）";
 
-  const orderIntentBlock = orderIntentMemoryBlock(exchangeCtx.order_intents);
+  const recentMemoryBlock = formatRecentAgentMemoryBlock(recentAgentMemories, exchangeCtx);
 
   const contractBlock = mdTable(
     ["项目", "值"],
@@ -353,11 +378,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory) {
     "",
     posFieldsSection,
     "",
-    "### 挂单意图记忆（本地）",
-    "",
-    "> **说明**：仅展示当前仍能在交易所 pending 快照里匹配到的本地意图摘要，用来说明这些挂单当初为什么存在；若当前结构已变化，不必机械坚持原判断。",
-    "",
-    orderIntentBlock,
+    recentMemoryBlock,
     "",
     "### 普通挂单",
     "",
@@ -471,7 +492,7 @@ async function emitBarClose(winGetter, ctx) {
   };
 
   const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
-  const [exchangeCtx, recentCandlesPack, positionsHistory] = await Promise.all([
+  const [exchangeCtx, recentCandlesPack, positionsHistory, recentAgentMemories] = await Promise.all([
     getOkxExchangeContextForBar(cfg, ctx.tvSymbol, ctx.interval),
     Promise.all(
       MULTI_TIMEFRAME_CAPTURE_SPECS.map(async (spec) => [
@@ -480,6 +501,7 @@ async function emitBarClose(winGetter, ctx) {
       ]),
     ),
     fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10),
+    Promise.resolve(listRecentAgentMemories({ tvSymbol: ctx.tvSymbol, interval: ctx.interval, limit: 6 })),
   ]);
   const recentCandles = Object.fromEntries(recentCandlesPack);
   const textForLlm = buildMultiTimeframeUserPrompt(
@@ -488,7 +510,7 @@ async function emitBarClose(winGetter, ctx) {
     ctx.candle,
     recentCandles,
   );
-  const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx, positionsHistory);
+  const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx, positionsHistory, recentAgentMemories);
 
   const payloadBase = {
     kind: "bar_close",

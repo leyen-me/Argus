@@ -4,7 +4,6 @@
  * 优先取自 open_position 工具入参；未传时回退到内置默认值。
  */
 const crypto = require("crypto");
-const { reconcileAndListActiveOrderIntents } = require("./order-intents-store");
 const https = require("https");
 const { inferFeed } = require("./market");
 
@@ -62,7 +61,8 @@ function assertOkxTradeOrderAccepted(json) {
 function okxSpotInstIdFromTv(tv) {
   const v = String(tv || "").trim();
   if (!v.startsWith("OKX:")) return null;
-  const rest = v.slice("OKX:".length).trim().toUpperCase();
+  let rest = v.slice("OKX:".length).trim().toUpperCase();
+  if (rest.endsWith(".P")) rest = rest.slice(0, -2);
   if (!rest) return null;
   if (rest.includes("-")) return rest;
   const m = /^(.+)(USDT|USDC|DAI|BUSD|EUR|USD|BTC|ETH)$/.exec(rest);
@@ -203,14 +203,14 @@ function tvIntervalToOkxCandleBar(intervalTv) {
 }
 
 /**
- * 公开行情：最近 N 根 K 线。使用与 WS 收盘相同的**现货类** instId（如 BTC-USDT），与 `crypto-scheduler` 对齐。
+ * 公开行情：最近 N 根 K 线。使用与实际交易一致的 **SWAP 合约** instId（如 BTC-USDT-SWAP）。
  * @param {string} tvSymbol 如 OKX:BTCUSDT
  * @param {string} intervalTv
  * @param {number} [limit=30]
  * @returns {Promise<{ ok: true, rows: Array<{ ts: number, timeIso: string, open: string, high: string, low: string, close: string, volume: string, turnover: string | null }>, instId: string, bar: string } | { ok: false, error: string, rows: [], instId: string | null, bar: string }>}
  */
 async function fetchRecentCandlesForTv(tvSymbol, intervalTv, limit = 30) {
-  const instId = okxSpotInstIdFromTv(tvSymbol);
+  const instId = tvSymbolToSwapInstId(tvSymbol);
   const bar = tvIntervalToOkxCandleBar(intervalTv);
   const lim = Math.min(300, Math.max(1, Math.floor(Number(limit) || 30)));
   if (!instId) {
@@ -1419,12 +1419,6 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol, interval = "") {
     const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
     const position = await fetchSwapPositionSnapshot(client, instId);
     const { pending_orders, pending_algo_orders } = await fetchSwapPendingOrderSummaries(client, instId);
-    const order_intents = reconcileAndListActiveOrderIntents({
-      tvSymbol,
-      interval,
-      pendingOrders: pending_orders,
-      pendingAlgoOrders: pending_algo_orders,
-    });
 
     /** @type {number | null} */
     let usdt_avail_eq = null;
@@ -1475,7 +1469,6 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol, interval = "") {
       position,
       pending_orders,
       pending_algo_orders,
-      order_intents,
       usdt_avail_eq,
       contract_sizing,
       sizing_examples,

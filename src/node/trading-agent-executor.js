@@ -3,7 +3,6 @@
  */
 const okxPerp = require("./okx-perp");
 const { notifyTradePositionIfNeeded } = require("./trade-notify-email");
-const orderIntents = require("./order-intents-store");
 
 /** 供单测注入 mock；生产路径使用默认实现。 */
 const TRADING_EXECUTOR_DEFAULT_DEPS = Object.freeze({
@@ -15,10 +14,6 @@ const TRADING_EXECUTOR_DEFAULT_DEPS = Object.freeze({
   executeAgentPerpOpen: okxPerp.executeAgentPerpOpen,
   executeAgentPerpPreviewOpen: okxPerp.executeAgentPerpPreviewOpen,
   executeAgentPerpClose: okxPerp.executeAgentPerpClose,
-  upsertOrderIntent: orderIntents.upsertOrderIntent,
-  updateOrderIntent: orderIntents.updateOrderIntent,
-  markOrderIntentStatus: orderIntents.markOrderIntentStatus,
-  summarizeIntentText: orderIntents.summarizeIntentText,
 });
 
 function requireOkx(cfg) {
@@ -54,10 +49,6 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
     executeAgentPerpOpen,
     executeAgentPerpPreviewOpen,
     executeAgentPerpClose,
-    upsertOrderIntent,
-    updateOrderIntent,
-    markOrderIntentStatus,
-    summarizeIntentText,
   } = deps;
 
   const sendOkxStatus = (payload) => {
@@ -91,31 +82,6 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
 
   return async function executeTradingTool(name, args, meta = {}) {
     const a = args && typeof args === "object" ? args : {};
-    const assistantPreview =
-      meta && typeof meta.assistantPreview === "string" ? meta.assistantPreview : "";
-    const summarizeForIntent = (fallback) => summarizeIntentText("", fallback);
-    const rememberIntent = (payload) => {
-      try {
-        upsertOrderIntent(payload);
-      } catch (e) {
-        console.warn("[Argus] 订单意图写入失败:", e);
-      }
-    };
-    const patchIntent = (entityType, entityId, patch, fallbackPayload) => {
-      try {
-        const ok = updateOrderIntent(entityType, entityId, patch);
-        if (!ok && fallbackPayload) upsertOrderIntent(fallbackPayload);
-      } catch (e) {
-        console.warn("[Argus] 订单意图更新失败:", e);
-      }
-    };
-    const changeIntentStatus = (entityType, entityId, status, inactiveReason, extra) => {
-      try {
-        markOrderIntentStatus(entityType, entityId, status, inactiveReason, extra);
-      } catch (e) {
-        console.warn("[Argus] 订单意图状态更新失败:", e);
-      }
-    };
 
     try {
       switch (name) {
@@ -141,6 +107,12 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
           };
           const tpTriggerPx = pickPx(a.take_profit_trigger_price ?? a.tp_trigger_price);
           const slTriggerPx = pickPx(a.stop_loss_trigger_price ?? a.sl_trigger_price);
+          if (!(Number.isFinite(slTriggerPx) && slTriggerPx > 0)) {
+            const warnMsg =
+              "open_position 必须提供 stop_loss_trigger_price；当前已启用强制止损规则。请先明确失效点，再决定是否下单。";
+            sendOkxStatus({ ok: false, message: warnMsg });
+            return { ok: false, message: warnMsg };
+          }
           let tpSlTriggerPxType = String(a.tp_sl_trigger_price_type || "last").toLowerCase();
           if (tpSlTriggerPxType !== "mark" && tpSlTriggerPxType !== "index") {
             tpSlTriggerPxType = "last";
@@ -175,27 +147,6 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
             });
           }
           sendOkxStatus({ ok: true, message: `Agent 开仓 ${orderType} ordId=${ex.ordId || ""}` });
-          if (orderType === "limit" && ex.ordId) {
-            rememberIntent({
-              entityType: "order",
-              entityId: ex.ordId,
-              tvSymbol,
-              interval: ctxInterval,
-              barCloseId,
-              action: side === "short" ? "open_short_limit" : "open_long_limit",
-              side,
-              summary: summarizeForIntent(
-                `在 ${a.limit_price} 挂${side === "short" ? "空" : "多"}限价单，等待更优位置成交。`,
-              ),
-              thesis: assistantPreview,
-              limitPrice: a.limit_price,
-              size: ex.sz,
-              takeProfitTriggerPrice: tpTriggerPx,
-              stopLossTriggerPrice: slTriggerPx,
-              status: "active",
-              rawArgs: a,
-            });
-          }
           return {
             ok: true,
             message:
@@ -234,25 +185,6 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
               : ex.preCloseHoldingState === "HOLDING_LONG"
                 ? "long"
                 : null;
-          if (orderType === "limit" && ex.ordId) {
-            rememberIntent({
-              entityType: "order",
-              entityId: ex.ordId,
-              tvSymbol,
-              interval: ctxInterval,
-              barCloseId,
-              action: "close_position_limit",
-              side: closedSide,
-              summary: summarizeForIntent(
-                `在 ${a.limit_price} 挂限价平仓单，等待更优价格离场。`,
-              ),
-              thesis: assistantPreview,
-              limitPrice: a.limit_price,
-              size: ex.closeSz,
-              status: "active",
-              rawArgs: a,
-            });
-          }
           return {
             ok: true,
             message: `平仓单已提交，ordId=${ex.ordId}`,
@@ -266,9 +198,6 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
           const instId = tvSymbolToSwapInstId(tvSymbol);
           if (!instId) return { ok: false, message: "无效品种" };
           await cancelSwapOrder(triplet.client, instId, String(a.order_id));
-          changeIntentStatus("order", String(a.order_id), "cancelled", "cancel_order", {
-            thesis: assistantPreview || undefined,
-          });
           sendOkxStatus({ ok: true, message: `撤单 ordId=${a.order_id}` });
           return { ok: true, message: `已撤单 ${a.order_id}` };
         }
@@ -284,37 +213,6 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
           if (a.new_price != null) patch.newPx = a.new_price;
           if (a.new_size != null) patch.newSz = a.new_size;
           await amendSwapOrder(triplet.client, patch);
-          patchIntent(
-            "order",
-            String(a.order_id),
-            {
-              tvSymbol,
-              interval: ctxInterval,
-              barCloseId,
-              action: "amend_order",
-              summary: summarizeForIntent("调整普通限价挂单参数。"),
-              thesis: assistantPreview || undefined,
-              limitPrice: a.new_price ?? undefined,
-              size: a.new_size ?? undefined,
-              status: "active",
-              inactiveReason: null,
-              rawArgs: a,
-            },
-            {
-              entityType: "order",
-              entityId: String(a.order_id),
-              tvSymbol,
-              interval: ctxInterval,
-              barCloseId,
-              action: "amend_order",
-              summary: summarizeForIntent("调整普通限价挂单参数。"),
-              thesis: assistantPreview,
-              limitPrice: a.new_price,
-              size: a.new_size,
-              status: "active",
-              rawArgs: a,
-            },
-          );
           sendOkxStatus({ ok: true, message: `改单 ordId=${a.order_id}` });
           return { ok: true, message: "改单已提交" };
         }
@@ -363,39 +261,6 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
           if (newTpOrdPx !== undefined) patch.newTpOrdPx = newTpOrdPx;
           if (newSlOrdPx !== undefined) patch.newSlOrdPx = newSlOrdPx;
           await amendSwapAlgoOrder(triplet.client, patch);
-          patchIntent(
-            "algo",
-            algoId,
-            {
-              tvSymbol,
-              interval: ctxInterval,
-              barCloseId,
-              action: "amend_tp_sl",
-              summary: summarizeForIntent("调整止盈止损算法单。"),
-              thesis: assistantPreview || undefined,
-              size: newSz ?? undefined,
-              takeProfitTriggerPrice: newTpTriggerPx ?? undefined,
-              stopLossTriggerPrice: newSlTriggerPx ?? undefined,
-              status: "active",
-              inactiveReason: null,
-              rawArgs: a,
-            },
-            {
-              entityType: "algo",
-              entityId: algoId,
-              tvSymbol,
-              interval: ctxInterval,
-              barCloseId,
-              action: "amend_tp_sl",
-              summary: summarizeForIntent("调整止盈止损算法单。"),
-              thesis: assistantPreview,
-              size: newSz,
-              takeProfitTriggerPrice: newTpTriggerPx,
-              stopLossTriggerPrice: newSlTriggerPx,
-              status: "active",
-              rawArgs: a,
-            },
-          );
           sendOkxStatus({ ok: true, message: `改算法止盈止损 algoId=${algoId}` });
           return { ok: true, message: `止盈止损算法单已提交修改 algoId=${algoId}` };
         }

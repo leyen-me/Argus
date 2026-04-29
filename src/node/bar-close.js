@@ -23,7 +23,7 @@ const {
   fetchRecentCandlesForTv,
   fetchRecentSwapPositionsHistoryForBar,
 } = require("./okx-perp");
-const { TRADING_AGENT_TOOLS } = require("./trading-agent-tools");
+const { buildTradingAgentToolsForContext } = require("./trading-agent-tools");
 const { createTradingToolExecutor } = require("./trading-agent-executor");
 const { persistAgentBarTurn, listRecentAgentMemories } = require("./agent-bar-turns-store");
 
@@ -610,11 +610,12 @@ async function emitBarClose(winGetter, ctx) {
     barCloseId,
     win,
   });
+  const toolsForTurn = buildTradingAgentToolsForContext(exchangeCtx);
 
   let streamAcc = "";
   let streamToolAcc = "";
   const agentResult = await runTradingAgentTurn(messages, streamOpts, {
-    tools: TRADING_AGENT_TOOLS,
+    tools: toolsForTurn,
     executeTool,
     maxSteps: 8,
     onStep: ({ toolCalls, assistantPreview }) => {

@@ -8,7 +8,7 @@ const TRADING_AGENT_TOOLS = [
     function: {
       name: "preview_open_size",
       description:
-        "仅做预估，不会下单。基于当前 OKX 账户可用权益、最新价格和给定风险参数，计算预估可开张数、保证金、名义价值及是否满足最小下单张数。适合在开仓前复核 sizing；省略 leverage、margin_fraction、margin_mode 时会回退到内置默认值。",
+        "仅做预估，不会下单。基于当前 OKX 账户可用权益、最新价格和给定风险参数，计算预估可开张数、保证金、名义价值及是否满足最小下单张数。只在本轮明确准备立即调用 open_position（新开仓或加仓）时使用；若本轮结论是持有、观望、调止盈止损、撤单或平仓，不要调用该工具。省略 leverage、margin_fraction、margin_mode 时会回退到内置默认值。",
       parameters: {
         type: "object",
         properties: {
@@ -35,7 +35,7 @@ const TRADING_AGENT_TOOLS = [
     function: {
       name: "open_position",
       description:
-        "提交开仓单，支持市价和限价。调用前应先完成方向、杠杆、仓位和保证金模式判断；建议先用 preview_open_size 复核 sizing。限价单提交后可能处于未成交状态；若同时提供止盈止损触发价，主单成交后会由 OKX 创建对应的平仓算法单。",
+        "提交开仓单，支持市价和限价。调用前应先完成方向、杠杆、仓位和保证金模式判断；只有在本轮对 sizing 仍不确定时才需要先用 preview_open_size 复核。限价单提交后可能处于未成交状态；若同时提供止盈止损触发价，主单成交后会由 OKX 创建对应的平仓算法单。",
       parameters: {
         type: "object",
         properties: {
@@ -175,4 +175,16 @@ const TRADING_AGENT_TOOLS = [
   },
 ];
 
-module.exports = { TRADING_AGENT_TOOLS };
+function buildTradingAgentToolsForContext(exchangeCtx) {
+  const hasPosition = !!(
+    exchangeCtx &&
+    typeof exchangeCtx === "object" &&
+    exchangeCtx.position &&
+    typeof exchangeCtx.position === "object" &&
+    exchangeCtx.position.hasPosition === true
+  );
+  if (!hasPosition) return TRADING_AGENT_TOOLS;
+  return TRADING_AGENT_TOOLS.filter((tool) => tool?.function?.name !== "preview_open_size");
+}
+
+module.exports = { TRADING_AGENT_TOOLS, buildTradingAgentToolsForContext };

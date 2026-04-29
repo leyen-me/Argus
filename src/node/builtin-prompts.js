@@ -17,7 +17,7 @@ const SHARED_AGENT_TOOLS_BLOCK =
   "1. 需要开仓、平仓、改普通限价单、改止盈止损算法单（amend_tp_sl）、撤单时，必须调用对应工具；不要只给口头建议。\n" +
   "2. 无需交易动作时，用一两句中文给出结论即可，不要为了形式强行调用工具。\n" +
   "3. 若 OKX 永续未启用或 API 未完整配置，相关工具会直接返回失败提示。\n" +
-  "4. 开仓前先基于 account_snapshot 评估仓位；需要复核时，先调用 preview_open_size，再决定是否调用 open_position。\n" +
+  "4. 开仓前先基于 account_snapshot 评估仓位；只有当你本轮明确准备立即调用 open_position、且 sizing 仍拿不准时，才调用 preview_open_size。若本轮结论是持有、观望、调止盈止损、撤单或平仓，禁止调用 preview_open_size。\n" +
   "5. 调用 open_position 时，应显式提供 leverage、margin_fraction、margin_mode；若确实缺参，执行层会使用内置默认值兜底。\n" +
   "6. 限价单提交后可能仍处于未成交状态；应在后续轮次根据挂单快照继续判断，而不是默认已成交。\n" +
   "\n" +

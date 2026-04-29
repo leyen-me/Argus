@@ -15,11 +15,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "preview": "electron-vite preview",
-    "test:dashscope": "node tests/dashscope-generation-demo.test.js",
-    "test:okx": "node --test tests/trading-agent-okx-integration.test.js",
-    "test:okx:agent": "node --test tests/trading-agent-okx-integration.test.js",
-    "test:agent-tools": "node --test tests/trading-agent-executor.test.js tests/trading-agent-tools-schema.test.js tests/okx-attach-algo.test.js tests/okx-pending-algo-serialize.test.js tests/okx-recent-candles.test.js tests/ema-series.test.js tests/crypto-scheduler.test.js"
+    "preview": "electron-vite preview"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",

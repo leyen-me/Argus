@@ -92,14 +92,19 @@ function llmAbortSignal(cfg) {
   return ac.signal;
 }
 
-/** OpenRouter 专用 `reasoning`；其余兼容端点（如通义 DashScope）用 `enable_thinking`，见 tests/dashscope-generation-demo.test.js */
+/** OpenRouter 专用 `reasoning`；阿里云 OpenAI 兼容链（DashScope、`*.maas.aliyuncs.com` 等）用 `enable_thinking`。 */
 function isOpenRouterBaseUrl(baseURL) {
   return String(baseURL || "").toLowerCase().includes("openrouter.ai");
 }
 
-/** 阿里云通义兼容模式根 URL（用于显式开关 enable_thinking） */
-function isDashScopeBaseUrl(baseURL) {
-  return String(baseURL || "").toLowerCase().includes("dashscope.aliyuncs.com");
+/**
+ * 阿里云 OpenAI 兼容推理网关：需在请求体显式开关 `enable_thinking`。
+ * - 经典：https://dashscope.aliyuncs.com/compatible-mode/v1
+ * - Model Studio / MaaS（含各地域）：如 `*.cn-*.maas.aliyuncs.com/compatible-mode/v1`
+ */
+function isAliyunCompatibleThinkingBaseUrl(baseURL) {
+  const u = String(baseURL || "").toLowerCase();
+  return u.includes("dashscope.aliyuncs.com") || u.includes("maas.aliyuncs.com");
 }
 
 /**
@@ -270,8 +275,8 @@ function buildChatCompletionRequestFromMessages(messages, options, stream) {
     } else {
       body.enable_thinking = true;
     }
-  } else if (isDashScopeBaseUrl(baseURL)) {
-    /** 关闭界面「深度思考」时向通义显式关思考；否则部分模型仍可能走推理通道。续写/tool 回填后的请求也需显式关。 */
+  } else if (isAliyunCompatibleThinkingBaseUrl(baseURL)) {
+    /** 关闭界面「深度思考」时向通义/MaaS 显式关思考；否则部分模型仍可能走推理通道。续写/tool 回填后的请求也需显式关。 */
     body.enable_thinking = false;
   } else if (
     cfg &&
@@ -547,7 +552,7 @@ async function runCardSummaryCompletion(messages, { options, client, signal, max
   if (isOpenRouterBaseUrl(built.baseURL) && "reasoning" in body) {
     delete body.reasoning;
   }
-  if (isDashScopeBaseUrl(built.baseURL)) {
+  if (isAliyunCompatibleThinkingBaseUrl(built.baseURL)) {
     body.enable_thinking = false;
   }
   const completion = await client.chat.completions.create(/** @type {any} */ (body), { signal });

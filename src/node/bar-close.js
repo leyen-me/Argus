@@ -650,7 +650,9 @@ async function emitBarClose(winGetter, ctx) {
     llm.cardSummary = null;
     const summaryP =
       agentResult.text && String(agentResult.text).trim()
-        ? summarizeAgentAnalysisForCard(agentResult.text, streamOpts)
+        ? summarizeAgentAnalysisForCard(agentResult.text, streamOpts, {
+            messagesOut: agentResult.messagesOut,
+          })
         : Promise.resolve(/** @type {{ ok: boolean, text?: string }} */ ({ ok: false }));
     const [sumResult, exchangeAfter] = await Promise.all([
       summaryP,

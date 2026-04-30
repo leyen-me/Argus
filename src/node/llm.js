@@ -472,6 +472,8 @@ function stripToolSectionFromAssistantRaw(raw) {
 }
 
 const CARD_SUMMARY_MAX_INPUT_CHARS = 12_000;
+/** 单条 tool 消息写入摘要上下文的正文上限（避免 JSON 撑爆总预算） */
+const CARD_SUMMARY_MAX_TOOL_SNIPPET_CHARS = 900;
 /** 最终展示：超过则二次 LLM 压缩，仍超则硬截断（与提示中的字数一致；与 bar-close 最近操作摘要对齐） */
 const CARD_SUMMARY_MAX_OUT_CHARS = 110;
 const CARD_SUMMARY_FIRST_MAX_TOKENS = 200;
@@ -509,6 +511,55 @@ function normalizeOneLineCardText(s) {
     .replace(/\s+/g, " ")
     .replace(/^["'「]+|["'」]+$/g, "")
     .trim();
+}
+
+/**
+ * 从 `runTradingAgentTurn` 的 `messagesOut` 拼卡片摘要用的纯文本：跳过 system/user（过长），
+ * 按时间保留每步 assistant 正文与 tool 返回摘编，避免仅最后一轮有内容时丢失前几步推理。
+ * @param {ReadonlyArray<{ role?: string, content?: unknown, tool_calls?: unknown }> | null | undefined} messagesOut
+ * @returns {string}
+ */
+function buildCardSummarySourceFromAgentThread(messagesOut) {
+  if (!Array.isArray(messagesOut) || messagesOut.length === 0) return "";
+  const chunks = [];
+  let asstStep = 0;
+  for (const m of messagesOut) {
+    if (!m || typeof m.role !== "string") continue;
+    if (m.role === "system" || m.role === "user") continue;
+    if (m.role === "assistant") {
+      asstStep += 1;
+      const text = messageContentToString(m.content).trim();
+      const tcs = m.tool_calls;
+      const names =
+        Array.isArray(tcs) && tcs.length > 0
+          ? tcs
+              .map((tc) => (tc && tc.function && tc.function.name ? String(tc.function.name) : ""))
+              .filter(Boolean)
+              .join(", ")
+          : "";
+      let block = text;
+      if (names) {
+        block = block ? `${block}\n\n（本步调用工具：${names}）` : `（本步调用工具：${names}）`;
+      }
+      if (block) {
+        chunks.push(`【助手第 ${asstStep} 步】\n${block}`);
+      }
+    } else if (m.role === "tool") {
+      let raw = "";
+      try {
+        const c = m.content;
+        raw = typeof c === "string" ? c : JSON.stringify(c ?? null);
+      } catch {
+        raw = String(m.content ?? "");
+      }
+      const clip =
+        raw.length > CARD_SUMMARY_MAX_TOOL_SNIPPET_CHARS
+          ? `${raw.slice(0, CARD_SUMMARY_MAX_TOOL_SNIPPET_CHARS)}…`
+          : raw;
+      chunks.push(`【工具返回】\n${clip}`);
+    }
+  }
+  return chunks.join("\n\n---\n\n");
 }
 
 /**
@@ -551,16 +602,23 @@ async function compressCardLineForTightLimit(longLine, options, client, signal) 
 
 /**
  * 主 Agent 成功后再调一次小模型/同模型，生成列表卡片可见的一句中文摘要（结论/操作 + 简要依据；可二次压缩；失败不阻断主流程）。
- * @param {string} assistantFull
+ * @param {string} assistantFull 最后一轮助手正文；当未提供 `extras.messagesOut` 时作为唯一输入
  * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
+ * @param {{ messagesOut?: ReadonlyArray<{ role?: string, content?: unknown, tool_calls?: unknown }> }} [extras] 若提供 `runTradingAgentTurn` 的完整 thread，则摘要基于多步助手+工具摘编，而非仅最后一轮
  * @returns {Promise<{ ok: boolean, text?: string }>}
  */
-async function summarizeAgentAnalysisForCard(assistantFull, options) {
+async function summarizeAgentAnalysisForCard(assistantFull, options, extras = {}) {
   const cfg = options.appConfig;
   if (!isLlmEnabled(cfg)) {
     return { ok: false };
   }
-  const bodyText = stripToolSectionFromAssistantRaw(assistantFull);
+  let bodyText = "";
+  const fromThread = buildCardSummarySourceFromAgentThread(extras?.messagesOut);
+  if (fromThread) {
+    bodyText = stripToolSectionFromAssistantRaw(fromThread);
+  } else {
+    bodyText = stripToolSectionFromAssistantRaw(assistantFull);
+  }
   if (!bodyText) {
     return { ok: false };
   }
@@ -569,7 +627,7 @@ async function summarizeAgentAnalysisForCard(assistantFull, options) {
       ? `${bodyText.slice(0, CARD_SUMMARY_MAX_INPUT_CHARS)}\n\n…（后文已省略）`
       : bodyText;
   const system = [
-    "你是交易日志编辑。用户会给你一根 K 线收盘的 Agent 分析全文。",
+    "你是交易日志编辑。用户会给你一根 K 线收盘的 Agent **多轮**分析摘录（按时间含各步助手说明与工具返回摘要，可能仅最后一步有长文）。请综合**全程**提炼，不要只看最后一段。",
     "请**只输出一句**中文「卡片外显」摘要，用全角分号「；」分成两段：前半**结论/操作**（多、空、观望、开平、加减仓、调整止盈止损等择要）；后半**一句内最简依据**（为何如此：关键位/结构/信号/风险等，忌空洞套话）。无操作时写观望或未动及主因。",
     `**整句总长度必须不超过 ${CARD_SUMMARY_MAX_OUT_CHARS} 个字符**（含标点、数字）；禁止第二句与换行、列表、Markdown、引号；仅用一条连续语句（可含一个分号）。`,
   ].join("");
@@ -900,6 +958,7 @@ module.exports = {
   callOpenAIChat,
   streamOpenAIChat,
   summarizeAgentAnalysisForCard,
+  buildCardSummarySourceFromAgentThread,
   runTradingAgentTurn,
   buildUserPrompt,
   buildMultiTimeframeUserPrompt,

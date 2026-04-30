@@ -9,6 +9,7 @@
  * - `dashboard_equity_samples`：仪表盘权益曲线采样（user_version ≥ 7）。
  * - `agent_sessions.card_summary`：收盘后二次 LLM 卡片短摘要（user_version ≥ 8）。
  * - `agent_sessions.assistant_reasoning_text`：开盘 Agent 首次 completion 的深度思考快照（user_version ≥ 12）。
+ * - `agent_sessions.assistant_decision` / `agent_session_messages.assistant_decision`：结构化交易决策快照（user_version ≥ 13）。
  * - `order_intents`：旧版挂单意图记忆表（user_version = 9）；v10 起移除。
  * - 其他强关系数据可在同一库中新建表并递增 user_version；业务模块仅依赖 `getDatabase()`。
  *
@@ -28,6 +29,59 @@ const KV_KEY_SETTINGS = "settings";
 function databasePath() {
   // 本文件在 src/node/local-db → 上级两级为仓库根（与 src 同级）
   return path.join(__dirname, "..", "..", "argus.sqlite");
+}
+
+/**
+ * @param {unknown} content
+ * @returns {"hold" | "open" | "close" | "amend" | null}
+ */
+function extractAssistantDecision(content) {
+  const text = typeof content === "string" ? content.trim() : String(content || "").trim();
+  if (!text) return null;
+  const lineMatch = text.match(/(?:^|\n)\s*decision\s*[:：=]\s*(hold|open|close|amend)\b/i);
+  if (lineMatch) return /** @type {"hold" | "open" | "close" | "amend"} */ (lineMatch[1].toLowerCase());
+  const jsonMatch = text.match(/"decision"\s*:\s*"(hold|open|close|amend)"/i);
+  if (jsonMatch) return /** @type {"hold" | "open" | "close" | "amend"} */ (jsonMatch[1].toLowerCase());
+  return null;
+}
+
+/**
+ * @param {import("better-sqlite3").Database} database
+ */
+function backfillAssistantDecisions(database) {
+  const sessionRows = database
+    .prepare(`SELECT bar_close_id, assistant_text FROM agent_sessions WHERE assistant_decision IS NULL`)
+    .all();
+  const updateSession = database.prepare(`UPDATE agent_sessions SET assistant_decision = ? WHERE bar_close_id = ?`);
+  for (const row of sessionRows) {
+    const decision = extractAssistantDecision(row.assistant_text);
+    if (!decision) continue;
+    updateSession.run(decision, String(row.bar_close_id || ""));
+  }
+
+  const messageRows = database
+    .prepare(
+      `SELECT bar_close_id, seq, content_json
+       FROM agent_session_messages
+       WHERE role = 'assistant' AND assistant_decision IS NULL`,
+    )
+    .all();
+  const updateMessage = database.prepare(
+    `UPDATE agent_session_messages SET assistant_decision = ? WHERE bar_close_id = ? AND seq = ?`,
+  );
+  for (const row of messageRows) {
+    let content = null;
+    if (typeof row.content_json === "string" && row.content_json.length > 0) {
+      try {
+        content = JSON.parse(row.content_json);
+      } catch {
+        content = row.content_json;
+      }
+    }
+    const decision = extractAssistantDecision(content);
+    if (!decision) continue;
+    updateMessage.run(decision, String(row.bar_close_id || ""), Number(row.seq));
+  }
 }
 
 function applyMigrations(database) {
@@ -233,6 +287,15 @@ function applyMigrations(database) {
     database.pragma("user_version = 12");
     v = 12;
   }
+  if (v < 13) {
+    database.exec(`
+      ALTER TABLE agent_sessions ADD COLUMN assistant_decision TEXT;
+      ALTER TABLE agent_session_messages ADD COLUMN assistant_decision TEXT;
+    `);
+    backfillAssistantDecisions(database);
+    database.pragma("user_version = 13");
+    v = 13;
+  }
 }
 
 /**
@@ -251,9 +314,9 @@ function backfillLegacyAgentSessionMessages(database) {
     .all();
   const ins = database.prepare(`
     INSERT INTO agent_session_messages (
-      bar_close_id, seq, role, content_json, tool_calls_json, tool_call_id, name
+      bar_close_id, seq, role, content_json, tool_calls_json, tool_call_id, name, assistant_decision
     ) VALUES (
-      @bar_close_id, @seq, @role, @content_json, @tool_calls_json, @tool_call_id, @name
+      @bar_close_id, @seq, @role, @content_json, @tool_calls_json, @tool_call_id, @name, @assistant_decision
     )
   `);
   for (const row of sessions) {
@@ -268,8 +331,10 @@ function backfillLegacyAgentSessionMessages(database) {
       tool_calls_json: null,
       tool_call_id: null,
       name: null,
+      assistant_decision: null,
     });
     const asst = row.assistant_text != null ? String(row.assistant_text).trim() : "";
+    const asstDecision = extractAssistantDecision(asst);
     if (asst) {
       ins.run({
         bar_close_id: barCloseId,
@@ -279,6 +344,7 @@ function backfillLegacyAgentSessionMessages(database) {
         tool_calls_json: null,
         tool_call_id: null,
         name: null,
+        assistant_decision: asstDecision,
       });
     }
     const rawTrace = row.tool_trace_json;
@@ -304,6 +370,7 @@ function backfillLegacyAgentSessionMessages(database) {
         tool_calls_json: null,
         tool_call_id: `legacy-${i}`,
         name: name || null,
+        assistant_decision: null,
       });
     }
   }

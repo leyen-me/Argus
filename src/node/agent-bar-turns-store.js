@@ -31,6 +31,30 @@ function redactContentForStorage(content) {
 }
 
 /**
+ * @param {unknown} content
+ * @returns {"hold" | "open" | "close" | "amend" | null}
+ */
+function extractAssistantDecision(content) {
+  if (content == null) return null;
+  let text = "";
+  if (typeof content === "string") text = content.trim();
+  else if (Array.isArray(content)) {
+    text = content
+      .map((part) => (part && typeof part === "object" && typeof part.text === "string" ? part.text : ""))
+      .join("")
+      .trim();
+  } else {
+    text = String(content).trim();
+  }
+  if (!text) return null;
+  const lineMatch = text.match(/(?:^|\n)\s*decision\s*[:：=]\s*(hold|open|close|amend)\b/i);
+  if (lineMatch) return /** @type {"hold" | "open" | "close" | "amend"} */ (lineMatch[1].toLowerCase());
+  const jsonMatch = text.match(/"decision"\s*:\s*"(hold|open|close|amend)"/i);
+  if (jsonMatch) return /** @type {"hold" | "open" | "close" | "amend"} */ (jsonMatch[1].toLowerCase());
+  return null;
+}
+
+/**
  * @param {unknown} m
  * @param {number} seq
  */
@@ -48,6 +72,7 @@ function messageToRow(m, seq) {
   }
   const toolCallId = /** @type {{ tool_call_id?: string }} */ (msg).tool_call_id;
   const name = /** @type {{ name?: string }} */ (msg).name;
+  const assistantDecision = role === "assistant" ? extractAssistantDecision(msg.content) : null;
   return {
     seq,
     role,
@@ -55,6 +80,7 @@ function messageToRow(m, seq) {
     tool_calls_json: toolCallsJson,
     tool_call_id: toolCallId != null ? String(toolCallId) : null,
     name: name != null ? String(name) : null,
+    assistant_decision: assistantDecision,
   };
 }
 
@@ -80,6 +106,7 @@ function messageToRow(m, seq) {
  * @param {string | null} [row.systemPrompt] 当次请求使用的 system 全文快照
  * @param {unknown[] | null} [row.messagesOut] runTradingAgentTurn 返回的完整 messages 线程
  * @param {string | null} [row.assistantReasoningText] 首轮 completion 深度思考快照（可选）
+ * @param {"hold" | "open" | "close" | "amend" | null} [row.assistantDecision]
  */
 function persistAgentBarTurn(row) {
   const db = getDatabase();
@@ -99,6 +126,7 @@ function persistAgentBarTurn(row) {
     row.systemPrompt != null && String(row.systemPrompt).trim() !== ""
       ? String(row.systemPrompt)
       : null;
+  const assistantDecision = row.assistantDecision || extractAssistantDecision(row.assistantText);
 
   const messagesRaw = Array.isArray(row.messagesOut) ? row.messagesOut : [];
   const messageRows = messagesRaw.map((m, i) => messageToRow(m, i));
@@ -110,21 +138,21 @@ function persistAgentBarTurn(row) {
       chart_mime, chart_png, chart_capture_error,
       assistant_text, card_summary, tool_trace_json, exchange_after_json, agent_ok, agent_error,
       estimated_prompt_tokens, context_window_tokens, updated_at, system_prompt_text,
-      assistant_reasoning_text
+      assistant_reasoning_text, assistant_decision
     ) VALUES (
       @bar_close_id, @tv_symbol, @interval, @period_label, @captured_at,
       @text_for_llm, @llm_user_full_text, @exchange_context_json,
       @chart_mime, @chart_png, @chart_capture_error,
       @assistant_text, @card_summary, @tool_trace_json, @exchange_after_json, @agent_ok, @agent_error,
       @estimated_prompt_tokens, @context_window_tokens, datetime('now'), @system_prompt_text,
-      @assistant_reasoning_text
+      @assistant_reasoning_text, @assistant_decision
     )
   `);
   const insertMsg = db.prepare(`
     INSERT INTO agent_session_messages (
-      bar_close_id, seq, role, content_json, tool_calls_json, tool_call_id, name
+      bar_close_id, seq, role, content_json, tool_calls_json, tool_call_id, name, assistant_decision
     ) VALUES (
-      @bar_close_id, @seq, @role, @content_json, @tool_calls_json, @tool_call_id, @name
+      @bar_close_id, @seq, @role, @content_json, @tool_calls_json, @tool_call_id, @name, @assistant_decision
     )
   `);
 
@@ -161,6 +189,7 @@ function persistAgentBarTurn(row) {
         row.assistantReasoningText != null && String(row.assistantReasoningText).trim() !== ""
           ? String(row.assistantReasoningText)
           : null,
+      assistant_decision: assistantDecision,
     });
     for (const mr of messageRows) {
       insertMsg.run({
@@ -171,6 +200,7 @@ function persistAgentBarTurn(row) {
         tool_calls_json: mr.tool_calls_json,
         tool_call_id: mr.tool_call_id,
         name: mr.name,
+        assistant_decision: mr.assistant_decision,
       });
     }
   });
@@ -208,7 +238,7 @@ function listAgentBarTurnsPage(args = {}) {
       text_for_llm, llm_user_full_text, exchange_context_json,
       chart_mime, chart_capture_error,
       assistant_text, card_summary, tool_trace_json, exchange_after_json, agent_ok, agent_error,
-      assistant_reasoning_text,
+      assistant_reasoning_text, assistant_decision,
       CASE WHEN chart_png IS NOT NULL AND length(chart_png) > 0 THEN 1 ELSE 0 END AS has_chart
     FROM agent_sessions
     WHERE tv_symbol = ? AND interval = ?
@@ -251,6 +281,8 @@ function listAgentBarTurnsPage(args = {}) {
         r.assistant_reasoning_text != null && String(r.assistant_reasoning_text).trim()
           ? String(r.assistant_reasoning_text)
           : null,
+      assistantDecision:
+        r.assistant_decision != null && String(r.assistant_decision).trim() ? String(r.assistant_decision) : null,
       cardSummary: r.card_summary != null && String(r.card_summary).trim() ? String(r.card_summary) : null,
       toolTrace,
       agentOk: r.agent_ok === 1,
@@ -294,18 +326,21 @@ function getAgentBarTurnChart(barCloseId) {
  *     toolCalls: unknown[] | null,
  *     toolCallId: string | null,
  *     name: string | null,
+ *     assistantDecision: string | null,
  *   }>,
  *   assistantReasoningText: string | null,
+ *   assistantDecision: string | null,
  * }}
  */
 function getAgentSessionMessages(barCloseId) {
   const id = String(barCloseId || "").trim();
-  if (!id) return { messages: [], assistantReasoningText: null };
+  if (!id) return { messages: [], assistantReasoningText: null, assistantDecision: null };
   const db = getDatabase();
   const reasoningRow = db
-    .prepare(`SELECT assistant_reasoning_text FROM agent_sessions WHERE bar_close_id = ?`)
+    .prepare(`SELECT assistant_reasoning_text, assistant_decision FROM agent_sessions WHERE bar_close_id = ?`)
     .get(id);
   let assistantReasoningText = null;
+  let assistantDecision = null;
   if (
     reasoningRow &&
     reasoningRow.assistant_reasoning_text != null &&
@@ -313,9 +348,12 @@ function getAgentSessionMessages(barCloseId) {
   ) {
     assistantReasoningText = String(reasoningRow.assistant_reasoning_text).trim();
   }
+  if (reasoningRow && reasoningRow.assistant_decision != null && String(reasoningRow.assistant_decision).trim()) {
+    assistantDecision = String(reasoningRow.assistant_decision).trim();
+  }
   const raw = db
     .prepare(
-      `SELECT seq, role, content_json, tool_calls_json, tool_call_id, name
+      `SELECT seq, role, content_json, tool_calls_json, tool_call_id, name, assistant_decision
        FROM agent_session_messages WHERE bar_close_id = ? ORDER BY seq ASC`,
     )
     .all(id);
@@ -344,9 +382,11 @@ function getAgentSessionMessages(barCloseId) {
       toolCalls,
       toolCallId: r.tool_call_id != null ? String(r.tool_call_id) : null,
       name: r.name != null ? String(r.name) : null,
+      assistantDecision:
+        r.assistant_decision != null && String(r.assistant_decision).trim() ? String(r.assistant_decision) : null,
     };
   });
-  return { messages, assistantReasoningText };
+  return { messages, assistantReasoningText, assistantDecision };
 }
 
 function safeJsonParse(text) {

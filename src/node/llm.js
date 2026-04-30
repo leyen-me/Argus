@@ -35,6 +35,7 @@ const TRADING_AGENT_TOOLS_POLICY_BLOCK = `
 - \`open\`：只允许调用 \`open_position\`。
 - \`close\`：只允许调用 \`close_position\`。
 - \`amend\`：只允许调用 \`cancel_order\`、\`amend_order\`、\`amend_tp_sl\`。
+- 当 \`DECISION\` 不是 \`hold\` 时，不要输出参数 JSON 示例，不要只写交易计划，必须直接发起对应的工具调用。
 - 如果正文里的 \`DECISION\` 与工具调用不一致，系统会直接拦截，不执行下单/平仓/改单。
 `;
 
@@ -438,6 +439,19 @@ function appendDecisionGuardMessage(assistantText, blockMessage) {
   const base = String(assistantText || "").trim();
   const note = `系统风控拦截：${blockMessage}`;
   return [base, note].filter(Boolean).join("\n\n").trim();
+}
+
+/**
+ * @param {"open" | "close" | "amend"} decision
+ */
+function buildDecisionToolRetryPrompt(decision) {
+  const allowed = Array.from(TRADING_DECISION_ALLOWED_TOOLS[decision] || []).join(" / ");
+  return [
+    `你刚刚给出了 DECISION=${decision}，但没有真正发起工具调用。`,
+    `现在不要重复分析，不要输出 JSON 代码块，不要复述交易计划。`,
+    `请立刻且只调用允许的工具：${allowed}。`,
+    `如果你认为不该交易，请改为新的 assistant 回复，并把第一行明确改成 DECISION: hold，且不要调用任何工具。`,
+  ].join("\n");
 }
 
 /**
@@ -1079,9 +1093,18 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
       }
       thread.push(msg);
       const assistantText = messageContentToString(msg.content).trim();
+      const assistantDecision = extractTradingDecision(msg.content);
 
       const tcs = msg.tool_calls;
       if (!Array.isArray(tcs) || tcs.length === 0) {
+        if (assistantDecision && assistantDecision !== "hold") {
+          onStep?.({ step, assistantPreview: assistantText, reasoningPreview: reasoningAcc.trim() });
+          thread.push({
+            role: "user",
+            content: buildDecisionToolRetryPrompt(assistantDecision),
+          });
+          continue;
+        }
         onStep?.({ step, assistantPreview: assistantText, reasoningPreview: reasoningAcc.trim() });
         return {
           ok: true,

@@ -791,13 +791,19 @@ body,
 }
 
 .llm-session-copy-block {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding-top: 30px;
+  /* background-color: #22c55e; */
 }
 
 .llm-session-copy-btn {
-  align-self: flex-end;
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -835,6 +841,16 @@ body,
 .llm-session-copy-btn:disabled {
   cursor: default;
   opacity: 0.9;
+}
+
+.llm-session-copy-btn--ok:not(:hover) {
+  color: color-mix(in oklch, var(--primary) 55%, var(--muted-foreground));
+  border-color: color-mix(in oklch, var(--primary) 28%, var(--border));
+}
+
+.llm-session-copy-btn--err:not(:hover) {
+  color: color-mix(in oklch, var(--destructive) 72%, var(--muted-foreground));
+  border-color: color-mix(in oklch, var(--destructive) 32%, var(--border));
 }
 
 .llm-session-msg-collapse {

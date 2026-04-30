@@ -940,6 +940,39 @@ async function copySessionText(text) {
 }
 
 /**
+ * @param {SVGSVGElement} svg
+ * @param {"copy"|"success"|"error"} state
+ */
+function setSessionCopyIconState(svg, state) {
+  svg.replaceChildren();
+  const NS = "http://www.w3.org/2000/svg";
+  if (state === "copy") {
+    const rectBack = document.createElementNS(NS, "rect");
+    rectBack.setAttribute("x", "9");
+    rectBack.setAttribute("y", "9");
+    rectBack.setAttribute("width", "11");
+    rectBack.setAttribute("height", "11");
+    rectBack.setAttribute("rx", "2");
+    rectBack.setAttribute("ry", "2");
+    const pathFront = document.createElementNS(NS, "path");
+    pathFront.setAttribute("d", "M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3");
+    svg.append(rectBack, pathFront);
+    return;
+  }
+  if (state === "success") {
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", "M20 6L9 17l-5-5");
+    svg.append(path);
+    return;
+  }
+  const a = document.createElementNS(NS, "path");
+  a.setAttribute("d", "M18 6L6 18");
+  const b = document.createElementNS(NS, "path");
+  b.setAttribute("d", "m6 6 12 12");
+  svg.append(a, b);
+}
+
+/**
  * @param {string} text
  * @returns {HTMLButtonElement}
  */
@@ -962,19 +995,7 @@ function createSessionCopyButton(text) {
   icon.setAttribute("stroke-linejoin", "round");
   icon.classList.add("llm-session-copy-btn-icon");
   icon.setAttribute("aria-hidden", "true");
-
-  const rectBack = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  rectBack.setAttribute("x", "9");
-  rectBack.setAttribute("y", "9");
-  rectBack.setAttribute("width", "11");
-  rectBack.setAttribute("height", "11");
-  rectBack.setAttribute("rx", "2");
-  rectBack.setAttribute("ry", "2");
-
-  const pathFront = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  pathFront.setAttribute("d", "M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3");
-
-  icon.append(rectBack, pathFront);
+  setSessionCopyIconState(icon, "copy");
 
   const labelEl = document.createElement("span");
   labelEl.className = "llm-session-copy-btn-label";
@@ -988,9 +1009,16 @@ function createSessionCopyButton(text) {
     btn.disabled = true;
     const copied = await copySessionText(text);
     setLabel(copied ? "已复制" : "复制失败");
+    setSessionCopyIconState(icon, copied ? "success" : "error");
+    btn.classList.toggle("llm-session-copy-btn--ok", copied === true);
+    btn.classList.toggle("llm-session-copy-btn--err", copied === false);
+    btn.setAttribute("aria-label", copied ? "已复制到剪贴板" : "复制失败，请重试");
     window.clearTimeout(resetTimer);
     resetTimer = window.setTimeout(() => {
       setLabel("复制");
+      setSessionCopyIconState(icon, "copy");
+      btn.classList.remove("llm-session-copy-btn--ok", "llm-session-copy-btn--err");
+      btn.setAttribute("aria-label", "复制当前内容块");
       btn.disabled = false;
     }, copied ? 1200 : 1600);
   });

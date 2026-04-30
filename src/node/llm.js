@@ -16,10 +16,13 @@ const TRADING_AGENT_TOOLS_POLICY_BLOCK = `
 - 由于是 LLM Agent 交易，下单会有延迟，延迟会导致滑点、成交价格与预期不符。所以如果思考决策要开仓的话，请尽量使用限价单开仓。
 - 除非用户明确要求使用市价单下单或者行情已经很明朗，再不上车就来不及了的情况，可以使用市价单开仓。
 - 市价单通常用来平仓
-`;
+- 完全平仓后止盈止损等算法单会自动撤销，所以不需要手动撤销算法单。
 
-/** 与用户策略比对用：正文已含此句则认为已附带同款工具约束，重复拼接省略。 */
-const TRADING_TOOLS_POLICY_FINGERPRINT =``;
+#### 交易频率
+
+- 请观察最近动作和最近仓位历史，默认情况下，请合理的控制交易频率，不要过于频繁的进行交易。除非用户明确要求
+- 交易频率是指每轮思考中，调用工具的次数。例如频繁开仓、频繁的调整止盈止损等，都属于过于频繁的交易。
+`;
 
 function resolveOpenAiApiKey(cfg) {
   const fromCfg = cfg && typeof cfg.openaiApiKey === "string" ? cfg.openaiApiKey.trim() : "";
@@ -40,30 +43,17 @@ function resolveSystemPrompt(cfg) {
   return p.systemPromptCrypto;
 }
 
-/** @param {string} body */
-function hasTradingToolsPolicyEmbedded(body) {
-  return typeof body === "string" && body.includes(TRADING_TOOLS_POLICY_FINGERPRINT);
-}
-
 /** 程序在策略正文后追加的工具与执行段落。 */
 function buildTradingAgentStaticToolsAppend() {
-  return `---\n### 工具与执行\n\n${TRADING_AGENT_TOOLS_POLICY_BLOCK.trimEnd()}`;
+  return `---\n\n### 工具与执行\n${TRADING_AGENT_TOOLS_POLICY_BLOCK.trimEnd()}`;
 }
 
 /**
- * K 线收盘交易 Agent：`prompt_strategies` 用户策略 + 程序追加的工具规范正文。
- * 若策略正文已含内置同款工具规则（按特征句判断），则不重复拼接。
+ * K 线收盘交易 Agent：用户策略正文 + 程序固定的工具与执行说明。
  * @param {object | null | undefined} cfg
  */
 function resolveTradingAgentSystemPrompt(cfg) {
-  const base = String(resolveSystemPrompt(cfg) ?? "").trimEnd();
-  if (!hasTradingToolsPolicyEmbedded(base)) {
-    const append = buildTradingAgentStaticToolsAppend().trimEnd();
-    if (!append) return base;
-    if (!base) return append;
-    return `${base}\n\n${append}`.trimEnd();
-  }
-  return base;
+  return composeSystemPrompt(String(resolveSystemPrompt(cfg) ?? ""), [buildTradingAgentStaticToolsAppend()]);
 }
 
 /**
@@ -482,10 +472,10 @@ function stripToolSectionFromAssistantRaw(raw) {
 }
 
 const CARD_SUMMARY_MAX_INPUT_CHARS = 12_000;
-/** 最终展示：超过则二次 LLM 压缩，仍超则硬截断（与提示中的字数一致） */
-const CARD_SUMMARY_MAX_OUT_CHARS = 40;
-const CARD_SUMMARY_FIRST_MAX_TOKENS = 100;
-const CARD_SUMMARY_TIGHTEN_MAX_TOKENS = 72;
+/** 最终展示：超过则二次 LLM 压缩，仍超则硬截断（与提示中的字数一致；与 bar-close 最近操作摘要对齐） */
+const CARD_SUMMARY_MAX_OUT_CHARS = 110;
+const CARD_SUMMARY_FIRST_MAX_TOKENS = 200;
+const CARD_SUMMARY_TIGHTEN_MAX_TOKENS = 130;
 const SUMMARY_LLM_MAX_MS = 60_000;
 
 /**
@@ -534,11 +524,11 @@ async function compressCardLineForTightLimit(longLine, options, client, signal) 
   if (!line) return "";
   if (line.length <= CARD_SUMMARY_MAX_OUT_CHARS) return line;
   const system = [
-    "你是交易日志编辑。用户会给你一句偏长的「K 线收盘结论」。",
+    "你是交易日志编辑。用户会给你一句偏长的「K 线收盘结论 + 简要依据」。",
     `请**只输出一句**更短的中文，总长度**不得超过 ${CARD_SUMMARY_MAX_OUT_CHARS} 个字符**（汉字/数字/英文/标点都计入），`,
-    "保留多/空/观望/未下单等关键结论，不要列表、换行、引号、前缀说明。",
+    "尽量保留：操作结论 + 一条最核心的依据（可删次要修饰），不要列表、换行、引号、前缀说明。",
   ].join("");
-  const user = `请压缩为一句（≤${CARD_SUMMARY_MAX_OUT_CHARS} 字）：\n\n${line}`;
+  const user = `请压缩为一句（≤${CARD_SUMMARY_MAX_OUT_CHARS} 字），保留操作与主因：\n\n${line}`;
   try {
     const t = await runCardSummaryCompletion(
       [
@@ -560,7 +550,7 @@ async function compressCardLineForTightLimit(longLine, options, client, signal) 
 }
 
 /**
- * 主 Agent 成功后再调一次小模型/同模型，生成右侧「无成交」卡片的极短中文摘要（可额二次压缩；失败不阻断主流程）。
+ * 主 Agent 成功后再调一次小模型/同模型，生成列表卡片可见的一句中文摘要（结论/操作 + 简要依据；可二次压缩；失败不阻断主流程）。
  * @param {string} assistantFull
  * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
  * @returns {Promise<{ ok: boolean, text?: string }>}
@@ -580,10 +570,10 @@ async function summarizeAgentAnalysisForCard(assistantFull, options) {
       : bodyText;
   const system = [
     "你是交易日志编辑。用户会给你一根 K 线收盘的 Agent 分析全文。",
-    "请**只输出一句**中文「卡片外显」摘要：只写**结论/操作**（多、空、观望、未开平仓、止损意向等可择要一词带过）。",
-    `**整句总长度必须不超过 ${CARD_SUMMARY_MAX_OUT_CHARS} 个字符**（含标点、数字）；禁止多句、换行、列表、Markdown、引号。`,
+    "请**只输出一句**中文「卡片外显」摘要，用全角分号「；」分成两段：前半**结论/操作**（多、空、观望、开平、加减仓、调整止盈止损等择要）；后半**一句内最简依据**（为何如此：关键位/结构/信号/风险等，忌空洞套话）。无操作时写观望或未动及主因。",
+    `**整句总长度必须不超过 ${CARD_SUMMARY_MAX_OUT_CHARS} 个字符**（含标点、数字）；禁止第二句与换行、列表、Markdown、引号；仅用一条连续语句（可含一个分号）。`,
   ].join("");
-  const user = `以下是本轮分析，请直接输出**一句**摘要：\n\n${cut}`;
+  const user = `以下是本轮分析，请直接输出**一句**摘要（操作；依据）：\n\n${cut}`;
   const signal =
     typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
       ? AbortSignal.timeout(SUMMARY_LLM_MAX_MS)

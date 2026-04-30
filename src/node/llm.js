@@ -6,10 +6,7 @@ const { OpenAI, APIError, APIUserAbortError } = require("openai");
 const { loadSystemPromptsFromDisk } = require("./app-config");
 
 /** 交易 Agent：`resolveTradingAgentSystemPrompt` 在策略正文后附加；与用户策略库解耦。 */
-const TRADING_AGENT_TOOLS_POLICY_BLOCK = ``;
-
-/** 与用户策略比对用：正文已含此句则认为已附带同款工具约束，重复拼接省略。 */
-const TRADING_TOOLS_POLICY_FINGERPRINT =`
+const TRADING_AGENT_TOOLS_POLICY_BLOCK = `
 #### 开仓预估与开仓
 - preview_open_size 是配合 open_position 一起使用的，仅做预估，不会实际下单。请不要在其他地方单独调用。
 - 同理，在调用 open_position 之前，请先调用 preview_open_size 进行预估。
@@ -20,6 +17,9 @@ const TRADING_TOOLS_POLICY_FINGERPRINT =`
 - 除非用户明确要求使用市价单下单或者行情已经很明朗，再不上车就来不及了的情况，可以使用市价单开仓。
 - 市价单通常用来平仓
 `;
+
+/** 与用户策略比对用：正文已含此句则认为已附带同款工具约束，重复拼接省略。 */
+const TRADING_TOOLS_POLICY_FINGERPRINT =``;
 
 function resolveOpenAiApiKey(cfg) {
   const fromCfg = cfg && typeof cfg.openaiApiKey === "string" ? cfg.openaiApiKey.trim() : "";

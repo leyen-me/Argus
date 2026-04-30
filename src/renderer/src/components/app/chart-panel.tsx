@@ -17,6 +17,10 @@ import {
 } from "@/components/ui/card";
 import { Camera, EyeOff, Loader2 } from "lucide-react";
 
+/** 与 argus-renderer.js 中 `initLocalChartTestListener` 事件名保持一致 */
+const ARGUS_TEST_CAPTURE_LOCAL = "argus:test-chart-capture-local";
+const ARGUS_TEST_CAPTURE_RESULT = "argus:test-chart-capture-result";
+
 const MULTI_TIMEFRAME_CARDS = [
   { interval: "1D", label: "日线", containerId: "tradingview_chart_1d" },
   { interval: "1H", label: "1 小时", containerId: "tradingview_chart_1h" },
@@ -29,27 +33,33 @@ export function ChartPanel() {
   const [testErr, setTestErr] = useState<string | null>(null);
   const [testPreviewUrl, setTestPreviewUrl] = useState<string | null>(null);
 
-  const runTestCapture = useCallback(async () => {
+  const runTestCapture = useCallback(() => {
     setTestErr(null);
-    const sel = document.getElementById("symbol-select") as HTMLSelectElement | null;
-    const tv = sel?.value?.trim() ?? "";
     setTestBusy(true);
-    try {
-      const api = window.argus;
-      if (!api?.testChartCapture) {
-        throw new Error("window.argus 未就绪，请确认后端已启动");
-      }
-      const pack = (await api.testChartCapture(tv || undefined)) as {
-        dataUrl?: string;
-        charts?: unknown[];
-      };
-      if (!pack?.dataUrl) throw new Error("服务端未返回图片 dataUrl");
-      setTestPreviewUrl(pack.dataUrl);
-    } catch (e) {
-      setTestErr(e instanceof Error ? e.message : String(e));
-    } finally {
+
+    let settled = false;
+    const failSafe = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener(ARGUS_TEST_CAPTURE_RESULT, onResult);
       setTestBusy(false);
-    }
+      setTestErr("截图超时：请确认四张 TradingView 已加载完成后再试");
+    }, 90_000);
+
+    const onResult = (ev: Event) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(failSafe);
+      window.removeEventListener(ARGUS_TEST_CAPTURE_RESULT, onResult);
+      const ce = ev as CustomEvent<{ ok?: boolean; dataUrl?: string; error?: string }>;
+      const d = ce.detail;
+      setTestBusy(false);
+      if (d?.ok && d.dataUrl) setTestPreviewUrl(d.dataUrl);
+      else setTestErr(d?.error || "截图失败");
+    };
+
+    window.addEventListener(ARGUS_TEST_CAPTURE_RESULT, onResult);
+    window.dispatchEvent(new Event(ARGUS_TEST_CAPTURE_LOCAL));
   }, []);
 
   return (
@@ -68,7 +78,7 @@ export function ChartPanel() {
               size="sm"
               className="h-7 gap-1 px-2 text-[11px] font-semibold shadow-none"
               id="btn-test-chart-capture"
-              title="立即走一遍收盘同款截图链路（WebSocket），无需等 K 线收盘"
+              title="仅在本页用 TradingView 拼图截图，不调后端；不影响当前品种、不整页刷新图表"
               disabled={testBusy}
               onClick={() => void runTestCapture()}
             >

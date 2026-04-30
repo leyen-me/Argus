@@ -2668,6 +2668,48 @@ function initLlmChartPreview() {
   });
 }
 
+function currentUiTvSymbol() {
+  const sel = document.getElementById("symbol-select");
+  if (!sel || typeof sel.value !== "string") return "";
+  return sel.value.trim();
+}
+
+function tvSymbolsDiffer(desired, current) {
+  return String(desired || "").trim() !== String(current || "").trim();
+}
+
+/** 按钮「测试截图」：纯本页 captureMultiTimeframeCharts，不走 HTTP/RPC，避免与 WS 截图回传互相等死。 */
+function initLocalChartTestListener() {
+  if (typeof window === "undefined") return;
+  window.addEventListener("argus:test-chart-capture-local", () => {
+    void (async () => {
+      try {
+        const shot = await captureMultiTimeframeCharts();
+        window.dispatchEvent(
+          new CustomEvent("argus:test-chart-capture-result", {
+            detail: {
+              ok: true,
+              mimeType: shot.mimeType,
+              dataUrl: shot.dataUrl,
+              base64: shot.base64,
+              charts: shot.charts,
+            },
+          }),
+        );
+      } catch (e) {
+        window.dispatchEvent(
+          new CustomEvent("argus:test-chart-capture-result", {
+            detail: {
+              ok: false,
+              error: e instanceof Error ? e.message : String(e),
+            },
+          }),
+        );
+      }
+    })();
+  });
+}
+
 function initChartCaptureBridge() {
   if (!window.argus?.onChartCaptureRequest || !window.argus?.submitChartCaptureResult) {
     return;
@@ -2677,7 +2719,11 @@ function initChartCaptureBridge() {
     const tvSymbol = typeof payload?.tvSymbol === "string" ? payload.tvSymbol.trim() : "";
     if (!requestId) return;
     try {
-      if (tvSymbol && typeof window.argus?.setMarketContext === "function") {
+      if (
+        tvSymbol &&
+        tvSymbolsDiffer(tvSymbol, currentUiTvSymbol()) &&
+        typeof window.argus?.setMarketContext === "function"
+      ) {
         await window.argus.setMarketContext(tvSymbol);
         scheduleTradingViewWidget(tvSymbol, chartInterval, { debounceMs: 120 });
         const readyDeadline = Date.now() + 18000;
@@ -3025,6 +3071,7 @@ export function initArgusApp() {
     initChartIntervalSelect();
     initPromptStrategySelect();
     initChartCaptureBridge();
+    initLocalChartTestListener();
     initConfigCenter();
     initDashboardModal();
     initStrategyCenter();

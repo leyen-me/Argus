@@ -172,7 +172,7 @@ function formatOkxPositionHistoryForPrompt(ph) {
     "",
     "### 最近仓位历史",
     "",
-    "> **说明**：历史仓位是你最近的仓位（只给 10 条），你可以由此看到你自己的盈亏情况。",
+    "> **说明**：最近交易的 10 条历史仓位记录，供你参考盈亏情况。",
     "",
     mdTable(OKX_POSITION_HISTORY_LLM_HEADERS, tableRows),
   ].join("\n");
@@ -234,9 +234,9 @@ function formatRecentAgentMemoryBlock(memories, exchangeCtx) {
   }
 
   return [
-    "### 最近策略记忆",
+    "### 最近动作",
     "",
-    "> **说明**：以下是同品种同周期最近几轮自己的动作和结果。它是硬上下文，不要忽略。",
+    "> **说明**：以下是同品种同周期最近几轮自己的动作和结果。用于管理交易频率与纪律。",
     transitionNote ? "" : null,
     transitionNote || null,
     "",
@@ -250,9 +250,9 @@ function formatRecentAgentMemoryBlock(memories, exchangeCtx) {
  * @param {object | null | undefined} fields
  */
 function positionFieldsTable(fields) {
-  if (!fields || typeof fields !== "object") return "（无 OKX 原始仓位字段）";
+  if (!fields || typeof fields !== "object") return "（暂无仓位明细）";
   const entries = Object.entries(fields).sort(([a], [b]) => a.localeCompare(b));
-  if (!entries.length) return "（无 OKX 原始仓位字段）";
+  if (!entries.length) return "（暂无仓位明细）";
   return mdTable(
     ["字段", "值"],
     entries.map(([k, v]) => [k, v]),
@@ -319,7 +319,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
       ],
     ],
   );
-  const posFieldsSection = ["#### 仓位明细（OKX 字段）", "", positionFieldsTable(pos?.fields)].join("\n");
+  const posFieldsSection = ["#### 仓位明细", "", positionFieldsTable(pos?.fields)].join("\n");
 
   const pending = Array.isArray(exchangeCtx.pending_orders) ? exchangeCtx.pending_orders : [];
   const pendingBlock =
@@ -328,7 +328,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
           MD_PENDING_ORDER_HEADERS,
           pending.map((o) => pickRow(o, MD_PENDING_ORDER_HEADERS)),
         )
-      : "（当前无普通挂单。）";
+      : "（暂无普通挂单）";
 
   const algos = Array.isArray(exchangeCtx.pending_algo_orders) ? exchangeCtx.pending_algo_orders : [];
   const algoBlock =
@@ -337,7 +337,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
           MD_ALGO_ORDER_HEADERS,
           algos.map((o) => pickRow(o, MD_ALGO_ORDER_HEADERS)),
         )
-      : "（当前无算法挂单。）";
+      : "（暂无算法挂单）";
 
   const recentMemoryBlock = formatRecentAgentMemoryBlock(recentAgentMemories, exchangeCtx);
 

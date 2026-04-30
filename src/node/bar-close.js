@@ -345,7 +345,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
     ["项目", "值"],
     [
       ["instId", exchangeCtx.instId],
-      ["模拟盘", sim ? "是" : "否"],
+      // ["模拟盘", sim ? "是" : "否"],
     ],
   );
 

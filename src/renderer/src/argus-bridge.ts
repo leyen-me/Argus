@@ -46,21 +46,53 @@ function subscribeChannel(channel: string, cb: (payload: unknown) => void) {
   listeners.get(channel)!.add(cb);
 }
 
+const BACKEND_HINT =
+  "请先启动 Argus Node 服务端（默认监听 8787）。推荐使用「pnpm dev」同时启动后端与 Vite；若只跑了前端，请在另一终端执行「pnpm run server:dev」。";
+
 async function rpc(method: string, args: unknown[] = []) {
-  const res = await fetch("/api/rpc", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ method, args }),
-  });
-  const data = (await res.json()) as { ok?: boolean; error?: string; result?: unknown };
+  let res: Response;
+  try {
+    res = await fetch("/api/rpc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ method, args }),
+    });
+  } catch {
+    throw new Error(`无法访问 /api/rpc（网络错误）。${BACKEND_HINT}`);
+  }
+
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error(
+      `后端返回空正文（HTTP ${res.status}）。${res.status === 502 || res.status === 504 ? BACKEND_HINT : "请确认服务端正常运行且未被防火墙拦截。"}`,
+    );
+  }
+
+  let data: { ok?: boolean; error?: string; result?: unknown };
+  try {
+    data = JSON.parse(trimmed) as typeof data;
+  } catch {
+    const preview = trimmed.length > 160 ? `${trimmed.slice(0, 160)}…` : trimmed;
+    throw new Error(
+      `后端返回非 JSON（HTTP ${res.status}）。${BACKEND_HINT} 响应片段：${preview}`,
+    );
+  }
+
   if (!data.ok) throw new Error(data.error || "RPC failed");
   return data.result;
 }
+
+/** 后端未就绪时拉长间隔，减轻 Vite ws 代理刷屏 */
+let wsReconnectDelayMs = 2500;
 
 function connectWsLoop() {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${proto}//${window.location.host}/ws`;
   const ws = new WebSocket(wsUrl);
+  ws.onopen = () => {
+    wsReconnectDelayMs = 2500;
+  };
   ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(String(ev.data)) as { channel?: string; payload?: unknown };
@@ -72,7 +104,10 @@ function connectWsLoop() {
     }
   };
   ws.onclose = () => {
-    window.setTimeout(connectWsLoop, 2500);
+    window.setTimeout(() => {
+      wsReconnectDelayMs = Math.min(Math.round(wsReconnectDelayMs * 1.8), 30_000);
+      connectWsLoop();
+    }, wsReconnectDelayMs);
   };
   ws.onerror = () => {
     try {

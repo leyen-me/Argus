@@ -1106,13 +1106,21 @@ function createSessionReasoningRow(reasoningText) {
 function renderSessionMessagesInto(container, msgs, chartDataUrl = "", assistantReasoningText = "") {
   container.replaceChildren();
   const reasoningTrimmed = String(assistantReasoningText || "").trim();
-  if (reasoningTrimmed) {
+  let reasoningInserted = false;
+
+  /** 深度思考紧接附图之后（有图时在 user → chart → reasoning → assistant/tool…）。*/
+  const insertReasoningAfterChart = () => {
+    if (!reasoningTrimmed || reasoningInserted) return;
+    reasoningInserted = true;
     container.appendChild(createSessionReasoningRow(reasoningTrimmed));
-  }
+  };
+
   const lastUserIdx = msgs.reduce((acc, m, idx) => {
     return String(m?.role || "").toLowerCase() === "user" ? idx : acc;
   }, -1);
   let chartInserted = false;
+  /** @type {HTMLElement | null} */
+  let lastUserRowEl = null;
 
   for (const [idx, m] of msgs.entries()) {
     const row = document.createElement("div");
@@ -1161,15 +1169,36 @@ function renderSessionMessagesInto(container, msgs, chartDataUrl = "", assistant
       }
     }
     container.appendChild(row);
+    if (String(m?.role || "").toLowerCase() === "user") {
+      lastUserRowEl = row;
+    }
 
     if (!chartInserted && chartDataUrl && lastUserIdx === idx) {
       container.appendChild(createSessionChartRow(chartDataUrl));
       chartInserted = true;
+      insertReasoningAfterChart();
     }
   }
 
   if (!chartInserted && chartDataUrl) {
     container.appendChild(createSessionChartRow(chartDataUrl));
+    chartInserted = true;
+    insertReasoningAfterChart();
+  }
+
+  if (!reasoningInserted && reasoningTrimmed && lastUserRowEl) {
+    const reasoningRow = createSessionReasoningRow(reasoningTrimmed);
+    reasoningInserted = true;
+    if (lastUserRowEl.nextSibling) {
+      container.insertBefore(reasoningRow, lastUserRowEl.nextSibling);
+    } else {
+      container.appendChild(reasoningRow);
+    }
+  }
+
+  if (!reasoningInserted && reasoningTrimmed) {
+    container.appendChild(createSessionReasoningRow(reasoningTrimmed));
+    reasoningInserted = true;
   }
 }
 

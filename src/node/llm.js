@@ -4,6 +4,23 @@
  */
 const { OpenAI, APIError, APIUserAbortError } = require("openai");
 const { loadSystemPromptsFromDisk } = require("./app-config");
+
+/** 交易 Agent：`resolveTradingAgentSystemPrompt` 在策略正文后附加；与用户策略库解耦。 */
+const TRADING_AGENT_TOOLS_POLICY_BLOCK = ``;
+
+/** 与用户策略比对用：正文已含此句则认为已附带同款工具约束，重复拼接省略。 */
+const TRADING_TOOLS_POLICY_FINGERPRINT =`
+#### 开仓预估与开仓
+- preview_open_size 是配合 open_position 一起使用的，仅做预估，不会实际下单。请不要在其他地方单独调用。
+- 同理，在调用 open_position 之前，请先调用 preview_open_size 进行预估。
+
+#### 限价单与市价单
+
+- 由于是 LLM Agent 交易，下单会有延迟，延迟会导致滑点、成交价格与预期不符。所以如果思考决策要开仓的话，请尽量使用限价单开仓。
+- 除非用户明确要求使用市价单下单或者行情已经很明朗，再不上车就来不及了的情况，可以使用市价单开仓。
+- 市价单通常用来平仓
+`;
+
 function resolveOpenAiApiKey(cfg) {
   const fromCfg = cfg && typeof cfg.openaiApiKey === "string" ? cfg.openaiApiKey.trim() : "";
   if (fromCfg) return fromCfg;
@@ -21,6 +38,48 @@ function isLlmEnabled(cfg) {
 function resolveSystemPrompt(cfg) {
   const p = cfg || loadSystemPromptsFromDisk();
   return p.systemPromptCrypto;
+}
+
+/** @param {string} body */
+function hasTradingToolsPolicyEmbedded(body) {
+  return typeof body === "string" && body.includes(TRADING_TOOLS_POLICY_FINGERPRINT);
+}
+
+/** 程序在策略正文后追加的工具与执行段落。 */
+function buildTradingAgentStaticToolsAppend() {
+  return `---\n### 工具与执行\n\n${TRADING_AGENT_TOOLS_POLICY_BLOCK.trimEnd()}`;
+}
+
+/**
+ * K 线收盘交易 Agent：`prompt_strategies` 用户策略 + 程序追加的工具规范正文。
+ * 若策略正文已含内置同款工具规则（按特征句判断），则不重复拼接。
+ * @param {object | null | undefined} cfg
+ */
+function resolveTradingAgentSystemPrompt(cfg) {
+  const base = String(resolveSystemPrompt(cfg) ?? "").trimEnd();
+  if (!hasTradingToolsPolicyEmbedded(base)) {
+    const append = buildTradingAgentStaticToolsAppend().trimEnd();
+    if (!append) return base;
+    if (!base) return append;
+    return `${base}\n\n${append}`.trimEnd();
+  }
+  return base;
+}
+
+/**
+ * 将任意多段文案拼成单一 system 正文（首尾 trim，段落间双换行）。
+ * @param {string} strategyBody
+ * @param {ReadonlyArray<string | undefined | null>} fragments
+ */
+function composeSystemPrompt(strategyBody, fragments = []) {
+  const base = typeof strategyBody === "string" ? strategyBody.trimEnd() : "";
+  const rest = fragments
+    .map((x) => (typeof x === "string" ? x.trim() : ""))
+    .filter(Boolean)
+    .join("\n\n");
+  if (!rest) return base;
+  if (!base) return rest;
+  return `${base}\n\n${rest}`.trimEnd();
 }
 
 const DEFAULT_LLM_TIMEOUT_MS = 300_000;
@@ -864,6 +923,9 @@ module.exports = {
   buildUserTextForHistory,
   buildChatCompletionRequestFromMessages,
   resolveSystemPrompt,
+  resolveTradingAgentSystemPrompt,
+  composeSystemPrompt,
+  buildTradingAgentStaticToolsAppend,
   isLlmEnabled,
   resolveOpenAiApiKey,
   keepOnlyLastUserImageInMessages,

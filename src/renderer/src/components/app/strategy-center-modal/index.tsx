@@ -32,7 +32,6 @@ type ArgusApi = {
   } | null>;
   savePromptStrategy?: (payload: { id: string; label: string; body: string }) => Promise<unknown>;
   deletePromptStrategy?: (id: string) => Promise<unknown>;
-  importBundledPromptStrategies?: () => Promise<unknown>;
 };
 
 function getArgus(): ArgusApi | undefined {
@@ -182,28 +181,6 @@ export function StrategyCenterModal() {
     }
   };
 
-  const onImportBundled = async () => {
-    const api = getArgus();
-    if (!api?.importBundledPromptStrategies) return;
-    const ok = window.confirm(
-      "将用代码内置模板写回数据库：default 与 ema20 的正文会被覆盖为发行版默认内容；若缺少这两条会新建。其他自定义策略不受影响。是否继续？",
-    );
-    if (!ok) return;
-    setBusy(true);
-    setStatus(null);
-    try {
-      await api.importBundledPromptStrategies();
-      window.dispatchEvent(new CustomEvent(ARGUS_PROMPT_STRATEGIES_CHANGED));
-      setStatus("已从内置模板同步正文");
-      await refreshList(selectedId ?? undefined);
-    } catch (e) {
-      console.error(e);
-      setStatus(e instanceof Error ? e.message : "导入失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
@@ -248,22 +225,12 @@ export function StrategyCenterModal() {
               >
                 新建
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => void onImportBundled()}
-                disabled={busy}
-              >
-                同步内置
-              </Button>
             </div>
             <div className="min-h-[120px] flex-1 overflow-y-auto overscroll-contain p-2">
               {list.length === 0 ? (
                 <p className="m-0 px-2 py-3 text-xs text-muted-foreground">
                   {getArgus()?.listPromptStrategiesMeta
-                    ? "暂无策略，可先「同步内置」或新建。"
+                    ? "暂无策略，请先在侧栏新建或检查数据库。"
                     : "请在 Electron 应用中使用策略中心。"}
                 </p>
               ) : (

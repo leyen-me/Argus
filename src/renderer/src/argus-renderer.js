@@ -244,7 +244,7 @@ async function captureMultiTimeframeCharts() {
 
 /**
  * 与 app-config 中 `MIN_FALLBACK_*` 一致：仅当非 Electron 打开页面时用于界面预览兜底。
- * 正式内容由本地库表 `prompt_strategies` 提供（内置种子见主进程 `builtin-prompts.js`）；策略在「策略中心」维护，并在顶部快捷栏切换。
+ * 正式内容由本地库表 `prompt_strategies` 提供；策略在「策略中心」维护，并在顶部快捷栏切换。
  */
 const FALLBACK_SYSTEM_PROMPT_CRYPTO =
   "你是资深加密市场价格行为分析助手。每轮会收到已收盘 K 线、可选图表截图，以及 OKX 永续持仓与挂单快照（若已配置 API）。" +
@@ -258,8 +258,8 @@ const FALLBACK_APP_CONFIG = {
     { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
   ],
   defaultSymbol: "OKX:BTCUSDT",
-  promptStrategy: "default",
-  promptStrategies: ["default", "ema20"],
+  promptStrategy: "",
+  promptStrategies: [],
   interval: "5",
   openaiBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   openaiModel: "qwen3.5-plus",
@@ -1920,24 +1920,31 @@ function applyChartIntervalSelect(interval) {
 function applyPromptStrategySelect(cfg) {
   const sel = document.getElementById("config-prompt-strategy");
   const list =
-    Array.isArray(cfg?.promptStrategies) && cfg.promptStrategies.length > 0
-      ? cfg.promptStrategies
-      : [cfg?.promptStrategy || "default"];
+    Array.isArray(cfg?.promptStrategies) && cfg.promptStrategies.length > 0 ? cfg.promptStrategies : [];
   const cur =
-    cfg?.promptStrategy && list.includes(cfg.promptStrategy)
+    cfg?.promptStrategy && typeof cfg.promptStrategy === "string" && list.includes(cfg.promptStrategy)
       ? cfg.promptStrategy
       : list.includes("default")
         ? "default"
-        : list[0];
+        : list[0] ?? "";
   if (sel) {
     sel.replaceChildren();
-    for (const name of list) {
+    if (list.length === 0) {
       const opt = document.createElement("option");
-      opt.value = name;
-      opt.textContent = name;
+      opt.value = "";
+      opt.textContent = "（无策略 · 请先打开策略中心创建）";
+      opt.disabled = true;
       sel.appendChild(opt);
+      sel.value = "";
+    } else {
+      for (const name of list) {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+      }
+      sel.value = cur || list[0] || "";
     }
-    sel.value = cur;
   }
   window.dispatchEvent(
     new CustomEvent("argus:prompt-strategy-sync", {
@@ -1974,10 +1981,10 @@ async function persistChartPreferences(partial) {
  * @param {string} promptStrategy
  */
 async function persistPromptStrategyPreference(promptStrategy) {
-  const next = String(promptStrategy ?? "").trim() || "default";
+  const next = String(promptStrategy ?? "").trim();
   if (!window.argus || typeof window.argus.saveConfig !== "function") {
     applyPromptStrategySelect({
-      promptStrategies: [next],
+      promptStrategies: next ? [next] : [],
       promptStrategy: next,
     });
     return;
@@ -1985,7 +1992,7 @@ async function persistPromptStrategyPreference(promptStrategy) {
   try {
     const saved = await window.argus.saveConfig({ promptStrategy: next });
     applyPromptStrategySelect(saved);
-    setLlmStatus(`已切换策略：${saved.promptStrategy || next}`);
+    setLlmStatus(next ? `已切换策略：${saved.promptStrategy || next}` : "已清空当前策略选择");
   } catch (err) {
     console.error(err);
     setLlmStatus("切换策略失败");

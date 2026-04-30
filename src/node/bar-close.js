@@ -11,6 +11,7 @@ const {
   runTradingAgentTurn,
   buildMultimodalUserContent,
   resolveSystemPrompt,
+  resolveTradingAgentSystemPrompt,
   RECENT_CANDLES_FETCH_LIMIT,
   mdCell,
   mdTable,
@@ -577,7 +578,12 @@ async function emitBarClose(winGetter, ctx) {
     return;
   }
 
-  const systemPrompt = resolveSystemPrompt(cfg);
+  if (!String(resolveSystemPrompt(cfg) || "").trim()) {
+    finishSkipped("未调用 LLM：请在「策略中心」创建策略并填写系统提示词；无策略则不运行 Agent。");
+    return;
+  }
+
+  const systemPrompt = resolveTradingAgentSystemPrompt(cfg);
   const currentUserContent = buildMultimodalUserContent(
     llmUserText,
     orderedChartImages,

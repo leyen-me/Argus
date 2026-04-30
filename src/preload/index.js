@@ -54,5 +54,4 @@ contextBridge.exposeInMainWorld("argus", {
   getPromptStrategy: (id) => ipcRenderer.invoke("prompt-strategies:get", id),
   savePromptStrategy: (payload) => ipcRenderer.invoke("prompt-strategies:save", payload),
   deletePromptStrategy: (id) => ipcRenderer.invoke("prompt-strategies:delete", id),
-  importBundledPromptStrategies: () => ipcRenderer.invoke("prompt-strategies:import-bundled"),
 });

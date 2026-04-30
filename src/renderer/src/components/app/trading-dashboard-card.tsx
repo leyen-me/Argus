@@ -116,7 +116,9 @@ function resolveSymbolLabel(config: DashboardConfig | null) {
 }
 
 function resolveStrategyId(config: DashboardConfig | null) {
-  return typeof config?.promptStrategy === "string" && config.promptStrategy.trim() ? config.promptStrategy.trim() : "default"
+  return typeof config?.promptStrategy === "string" && config.promptStrategy.trim()
+    ? config.promptStrategy.trim()
+    : ""
 }
 
 function buildNextStrategyRanges(

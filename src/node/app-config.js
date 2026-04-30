@@ -1,5 +1,4 @@
 const localDb = require("./local-db");
-const { BUILTIN_DEFAULT_BODY } = require("./builtin-prompts");
 const promptStrategiesStore = require("./prompt-strategies-store");
 
 /**
@@ -22,7 +21,8 @@ const APP_SETTINGS_SEED = Object.freeze({
     { label: "ETH/USDT", value: "OKX:ETHUSDT" },
   ],
   defaultSymbol: "OKX:BTCUSDT",
-  promptStrategy: "default",
+  /** 占位；无 `prompt_strategies` 行时解析为空，不调用 Agent */
+  promptStrategy: "",
   interval: "5",
   openaiBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   openaiModel: "qwen3.5-plus",
@@ -54,8 +54,8 @@ const APP_SETTINGS_SEED = Object.freeze({
 const DEFAULT_OPENAI_BASE_URL = APP_SETTINGS_SEED.openaiBaseUrl;
 const DEFAULT_OPENAI_MODEL = APP_SETTINGS_SEED.openaiModel;
 
-/** 极端情况下正文仍为空时的兜底（与 {@link BUILTIN_DEFAULT_BODY} 一致） */
-const MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO = BUILTIN_DEFAULT_BODY;
+/** 无存库正文时 system 占位：不设默认策略长文（Agent 须有用户自创策略才可运行）。 */
+const EMPTY_SYSTEM_PROMPT_FALLBACK = "";
 
 function normalizeSystemPromptField(raw, fallback) {
   if (typeof raw !== "string") return fallback;
@@ -68,8 +68,7 @@ function normalizeSystemPromptField(raw, fallback) {
  */
 function listPromptStrategies() {
   promptStrategiesStore.seedFromDiskIfEmpty();
-  const ids = promptStrategiesStore.listStrategyIds();
-  return ids.length ? ids : [DEFAULT_PROMPT_STRATEGY];
+  return promptStrategiesStore.listStrategyIds();
 }
 
 /**
@@ -77,12 +76,13 @@ function listPromptStrategies() {
  * @returns {string}
  */
 function resolvePromptStrategyId(preferred) {
-  const available = listPromptStrategies();
-  const want =
-    typeof preferred === "string" && preferred.trim() ? preferred.trim() : DEFAULT_PROMPT_STRATEGY;
-  if (available.includes(want)) return want;
+  promptStrategiesStore.seedFromDiskIfEmpty();
+  const available = promptStrategiesStore.listStrategyIds();
+  if (!available.length) return "";
+  const raw = typeof preferred === "string" && preferred.trim() ? preferred.trim() : "";
+  if (raw && available.includes(raw)) return raw;
   if (available.includes(DEFAULT_PROMPT_STRATEGY)) return DEFAULT_PROMPT_STRATEGY;
-  return available[0] || DEFAULT_PROMPT_STRATEGY;
+  return available[0];
 }
 
 /**
@@ -95,7 +95,7 @@ function loadSystemPromptsFromDisk(strategyId) {
   return {
     systemPromptCrypto: normalizeSystemPromptField(
       promptStrategiesStore.getStrategyBody(id),
-      MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO,
+      EMPTY_SYSTEM_PROMPT_FALLBACK,
     ),
   };
 }
@@ -426,5 +426,5 @@ module.exports = {
   listPromptStrategies,
   resolvePromptStrategyId,
   stripSystemPromptsForPersistence,
-  MIN_FALLBACK_SYSTEM_PROMPT_CRYPTO,
+  EMPTY_SYSTEM_PROMPT_FALLBACK,
 };

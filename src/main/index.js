@@ -108,11 +108,6 @@ ipcMain.handle("prompt-strategies:delete", (_event, id) => {
   return loadAppConfig();
 });
 
-ipcMain.handle("prompt-strategies:import-bundled", () => {
-  promptStrategiesStore.importBundledBodies();
-  return loadAppConfig();
-});
-
 ipcMain.handle("llm-request-analysis", async (_event, payload) => {
   return {
     ok: true,

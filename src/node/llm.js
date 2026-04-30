@@ -27,7 +27,23 @@ const TRADING_AGENT_TOOLS_POLICY_BLOCK = `
 - 请观察最近动作和最近仓位历史，默认情况下，请合理的控制交易频率，不要过于频繁的进行交易。除非用户明确要求
 - 交易频率是指每轮思考中，调用工具的次数。例如频繁开仓、频繁的调整止盈止损等，都属于过于频繁的交易。
 - 不要在说观望的时候调用工具。
+
+#### 输出格式（强制）
+
+- 每次回复的第一行必须是：\`DECISION: hold\`、\`DECISION: open\`、\`DECISION: close\`、\`DECISION: amend\` 之一。
+- \`hold\`：只允许分析，不允许调用任何交易工具。
+- \`open\`：只允许调用 \`open_position\`。
+- \`close\`：只允许调用 \`close_position\`。
+- \`amend\`：只允许调用 \`cancel_order\`、\`amend_order\`、\`amend_tp_sl\`。
+- 如果正文里的 \`DECISION\` 与工具调用不一致，系统会直接拦截，不执行下单/平仓/改单。
 `;
+
+const TRADING_DECISION_ALLOWED_TOOLS = Object.freeze({
+  hold: new Set(),
+  open: new Set(["open_position"]),
+  close: new Set(["close_position"]),
+  amend: new Set(["cancel_order", "amend_order", "amend_tp_sl"]),
+});
 
 function resolveOpenAiApiKey(cfg) {
   const fromCfg = cfg && typeof cfg.openaiApiKey === "string" ? cfg.openaiApiKey.trim() : "";
@@ -339,6 +355,89 @@ function deltaContentToString(content) {
  */
 function messageContentToString(content) {
   return deltaContentToString(content);
+}
+
+/**
+ * 从 assistant 正文里提取结构化交易决策。
+ * 优先识别：
+ * 1. `DECISION: hold|open|close|amend`
+ * 2. JSON 里的 `"decision": "hold|open|close|amend"`
+ * @param {unknown} content
+ * @returns {"hold" | "open" | "close" | "amend" | null}
+ */
+function extractTradingDecision(content) {
+  const text = messageContentToString(content).trim();
+  if (!text) return null;
+  const lineMatch = text.match(/(?:^|\n)\s*decision\s*[:：=]\s*(hold|open|close|amend)\b/i);
+  if (lineMatch) return /** @type {"hold" | "open" | "close" | "amend"} */ (lineMatch[1].toLowerCase());
+  const jsonMatch = text.match(/"decision"\s*:\s*"(hold|open|close|amend)"/i);
+  if (jsonMatch) return /** @type {"hold" | "open" | "close" | "amend"} */ (jsonMatch[1].toLowerCase());
+  return null;
+}
+
+/**
+ * @param {unknown} tc
+ * @returns {{ id: string, name: string, args: object }}
+ */
+function parseToolCall(tc) {
+  const id = tc?.id != null ? String(tc.id) : "";
+  const name = tc?.function?.name || "";
+  let args = {};
+  try {
+    args = JSON.parse(tc?.function?.arguments || "{}");
+  } catch {
+    args = {};
+  }
+  return { id, name: String(name), args };
+}
+
+/**
+ * @param {unknown} content
+ * @param {unknown[]} toolCalls
+ */
+function validateTradingDecisionToolCalls(content, toolCalls) {
+  const decision = extractTradingDecision(content);
+  const parsedCalls = Array.isArray(toolCalls) ? toolCalls.map(parseToolCall) : [];
+  if (parsedCalls.length === 0) {
+    return { ok: true, decision, parsedCalls };
+  }
+  if (!decision) {
+    return {
+      ok: false,
+      decision: null,
+      parsedCalls,
+      message: "检测到交易工具调用，但 assistant 正文缺少结构化 `DECISION: hold|open|close|amend`。",
+    };
+  }
+  const allowed = TRADING_DECISION_ALLOWED_TOOLS[decision];
+  const disallowed = parsedCalls.map((x) => x.name).filter((name) => !allowed.has(name));
+  if (decision === "hold") {
+    return {
+      ok: false,
+      decision,
+      parsedCalls,
+      message: "DECISION=hold 时不允许调用任何交易工具，本次操作已被系统拦截。",
+    };
+  }
+  if (disallowed.length > 0) {
+    return {
+      ok: false,
+      decision,
+      parsedCalls,
+      message: `DECISION=${decision} 仅允许调用 ${Array.from(allowed).join(" / ")}，实际却调用了 ${disallowed.join(" / ")}，本次操作已被系统拦截。`,
+    };
+  }
+  return { ok: true, decision, parsedCalls };
+}
+
+/**
+ * @param {string} assistantText
+ * @param {string} blockMessage
+ */
+function appendDecisionGuardMessage(assistantText, blockMessage) {
+  const base = String(assistantText || "").trim();
+  const note = `系统风控拦截：${blockMessage}`;
+  return [base, note].filter(Boolean).join("\n\n").trim();
 }
 
 /**
@@ -979,14 +1078,44 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
         if (rs) reasoningAcc = mergeReasoningChunk(reasoningAcc, rs);
       }
       thread.push(msg);
+      const assistantText = messageContentToString(msg.content).trim();
 
       const tcs = msg.tool_calls;
       if (!Array.isArray(tcs) || tcs.length === 0) {
-        const finalText = messageContentToString(msg.content).trim();
-        onStep?.({ step, assistantPreview: finalText, reasoningPreview: reasoningAcc.trim() });
+        onStep?.({ step, assistantPreview: assistantText, reasoningPreview: reasoningAcc.trim() });
         return {
           ok: true,
-          text: finalText,
+          text: assistantText,
+          reasoningText: reasoningAcc.trim(),
+          toolTrace,
+          messagesOut: thread,
+        };
+      }
+
+      const decisionGuard = validateTradingDecisionToolCalls(msg.content, tcs);
+      if (!decisionGuard.ok) {
+        const blockedText = appendDecisionGuardMessage(assistantText, decisionGuard.message);
+        onStep?.({
+          step,
+          toolCalls: tcs,
+          assistantPreview: blockedText,
+          reasoningPreview: reasoningAcc.trim(),
+        });
+        for (const parsed of decisionGuard.parsedCalls) {
+          toolTrace.push({
+            name: parsed.name,
+            args: parsed.args,
+            result: {
+              ok: false,
+              blocked: true,
+              decision: decisionGuard.decision,
+              message: decisionGuard.message,
+            },
+          });
+        }
+        return {
+          ok: true,
+          text: blockedText,
           reasoningText: reasoningAcc.trim(),
           toolTrace,
           messagesOut: thread,
@@ -996,26 +1125,21 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
       onStep?.({
         step,
         toolCalls: tcs,
-        assistantPreview: messageContentToString(msg.content).trim(),
+        assistantPreview: assistantText,
         reasoningPreview: reasoningAcc.trim(),
       });
 
-      for (const tc of tcs) {
-        const name = tc?.function?.name || "";
-        let args = {};
-        try {
-          args = JSON.parse(tc.function?.arguments || "{}");
-        } catch {
-          args = {};
-        }
+      for (const parsed of decisionGuard.parsedCalls) {
+        const name = parsed.name;
+        const args = parsed.args;
         const result = await executeTool(String(name), args, {
           step,
-          assistantPreview: messageContentToString(msg.content).trim(),
+          assistantPreview: assistantText,
         });
         toolTrace.push({ name: String(name), args, result });
         thread.push({
           role: "tool",
-          tool_call_id: tc.id,
+          tool_call_id: parsed.id || null,
           content: JSON.stringify(result ?? {}),
         });
       }

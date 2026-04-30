@@ -8,6 +8,7 @@
  * - `agent_sessions` / `agent_session_messages`：收盘 Agent 会话与有序消息（user_version ≥ 6）；v3–v5 曾用 `agent_bar_turns`，v6 复制进 sessions 后于 v11 删除该遗留表。
  * - `dashboard_equity_samples`：仪表盘权益曲线采样（user_version ≥ 7）。
  * - `agent_sessions.card_summary`：收盘后二次 LLM 卡片短摘要（user_version ≥ 8）。
+ * - `agent_sessions.assistant_reasoning_text`：开盘 Agent 首次 completion 的深度思考快照（user_version ≥ 12）。
  * - `order_intents`：旧版挂单意图记忆表（user_version = 9）；v10 起移除。
  * - 其他强关系数据可在同一库中新建表并递增 user_version；业务模块仅依赖 `getDatabase()`。
  *
@@ -223,6 +224,14 @@ function applyMigrations(database) {
       DROP TABLE IF EXISTS agent_bar_turns;
     `);
     database.pragma("user_version = 11");
+    v = 11;
+  }
+  if (v < 12) {
+    database.exec(`
+      ALTER TABLE agent_sessions ADD COLUMN assistant_reasoning_text TEXT;
+    `);
+    database.pragma("user_version = 12");
+    v = 12;
   }
 }
 

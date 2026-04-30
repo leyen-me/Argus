@@ -616,11 +616,12 @@ async function emitBarClose(winGetter, ctx) {
 
   let streamAcc = "";
   let streamToolAcc = "";
+  let streamReasonAcc = "";
   const agentResult = await runTradingAgentTurn(messages, streamOpts, {
     tools: toolsForTurn,
     executeTool,
     maxSteps: 8,
-    onStep: ({ toolCalls, assistantPreview }) => {
+    onStep: ({ toolCalls, assistantPreview, reasoningPreview }) => {
       let changed = false;
       if (assistantPreview) {
         streamAcc = [streamAcc, assistantPreview].filter(Boolean).join("\n\n").trim();
@@ -631,11 +632,15 @@ async function emitBarClose(winGetter, ctx) {
         streamToolAcc = [streamToolAcc, toolPreview].filter(Boolean).join("\n");
         changed = true;
       }
+      if (cfg.llmReasoningEnabled === true && reasoningPreview != null && String(reasoningPreview).trim()) {
+        streamReasonAcc = String(reasoningPreview).trim();
+        changed = true;
+      }
       if (changed) {
         win.webContents.send("llm-stream-delta", {
           barCloseId,
           full: streamAcc,
-          reasoningFull: "",
+          reasoningFull: cfg.llmReasoningEnabled === true ? streamReasonAcc : "",
           toolFull: streamToolAcc,
         });
       }
@@ -645,7 +650,8 @@ async function emitBarClose(winGetter, ctx) {
   if (agentResult.ok) {
     llm.analysisText = agentResult.text;
     llm.toolTrace = Array.isArray(agentResult.toolTrace) ? agentResult.toolTrace : [];
-    llm.reasoningText = "";
+    llm.reasoningText =
+      cfg.llmReasoningEnabled === true && agentResult.reasoningText ? String(agentResult.reasoningText) : "";
     llm.streaming = false;
     llm.cardSummary = null;
     const summaryP =
@@ -682,6 +688,10 @@ async function emitBarClose(winGetter, ctx) {
         agentOk: true,
         systemPrompt,
         messagesOut: agentResult.messagesOut,
+        assistantReasoningText:
+          cfg.llmReasoningEnabled === true && String(agentResult.reasoningText || "").trim()
+            ? String(agentResult.reasoningText).trim()
+            : null,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -695,7 +705,7 @@ async function emitBarClose(winGetter, ctx) {
       exchangeContext: exchangeAfter,
       analysisText: llm.analysisText,
       cardSummary: llm.cardSummary,
-      reasoningText: "",
+      reasoningText: llm.reasoningText || "",
       toolTrace: llm.toolTrace,
     });
   } else {
@@ -722,6 +732,10 @@ async function emitBarClose(winGetter, ctx) {
         agentError: agentResult.text,
         systemPrompt,
         messagesOut: agentResult.messagesOut,
+        assistantReasoningText:
+          cfg.llmReasoningEnabled === true && String(agentResult.reasoningText || "").trim()
+            ? String(agentResult.reasoningText).trim()
+            : null,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

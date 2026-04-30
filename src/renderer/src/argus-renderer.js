@@ -521,6 +521,10 @@ function trimLlmHistoryDom(maxRounds) {
  * @param {object} row listAgentBarTurnsPage 返回的条目
  */
 function agentBarTurnRowToPayload(row) {
+  const reasoningBody =
+    row.assistantReasoningText != null && String(row.assistantReasoningText).trim()
+      ? String(row.assistantReasoningText).trim()
+      : "";
   return {
     kind: "bar_close",
     barCloseId: row.barCloseId,
@@ -532,13 +536,13 @@ function agentBarTurnRowToPayload(row) {
     chartImage: null,
     llm: {
       enabled: true,
-      reasoningEnabled: false,
+      reasoningEnabled: !!reasoningBody,
       streaming: false,
       analysisText: row.agentOk ? row.assistantText || "" : null,
       cardSummary: row.agentOk && row.cardSummary ? String(row.cardSummary) : null,
       toolTrace: Array.isArray(row.toolTrace) ? row.toolTrace : [],
       error: row.agentOk ? null : row.agentError || "Agent 失败",
-      reasoningText: null,
+      reasoningText: reasoningBody || null,
     },
   };
 }
@@ -1074,12 +1078,37 @@ function createCollapsibleSessionContent(text) {
 }
 
 /**
+ * @param {string} reasoningText
+ * @returns {HTMLDivElement}
+ */
+function createSessionReasoningRow(reasoningText) {
+  const row = document.createElement("div");
+  row.className = "llm-session-msg llm-session-msg--reasoning";
+  row.setAttribute("role", "listitem");
+  const roleEl = document.createElement("div");
+  roleEl.className = "llm-session-msg-role";
+  roleEl.textContent = "reasoning · 深度思考";
+  const text = String(reasoningText || "").trim();
+  const pre = document.createElement("pre");
+  pre.className = "llm-session-msg-pre llm-session-msg-reasoning-pre";
+  pre.textContent = text;
+  row.appendChild(roleEl);
+  row.appendChild(createSessionCopyBlock(pre, text));
+  return row;
+}
+
+/**
  * @param {HTMLElement} container
  * @param {object[]} msgs
  * @param {string} [chartDataUrl]
+ * @param {string} [assistantReasoningText]
  */
-function renderSessionMessagesInto(container, msgs, chartDataUrl = "") {
+function renderSessionMessagesInto(container, msgs, chartDataUrl = "", assistantReasoningText = "") {
   container.replaceChildren();
+  const reasoningTrimmed = String(assistantReasoningText || "").trim();
+  if (reasoningTrimmed) {
+    container.appendChild(createSessionReasoningRow(reasoningTrimmed));
+  }
   const lastUserIdx = msgs.reduce((acc, m, idx) => {
     return String(m?.role || "").toLowerCase() === "user" ? idx : acc;
   }, -1);
@@ -1184,7 +1213,20 @@ async function openLlmSessionDetailModal(barCloseId) {
   }
 
   try {
-    const msgs = await window.argus.getAgentSessionMessages(barCloseId);
+    const rawSession = await window.argus.getAgentSessionMessages(barCloseId);
+    /** @type {unknown[]} */
+    let msgs = [];
+    let assistantReasoningText = "";
+    if (Array.isArray(rawSession)) {
+      msgs = rawSession;
+    } else if (rawSession && typeof rawSession === "object") {
+      const rs = /** @type {{ messages?: unknown; assistantReasoningText?: unknown }} */ (rawSession);
+      msgs = Array.isArray(rs.messages) ? rs.messages : [];
+      assistantReasoningText =
+        typeof rs.assistantReasoningText === "string" && rs.assistantReasoningText.trim()
+          ? rs.assistantReasoningText.trim()
+          : "";
+    }
     let chartData = null;
     if (typeof window.argus.getAgentBarTurnChart === "function") {
       try {
@@ -1201,7 +1243,7 @@ async function openLlmSessionDetailModal(barCloseId) {
       }
       return;
     }
-    renderSessionMessagesInto(bodyEl, msgs, chartData?.dataUrl || "");
+    renderSessionMessagesInto(bodyEl, msgs, chartData?.dataUrl || "", assistantReasoningText);
   } catch (e) {
     if (loading) loading.hidden = true;
     const msg = e instanceof Error ? e.message : String(e);

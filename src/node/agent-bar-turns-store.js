@@ -79,6 +79,7 @@ function messageToRow(m, seq) {
  * @param {string | null} [row.agentError]
  * @param {string | null} [row.systemPrompt] 当次请求使用的 system 全文快照
  * @param {unknown[] | null} [row.messagesOut] runTradingAgentTurn 返回的完整 messages 线程
+ * @param {string | null} [row.assistantReasoningText] 首轮 completion 深度思考快照（可选）
  */
 function persistAgentBarTurn(row) {
   const db = getDatabase();
@@ -108,13 +109,15 @@ function persistAgentBarTurn(row) {
       text_for_llm, llm_user_full_text, exchange_context_json,
       chart_mime, chart_png, chart_capture_error,
       assistant_text, card_summary, tool_trace_json, exchange_after_json, agent_ok, agent_error,
-      estimated_prompt_tokens, context_window_tokens, updated_at, system_prompt_text
+      estimated_prompt_tokens, context_window_tokens, updated_at, system_prompt_text,
+      assistant_reasoning_text
     ) VALUES (
       @bar_close_id, @tv_symbol, @interval, @period_label, @captured_at,
       @text_for_llm, @llm_user_full_text, @exchange_context_json,
       @chart_mime, @chart_png, @chart_capture_error,
       @assistant_text, @card_summary, @tool_trace_json, @exchange_after_json, @agent_ok, @agent_error,
-      @estimated_prompt_tokens, @context_window_tokens, datetime('now'), @system_prompt_text
+      @estimated_prompt_tokens, @context_window_tokens, datetime('now'), @system_prompt_text,
+      @assistant_reasoning_text
     )
   `);
   const insertMsg = db.prepare(`
@@ -154,6 +157,10 @@ function persistAgentBarTurn(row) {
       estimated_prompt_tokens: null,
       context_window_tokens: null,
       system_prompt_text: systemPrompt,
+      assistant_reasoning_text:
+        row.assistantReasoningText != null && String(row.assistantReasoningText).trim() !== ""
+          ? String(row.assistantReasoningText)
+          : null,
     });
     for (const mr of messageRows) {
       insertMsg.run({
@@ -201,6 +208,7 @@ function listAgentBarTurnsPage(args = {}) {
       text_for_llm, llm_user_full_text, exchange_context_json,
       chart_mime, chart_capture_error,
       assistant_text, card_summary, tool_trace_json, exchange_after_json, agent_ok, agent_error,
+      assistant_reasoning_text,
       CASE WHEN chart_png IS NOT NULL AND length(chart_png) > 0 THEN 1 ELSE 0 END AS has_chart
     FROM agent_sessions
     WHERE tv_symbol = ? AND interval = ?
@@ -239,6 +247,10 @@ function listAgentBarTurnsPage(args = {}) {
       chartMime: r.chart_mime,
       chartCaptureError: r.chart_capture_error,
       assistantText: r.assistant_text,
+      assistantReasoningText:
+        r.assistant_reasoning_text != null && String(r.assistant_reasoning_text).trim()
+          ? String(r.assistant_reasoning_text)
+          : null,
       cardSummary: r.card_summary != null && String(r.card_summary).trim() ? String(r.card_summary) : null,
       toolTrace,
       agentOk: r.agent_ok === 1,
@@ -274,26 +286,40 @@ function getAgentBarTurnChart(barCloseId) {
 /**
  * 按 seq 返回当次会话的 API 消息行（content / tool_calls 已 JSON 解析），用于排查。
  * @param {string} barCloseId
- * @returns {Array<{
- *   seq: number,
- *   role: string,
- *   content: unknown,
- *   toolCalls: unknown[] | null,
- *   toolCallId: string | null,
- *   name: string | null,
- * }>}
+ * @returns {{
+ *   messages: Array<{
+ *     seq: number,
+ *     role: string,
+ *     content: unknown,
+ *     toolCalls: unknown[] | null,
+ *     toolCallId: string | null,
+ *     name: string | null,
+ *   }>,
+ *   assistantReasoningText: string | null,
+ * }}
  */
 function getAgentSessionMessages(barCloseId) {
   const id = String(barCloseId || "").trim();
-  if (!id) return [];
+  if (!id) return { messages: [], assistantReasoningText: null };
   const db = getDatabase();
+  const reasoningRow = db
+    .prepare(`SELECT assistant_reasoning_text FROM agent_sessions WHERE bar_close_id = ?`)
+    .get(id);
+  let assistantReasoningText = null;
+  if (
+    reasoningRow &&
+    reasoningRow.assistant_reasoning_text != null &&
+    String(reasoningRow.assistant_reasoning_text).trim()
+  ) {
+    assistantReasoningText = String(reasoningRow.assistant_reasoning_text).trim();
+  }
   const raw = db
     .prepare(
       `SELECT seq, role, content_json, tool_calls_json, tool_call_id, name
        FROM agent_session_messages WHERE bar_close_id = ? ORDER BY seq ASC`,
     )
     .all(id);
-  return raw.map((r) => {
+  const messages = raw.map((r) => {
     let content = null;
     if (typeof r.content_json === "string" && r.content_json.length > 0) {
       try {
@@ -320,6 +346,7 @@ function getAgentSessionMessages(barCloseId) {
       name: r.name != null ? String(r.name) : null,
     };
   });
+  return { messages, assistantReasoningText };
 }
 
 function safeJsonParse(text) {

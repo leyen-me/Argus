@@ -355,6 +355,31 @@ function appendReasoningFromDelta(delta) {
 }
 
 /**
+ * 非流式 Chat Completions 的 `choices[0].message` 上可能携带的推理文本（与流式 delta 字段对齐；各兼容网关字段略有差异）。
+ * @param {unknown} message
+ * @returns {string}
+ */
+function messageAssistantReasoningToString(message) {
+  if (!message || typeof message !== "object") return "";
+  const m = /** @type {Record<string, unknown>} */ (message);
+  const fromSameShape = appendReasoningFromDelta(m);
+  if (fromSameShape) return fromSameShape.trim();
+  const r = m.reasoning;
+  if (typeof r === "string" && r.trim()) return r.trim();
+  if (r && typeof r === "object") {
+    const o = /** @type {Record<string, unknown>} */ (r);
+    if (typeof o.text === "string" && o.text.trim()) return o.text.trim();
+    if (typeof o.content === "string" && o.content.trim()) return o.content.trim();
+    try {
+      return JSON.stringify(o);
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
+/**
  * 合并推理流：有的网关按**增量**发片段，有的按**当前全文**（新文以旧文为前缀）发；二者混用会叠字。
  * @param {string} prev
  * @param {string} piece
@@ -892,19 +917,19 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
  *   tools: unknown[],
  *   executeTool: (name: string, args: object) => Promise<object>,
  *   maxSteps?: number,
- *   onStep?: (ev: { step: number, toolCalls?: unknown[], assistantPreview?: string }) => void,
+ *   onStep?: (ev: { step: number, toolCalls?: unknown[], assistantPreview?: string, reasoningPreview?: string }) => void,
  * }} agentOpts
  */
 async function runTradingAgentTurn(messages, options, agentOpts) {
   const cfg = options.appConfig;
   if (!isLlmEnabled(cfg)) {
-    return { ok: false, text: "LLM 未启用。", toolTrace: [], messagesOut: messages };
+    return { ok: false, text: "LLM 未启用。", toolTrace: [], messagesOut: messages, reasoningText: "" };
   }
   const apiKey = resolveOpenAiApiKey(cfg);
   const signal = llmAbortSignal(cfg);
   const probe = buildChatCompletionRequestFromMessages(messages, options, false);
   if (probe.error) {
-    return { ok: false, text: probe.error, toolTrace: [], messagesOut: messages };
+    return { ok: false, text: probe.error, toolTrace: [], messagesOut: messages, reasoningText: "" };
   }
 
   const tools = agentOpts.tools;
@@ -921,12 +946,14 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
 
   let thread = [...messages];
   const toolTrace = [];
+  let reasoningAcc = "";
+  const wantReasoning = !!(cfg && cfg.llmReasoningEnabled === true);
 
   try {
     for (let step = 1; step <= maxSteps; step++) {
       const built = buildChatCompletionRequestFromMessages(thread, options, false);
       if (built.error) {
-        return { ok: false, text: built.error, toolTrace, messagesOut: thread };
+        return { ok: false, text: built.error, toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() };
       }
       const completion = await client.chat.completions.create(
         { ...built.body, tools, tool_choice: "auto" },
@@ -935,24 +962,33 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
       const choice = completion?.choices?.[0];
       const msg = choice?.message;
       if (!msg) {
-        return { ok: false, text: "LLM 无有效 message。", toolTrace, messagesOut: thread };
+        return { ok: false, text: "LLM 无有效 message。", toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() };
+      }
+      if (wantReasoning) {
+        const rs = messageAssistantReasoningToString(msg);
+        if (rs) reasoningAcc = mergeReasoningChunk(reasoningAcc, rs);
       }
       thread.push(msg);
 
       const tcs = msg.tool_calls;
       if (!Array.isArray(tcs) || tcs.length === 0) {
         const finalText = messageContentToString(msg.content).trim();
-        onStep?.({ step, assistantPreview: finalText });
+        onStep?.({ step, assistantPreview: finalText, reasoningPreview: reasoningAcc.trim() });
         return {
           ok: true,
           text: finalText,
-          reasoningText: "",
+          reasoningText: reasoningAcc.trim(),
           toolTrace,
           messagesOut: thread,
         };
       }
 
-      onStep?.({ step, toolCalls: tcs, assistantPreview: messageContentToString(msg.content).trim() });
+      onStep?.({
+        step,
+        toolCalls: tcs,
+        assistantPreview: messageContentToString(msg.content).trim(),
+        reasoningPreview: reasoningAcc.trim(),
+      });
 
       for (const tc of tcs) {
         const name = tc?.function?.name || "";
@@ -979,10 +1015,11 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
       text: `工具调用超过 ${maxSteps} 步上限。`,
       toolTrace,
       messagesOut: thread,
+      reasoningText: reasoningAcc.trim(),
     };
   } catch (e) {
     const err = mapLlmSdkError(e, cfg);
-    return { ok: false, text: err.text, toolTrace, messagesOut: thread };
+    return { ok: false, text: err.text, toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() };
   }
 }
 

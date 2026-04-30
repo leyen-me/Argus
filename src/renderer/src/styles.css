@@ -756,6 +756,16 @@ body,
   padding: 8px 10px;
 }
 
+.llm-session-msg.llm-session-msg--reasoning {
+  border-color: color-mix(in oklch, var(--chart-4) 40%, var(--border));
+  background: color-mix(in oklch, var(--chart-4) 10%, var(--background));
+}
+
+.llm-session-msg-reasoning-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .llm-session-detail-chart-thumb {
   display: block;
   margin-top: 6px;

@@ -3000,7 +3000,12 @@ export function initArgusApp() {
     applySymbolSelect(cfg);
     applyChartIntervalSelect(cfg.interval || "5");
     applyPromptStrategySelect(cfg);
-    const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
+    const params =
+      typeof window !== "undefined" && typeof URLSearchParams !== "undefined"
+        ? new URLSearchParams(window.location.search)
+        : null;
+    const urlTv = params?.get("tvSymbol")?.trim();
+    const sym = urlTv || cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
     createTradingViewWidget(sym, chartInterval);
     if (window.argus && typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(sym);
@@ -3017,6 +3022,37 @@ export function initArgusApp() {
     initLlmChartPreview();
     initLlmSessionDetailModal();
     await reloadLlmHistoryFromStore();
+
+    const capturePath =
+      typeof window !== "undefined" && /\/capture\/?$/.test(window.location.pathname);
+    if (capturePath) {
+      window.__ARGUS_CAPTURE_READY__ = false;
+      window.__ARGUS_WAIT_CAPTURE_READY__ = async function argusWaitCaptureReady(timeoutMs = 120000) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          try {
+            await captureTradingViewPng("5");
+            window.__ARGUS_CAPTURE_READY__ = true;
+            return;
+          } catch {
+            await new Promise((r) => setTimeout(r, 450));
+          }
+        }
+        throw new Error("capture-ready-timeout");
+      };
+      window.__ARGUS_RUN_CAPTURE__ = async function argusRunCapture() {
+        const shot = await captureMultiTimeframeCharts();
+        return {
+          ok: true,
+          mimeType: shot.mimeType,
+          base64: shot.base64,
+          dataUrl: shot.dataUrl,
+          charts: shot.charts,
+        };
+      };
+      await window.__ARGUS_WAIT_CAPTURE_READY__(120000);
+    }
+
     bindMarketBarClose();
     bindLlmStream();
     bindMarketStatus();

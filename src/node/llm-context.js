@@ -2,15 +2,22 @@
  * 历史 JSON 存储（userData/argus-llm-conversations.json）：K 线收盘 Agent 已改为每根独立单轮并写入 SQLite `agent_sessions`，
  * 此处不再由 bar-close 写入。保留文件与 wipeConversationStore 供清理旧数据或后续功能复用。
  */
-const { app } = require("electron");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 /** 每个品种+周期保留的「用户+助手」对数（仅文本），约 8 轮 = 16 条 message */
 const MAX_PAIRS = 64;
 
+function userDataDir() {
+  if (process.env.ARGUS_USER_DATA && String(process.env.ARGUS_USER_DATA).trim()) {
+    return String(process.env.ARGUS_USER_DATA).trim();
+  }
+  return path.join(os.homedir(), ".argus");
+}
+
 function storePath() {
-  return path.join(app.getPath("userData"), "argus-llm-conversations.json");
+  return path.join(userDataDir(), "argus-llm-conversations.json");
 }
 
 /** @type {Record<string, Array<{ role: 'user' | 'assistant', content: string }>> | null} */

@@ -5,6 +5,7 @@
  */
 const WebSocket = require("ws");
 const { emitBarClose } = require("./bar-close");
+const { publish } = require("./runtime-bus");
 
 const DEFAULT_RUNTIME = Object.freeze({
   WebSocketImpl: WebSocket,
@@ -43,7 +44,7 @@ let ws = null;
 let reconnectTimer = null;
 let healthCheckTimer = null;
 let intentionalClose = false;
-/** @type {{ winGetter: () => import("electron").BrowserWindow | null, tvSymbol: string, intervalTv: string } | null} */
+/** @type {{ tvSymbol: string, intervalTv: string } | null} */
 let session = null;
 let reconnectAttempt = 0;
 let lastSocketActivityAt = 0;
@@ -53,7 +54,7 @@ const SEEN_CAP = 2000;
 
 /**
  * 串行化「收盘 → 截图 → LLM」：WS 可能连续投递多条已确认 K（OKX 同一包内多行、或上一条尚未跑完又推下一条），
- * 若并发 `emitBarClose`，渲染进程里 `latestBarCloseId` 会被覆盖，导致大量流式 delta/end 被丢弃（表现为「多半收不到输出」）。
+ * 若并发 `emitBarClose`，前端侧 `latestBarCloseId` 会被覆盖，导致大量流式 delta/end 被丢弃（表现为「多半收不到输出」）。
  */
 let barCloseChain = Promise.resolve();
 let latestQueuedBarTs = 0;
@@ -66,11 +67,8 @@ function enqueueBarCloseTask(fn) {
   return next;
 }
 
-function send(winGetter, channel, payload) {
-  const w = typeof winGetter === "function" ? winGetter() : null;
-  if (w && !w.isDestroyed()) {
-    w.webContents.send(channel, payload);
-  }
+function send(channel, payload) {
+  publish(channel, payload);
 }
 
 function markSocketActivity() {
@@ -126,7 +124,7 @@ function periodDisplayForTv(intervalTv) {
   return `${iv}m`;
 }
 
-function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle) {
+function onConfirmedBar(tvSymbol, intervalTv, candle) {
   const candleTs = Date.parse(candle.timestamp);
   if (Number.isFinite(candleTs) && candleTs > latestQueuedBarTs) {
     latestQueuedBarTs = candleTs;
@@ -134,7 +132,7 @@ function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle) {
   return enqueueBarCloseTask(async () => {
     if (seenBarIds.has(candle.barKey)) return;
     if (Number.isFinite(candleTs) && candleTs < latestQueuedBarTs) {
-      send(winGetter, "market-status", {
+      send("market-status", {
         text: `跳过过期 K 收盘：${tvSymbol} · ${candle.timestamp}（队列里已有更新收盘）`,
       });
       return;
@@ -143,12 +141,12 @@ function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle) {
     if (seenBarIds.size > SEEN_CAP) seenBarIds.clear();
 
     const periodLabel = `tv:${intervalTv}（${periodDisplayForTv(intervalTv)}）`;
-    send(winGetter, "market-status", {
+    send("market-status", {
       text: `OKX WS · K 收盘 ${tvSymbol} · ${candle.timestamp}`,
     });
 
     try {
-      await runtime.emitBarCloseImpl(winGetter, {
+      await runtime.emitBarCloseImpl({
         source: "okx_ws",
         tvSymbol,
         interval: intervalTv,
@@ -156,7 +154,7 @@ function onConfirmedBar(winGetter, tvSymbol, intervalTv, candle) {
         candle,
       });
     } catch (e) {
-      send(winGetter, "market-status", { text: `收盘处理失败：${e.message || e}` });
+      send("market-status", { text: `收盘处理失败：${e.message || e}` });
     }
   });
 }
@@ -181,7 +179,7 @@ function scheduleReconnect() {
   const delay = Math.min(runtime.reconnectMaxDelayMs, runtime.reconnectBaseDelayMs * 2 ** reconnectAttempt);
   const sec = Math.max(1, Math.round(delay / 1000));
   reconnectAttempt += 1;
-  send(session.winGetter, "market-status", {
+  send("market-status", {
     text: `OKX WS 断开，${sec}s 后重连…`,
   });
   reconnectTimer = runtime.setTimeoutFn(() => {
@@ -194,7 +192,7 @@ function forceReconnect(okxSocket, reasonText) {
   clearHealthCheckTimer();
   ws = null;
   if (reasonText) {
-    send(session.winGetter, "market-status", { text: reasonText });
+    send("market-status", { text: reasonText });
   }
   try {
     if (typeof okxSocket.terminate === "function") okxSocket.terminate();
@@ -205,7 +203,7 @@ function forceReconnect(okxSocket, reasonText) {
   scheduleReconnect();
 }
 
-function startHealthCheck(okxSocket, winGetter, tvSymbol) {
+function startHealthCheck(okxSocket, tvSymbol) {
   clearHealthCheckTimer();
   markSocketActivity();
   const openState = Number(runtime.WebSocketImpl?.OPEN ?? WebSocket.OPEN ?? 1);
@@ -230,10 +228,10 @@ function startHealthCheck(okxSocket, winGetter, tvSymbol) {
 
 function connectOkx() {
   if (!session) return;
-  const { winGetter, tvSymbol, intervalTv } = session;
+  const { tvSymbol, intervalTv } = session;
   const instId = okxSwapInstIdFromTv(tvSymbol);
   if (!instId) {
-    send(winGetter, "market-status", { text: "无效 OKX 代码（示例 OKX:BTCUSDT）" });
+    send("market-status", { text: "无效 OKX 代码（示例 OKX:BTCUSDT）" });
     return;
   }
 
@@ -251,7 +249,7 @@ function connectOkx() {
 
   // 必须用创建时的实例判断：模块级 `ws` 可能被重连/stop 换掉，旧连接的 `open` 晚到时会误对 null 或新套接字 send
   const okxSocket = ws;
-  startHealthCheck(okxSocket, winGetter, tvSymbol);
+  startHealthCheck(okxSocket, tvSymbol);
   ws.on("open", () => {
     const openState = Number(runtime.WebSocketImpl?.OPEN ?? WebSocket.OPEN ?? 1);
     if (ws !== okxSocket || okxSocket.readyState !== openState) return;
@@ -268,7 +266,7 @@ function connectOkx() {
     }
     const iv = String(intervalTv || "5").toUpperCase();
     const ivLabel = iv === "D" || iv === "1D" ? "日线" : `${iv}m`;
-    send(winGetter, "market-status", {
+    send("market-status", {
       text: `OKX WS 已连接 · ${ivLabel} · ${tvSymbol}`,
     });
   });
@@ -289,7 +287,7 @@ function connectOkx() {
     }
     if (msg.event === "error" && msg.msg) {
       console.error("OKX WS error event", msg);
-      send(winGetter, "market-status", { text: `OKX：${msg.msg || msg.code || "error"}` });
+      send("market-status", { text: `OKX：${msg.msg || msg.code || "error"}` });
       return;
     }
     if (!msg.arg || typeof msg.arg.channel !== "string" || !msg.arg.channel.startsWith("candle")) {
@@ -299,7 +297,7 @@ function connectOkx() {
     for (const row of msg.data) {
       const candle = candleFromOkxRow(row, instId);
       if (!candle) continue;
-      onConfirmedBar(winGetter, tvSymbol, intervalTv, candle).catch((e) => {
+      onConfirmedBar(tvSymbol, intervalTv, candle).catch((e) => {
         console.error("onConfirmedBar okx", e);
       });
     }
@@ -326,7 +324,7 @@ function connect() {
   if (!session) return;
   const { tvSymbol } = session;
   if (!okxSwapInstIdFromTv(tvSymbol)) {
-    send(session.winGetter, "market-status", {
+    send("market-status", {
       text: "请使用 OKX: 前缀（如 OKX:BTCUSDT）",
     });
     return;
@@ -335,13 +333,14 @@ function connect() {
 }
 
 /**
- * @param {() => import("electron").BrowserWindow | null} winGetter
+ * @param {string} tvSymbol
+ * @param {string} intervalTv TradingView 周期写法（如 5、60、1D）
  */
-function start(winGetter, tvSymbol, intervalTv) {
+function start(tvSymbol, intervalTv) {
   stop();
   intentionalClose = false;
   latestQueuedBarTs = 0;
-  session = { winGetter, tvSymbol, intervalTv };
+  session = { tvSymbol, intervalTv };
   connect();
 }
 

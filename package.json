@@ -2,30 +2,28 @@
   "name": "argus",
   "version": "0.1.0",
   "description": "Multimodal fusion analysis — TradingView + LLM",
-  "main": "out/main/index.js",
+  "main": "src/server/index.js",
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "esbuild",
-      "better-sqlite3"
-    ]
+    "onlyBuiltDependencies": ["esbuild", "better-sqlite3"]
   },
   "scripts": {
-    "start": "electron .",
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "preview": "electron-vite preview"
+    "postinstall": "npm rebuild better-sqlite3",
+    "start": "node src/server/index.js",
+    "server": "node src/server/index.js",
+    "server:dev": "cross-env ARGUS_PUBLIC_URL=http://127.0.0.1:5173 node src/server/index.js",
+    "client:dev": "vite",
+    "build": "vite build",
+    "dev": "concurrently -n srv,vite -c blue,green \"npm run server:dev\" \"npm run client:dev\"",
+    "preview": "vite preview"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.3",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
-    "electron": "^34.0.0",
-    "electron-vite": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.3",
     "vite": "^6.4.2"
@@ -34,9 +32,11 @@
     "better-sqlite3": "^12.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "express": "^4.21.2",
     "lucide-react": "^1.8.0",
     "nodemailer": "^6.9.16",
     "openai": "^6.34.0",
+    "playwright": "^1.56.1",
     "radix-ui": "^1.4.3",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",

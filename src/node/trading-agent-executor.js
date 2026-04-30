@@ -3,6 +3,7 @@
  */
 const okxPerp = require("./okx-perp");
 const { notifyTradePositionIfNeeded } = require("./trade-notify-email");
+const { publish } = require("./runtime-bus");
 
 /** 供单测注入 mock；生产路径使用默认实现。 */
 const TRADING_EXECUTOR_DEFAULT_DEPS = Object.freeze({
@@ -34,11 +35,10 @@ function requireOkx(cfg) {
  * @param {string} ctx.tvSymbol
  * @param {string} ctx.barCloseId
  * @param {string} [ctx.interval] TradingView 周期（邮件正文）
- * @param {import("electron").BrowserWindow | null} [ctx.win]
  * @param {typeof TRADING_EXECUTOR_DEFAULT_DEPS} [deps]
  */
 function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
-  const { cfg, tvSymbol, barCloseId, win, interval: ctxInterval } = ctx;
+  const { cfg, tvSymbol, barCloseId, interval: ctxInterval } = ctx;
   const {
     createOkxClient,
     tvSymbolToSwapInstId,
@@ -50,9 +50,7 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
   } = deps;
 
   const sendOkxStatus = (payload) => {
-    if (win && !win.isDestroyed()) {
-      win.webContents.send("okx-swap-status", { ...payload, tvSymbol });
-    }
+    publish("okx-swap-status", { ...payload, tvSymbol });
   };
 
   const intervalLabel = typeof ctxInterval === "string" ? ctxInterval : "";

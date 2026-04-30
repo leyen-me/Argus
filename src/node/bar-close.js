@@ -2,7 +2,8 @@
  * K 线收盘后：请求渲染进程截取左侧 TradingView，与行情数据组装为统一 payload（供后续多模态 LLM + OKX Agent）。
  */
 const crypto = require("crypto");
-const { ipcMain } = require("electron");
+const { publish } = require("./runtime-bus");
+const { captureChartsForSymbol } = require("./chart-capture-headless");
 const { loadAppConfig } = require("./app-config");
 const { conversationKey } = require("./llm-context");
 const {
@@ -401,52 +402,14 @@ function formatToolCallPreview(toolCalls) {
 }
 
 /**
- * @param {import("electron").WebContents} webContents
+ * @param {string} tvSymbol
  * @param {number} [timeoutMs]
- * @returns {Promise<{ mimeType: string, base64: string, dataUrl: string, charts?: Array<{ interval: string, label?: string, mimeType: string, base64: string, dataUrl: string }> }>}
  */
-function requestChartCapture(webContents, timeoutMs = 18000) {
-  const requestId = crypto.randomUUID();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      ipcMain.removeListener("chart-capture-result", handler);
-      reject(new Error("截图超时"));
-    }, timeoutMs);
-
-    function handler(_event, result) {
-      if (!result || result.requestId !== requestId) return;
-      clearTimeout(timer);
-      ipcMain.removeListener("chart-capture-result", handler);
-      if (result.ok) {
-        resolve({
-          mimeType: result.mimeType || "image/png",
-          base64: result.base64,
-          dataUrl: result.dataUrl,
-          charts: Array.isArray(result.charts)
-            ? result.charts
-                .filter((item) => item && typeof item === "object")
-                .map((item) => ({
-                  interval: String(item.interval || ""),
-                  label: item.label != null ? String(item.label) : "",
-                  mimeType: item.mimeType || "image/png",
-                  base64: item.base64 || "",
-                  dataUrl: item.dataUrl || "",
-                }))
-                .filter((item) => item.interval && item.base64 && item.dataUrl)
-            : [],
-        });
-      } else {
-        reject(new Error(result.error || "截图失败"));
-      }
-    }
-
-    ipcMain.on("chart-capture-result", handler);
-    webContents.send("request-chart-capture", { requestId });
-  });
+async function requestChartCapture(tvSymbol, timeoutMs = 120000) {
+  return captureChartsForSymbol(tvSymbol, timeoutMs);
 }
 
 /**
- * @param {() => import("electron").BrowserWindow | null} winGetter
  * @param {{
  *   source: "okx_ws",
  *   tvSymbol: string,
@@ -455,15 +418,12 @@ function requestChartCapture(webContents, timeoutMs = 18000) {
  *   candle: object,
  * }} ctx
  */
-async function emitBarClose(winGetter, ctx) {
-  const win = typeof winGetter === "function" ? winGetter() : null;
-  if (!win || win.isDestroyed()) return;
-
+async function emitBarClose(ctx) {
   let chartImage = null;
   let chartImages = [];
   let chartCaptureError = null;
   try {
-    const capturePack = await requestChartCapture(win.webContents);
+    const capturePack = await requestChartCapture(ctx.tvSymbol);
     chartImage = {
       mimeType: capturePack.mimeType,
       base64: capturePack.base64,
@@ -533,13 +493,13 @@ async function emitBarClose(winGetter, ctx) {
     llm.analysisText = null;
     llm.streaming = false;
     llm.error = null;
-    win.webContents.send("market-bar-close", payloadBase);
+    publish("market-bar-close", payloadBase);
   };
 
   if (!llm.enabled) {
     llm.skippedReason =
       "未调用 LLM：请在配置中心填写 API Key（或环境变量 OPENAI_API_KEY）。";
-    win.webContents.send("market-bar-close", payloadBase);
+    publish("market-bar-close", payloadBase);
     return;
   }
 
@@ -597,7 +557,7 @@ async function emitBarClose(winGetter, ctx) {
 
   llm.streaming = true;
   llm.analysisText = "";
-  win.webContents.send("market-bar-close", payloadBase);
+  publish("market-bar-close", payloadBase);
 
   const streamOpts = {
     appConfig: cfg,
@@ -610,7 +570,6 @@ async function emitBarClose(winGetter, ctx) {
     tvSymbol: ctx.tvSymbol,
     interval: ctx.interval,
     barCloseId,
-    win,
   });
   const toolsForTurn = buildTradingAgentToolsForContext(exchangeCtx);
 
@@ -637,7 +596,7 @@ async function emitBarClose(winGetter, ctx) {
         changed = true;
       }
       if (changed) {
-        win.webContents.send("llm-stream-delta", {
+        publish("llm-stream-delta", {
           barCloseId,
           full: streamAcc,
           reasoningFull: cfg.llmReasoningEnabled === true ? streamReasonAcc : "",
@@ -695,11 +654,9 @@ async function emitBarClose(winGetter, ctx) {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (win && !win.isDestroyed()) {
-        win.webContents.send("market-status", { text: `Agent 记录落库失败：${msg}` });
-      }
+      publish("market-status", { text: `Agent 记录落库失败：${msg}` });
     }
-    win.webContents.send("llm-stream-end", {
+    publish("llm-stream-end", {
       barCloseId,
       conversationKey: convKey,
       exchangeContext: exchangeAfter,
@@ -739,11 +696,9 @@ async function emitBarClose(winGetter, ctx) {
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (win && !win.isDestroyed()) {
-        win.webContents.send("market-status", { text: `Agent 记录落库失败：${msg}` });
-      }
+      publish("market-status", { text: `Agent 记录落库失败：${msg}` });
     }
-    win.webContents.send("llm-stream-error", {
+    publish("llm-stream-error", {
       barCloseId,
       message: agentResult.text,
       toolTrace: llm.toolTrace,

@@ -3,7 +3,7 @@
  */
 const crypto = require("crypto");
 const { publish } = require("./runtime-bus");
-const { captureChartsForSymbol } = require("./chart-capture-headless");
+const { requestChartCaptureFromBrowser } = require("./chart-capture-browser-bridge");
 const { loadAppConfig } = require("./app-config");
 const { conversationKey } = require("./llm-context");
 const {
@@ -405,8 +405,8 @@ function formatToolCallPreview(toolCalls) {
  * @param {string} tvSymbol
  * @param {number} [timeoutMs]
  */
-async function requestChartCapture(tvSymbol, timeoutMs = 120000) {
-  return captureChartsForSymbol(tvSymbol, timeoutMs);
+async function requestChartCapture(tvSymbol, timeoutMs = 45000) {
+  return requestChartCaptureFromBrowser(tvSymbol, timeoutMs);
 }
 
 /**

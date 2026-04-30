@@ -2672,8 +2672,24 @@ function initChartCaptureBridge() {
   if (!window.argus?.onChartCaptureRequest || !window.argus?.submitChartCaptureResult) {
     return;
   }
-  window.argus.onChartCaptureRequest(async ({ requestId }) => {
+  window.argus.onChartCaptureRequest(async (payload) => {
+    const requestId = payload?.requestId;
+    const tvSymbol = typeof payload?.tvSymbol === "string" ? payload.tvSymbol.trim() : "";
+    if (!requestId) return;
     try {
+      if (tvSymbol && typeof window.argus?.setMarketContext === "function") {
+        await window.argus.setMarketContext(tvSymbol);
+        scheduleTradingViewWidget(tvSymbol, chartInterval, { debounceMs: 120 });
+        const readyDeadline = Date.now() + 18000;
+        while (Date.now() < readyDeadline) {
+          try {
+            await captureTradingViewPng("5");
+            break;
+          } catch {
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        }
+      }
       const shot = await captureMultiTimeframeCharts();
       window.argus.submitChartCaptureResult({
         requestId,
@@ -2723,11 +2739,6 @@ function bindMarketBarClose() {
       appendLlmRound(payload);
     }
 
-    try {
-      console.log("[Argus] market-bar-close", JSON.parse(formatBarClosePreview(payload)));
-    } catch {
-      console.log("[Argus] market-bar-close", payload);
-    }
     if (llm?.skippedReason && String(llm.skippedReason).trim()) {
       setLlmStatus("收盘 · Agent 已跳过");
     } else if (payload?.chartCaptureError) {
@@ -3022,36 +3033,6 @@ export function initArgusApp() {
     initLlmChartPreview();
     initLlmSessionDetailModal();
     await reloadLlmHistoryFromStore();
-
-    const capturePath =
-      typeof window !== "undefined" && /\/capture\/?$/.test(window.location.pathname);
-    if (capturePath) {
-      window.__ARGUS_CAPTURE_READY__ = false;
-      window.__ARGUS_WAIT_CAPTURE_READY__ = async function argusWaitCaptureReady(timeoutMs = 120000) {
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
-          try {
-            await captureTradingViewPng("5");
-            window.__ARGUS_CAPTURE_READY__ = true;
-            return;
-          } catch {
-            await new Promise((r) => setTimeout(r, 450));
-          }
-        }
-        throw new Error("capture-ready-timeout");
-      };
-      window.__ARGUS_RUN_CAPTURE__ = async function argusRunCapture() {
-        const shot = await captureMultiTimeframeCharts();
-        return {
-          ok: true,
-          mimeType: shot.mimeType,
-          base64: shot.base64,
-          dataUrl: shot.dataUrl,
-          charts: shot.charts,
-        };
-      };
-      await window.__ARGUS_WAIT_CAPTURE_READY__(120000);
-    }
 
     bindMarketBarClose();
     bindLlmStream();

@@ -32,7 +32,7 @@ const {
   getAgentSessionMessages,
 } = require(path.join(nodeRoot, "agent-bar-turns-store.js"));
 const { publish, subscribe } = require(path.join(nodeRoot, "runtime-bus.js"));
-const { closeBrowser } = require(path.join(nodeRoot, "chart-capture-headless.js"));
+const { ingestChartCaptureResult } = require(path.join(nodeRoot, "chart-capture-browser-bridge.js"));
 
 const AGENT_DECISION_INTERVAL = "5";
 
@@ -160,7 +160,6 @@ async function shutdown(reason = "shutdown") {
   cryptoSched.stop();
   wipeConversationStore();
   closeDatabase();
-  await closeBrowser().catch(() => {});
   process.exit(0);
 }
 
@@ -207,6 +206,16 @@ function main() {
   const wss = new WebSocketServer({ server, path: "/ws" });
   wss.on("connection", (ws) => {
     wsClients.push(ws);
+    ws.on("message", (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg && msg.type === "chart-capture-result") {
+          ingestChartCaptureResult(msg);
+        }
+      } catch {
+        /* ignore malformed client frames */
+      }
+    });
     ws.on("close", () => {
       const i = wsClients.indexOf(ws);
       if (i >= 0) wsClients.splice(i, 1);

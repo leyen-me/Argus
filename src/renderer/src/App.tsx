@@ -9,25 +9,10 @@ import { LlmPanel } from "@/components/app/llm-panel";
 import { TitleBar } from "@/components/app/title-bar";
 import { initArgusApp } from "./argus-renderer";
 
-function isCaptureRoute() {
-  if (typeof window === "undefined") return false;
-  return /\/capture\/?$/.test(window.location.pathname);
-}
-
 export default function App() {
   useEffect(() => {
     void initArgusApp();
   }, []);
-
-  if (isCaptureRoute()) {
-    return (
-      <div className="app">
-        <main className="main">
-          <ChartPanel />
-        </main>
-      </div>
-    );
-  }
 
   return (
     <>

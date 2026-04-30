@@ -86,10 +86,14 @@ async function rpc(method: string, args: unknown[] = []) {
 /** 后端未就绪时拉长间隔，减轻 Vite ws 代理刷屏 */
 let wsReconnectDelayMs = 2500;
 
+/** 当前 WebSocket（用于浏览器侧 TradingView 截图结果回传） */
+let socketRef: WebSocket | null = null;
+
 function connectWsLoop() {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${proto}//${window.location.host}/ws`;
   const ws = new WebSocket(wsUrl);
+  socketRef = ws;
   ws.onopen = () => {
     wsReconnectDelayMs = 2500;
   };
@@ -104,6 +108,7 @@ function connectWsLoop() {
     }
   };
   ws.onclose = () => {
+    if (socketRef === ws) socketRef = null;
     window.setTimeout(() => {
       wsReconnectDelayMs = Math.min(Math.round(wsReconnectDelayMs * 1.8), 30_000);
       connectWsLoop();
@@ -125,8 +130,17 @@ export function installArgusBridge() {
   const bridge: ArgusBridge = {
     onMarketBarClose: (cb) => subscribeChannel("market-bar-close", cb),
     onChartCaptureRequest: (cb) => subscribeChannel("request-chart-capture", cb),
-    submitChartCaptureResult: () => {
-      /* Web 模式下截图由服务端 Playwright 完成；保留 noop 兼容旧脚本 */
+    submitChartCaptureResult: (result: unknown) => {
+      const ws = socketRef;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.warn("[argus-bridge] WebSocket 未连接，无法回传截图（请保持 pnpm dev 后端在 8787 运行）");
+        return;
+      }
+      const payload =
+        result && typeof result === "object" && !Array.isArray(result)
+          ? (result as Record<string, unknown>)
+          : {};
+      ws.send(JSON.stringify({ type: "chart-capture-result", ...payload }));
     },
     onMarketStatus: (cb) => subscribeChannel("market-status", cb),
     onLlmStreamDelta: (cb) => subscribeChannel("llm-stream-delta", cb),

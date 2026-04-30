@@ -1,6 +1,5 @@
 /**
  * 每根 K 线收盘 Agent：`agent_sessions`（会话元数据 + 图）+ `agent_session_messages`（有序 API 消息，便于排查）。
- * 历史表 `agent_bar_turns` 仅迁移保留，新数据不再写入该表。
  */
 const { getDatabase } = require("./local-db");
 

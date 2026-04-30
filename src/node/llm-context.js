@@ -1,5 +1,5 @@
 /**
- * 历史 JSON 存储（userData/argus-llm-conversations.json）：K 线收盘 Agent 已改为每根独立单轮并写入 SQLite `agent_bar_turns`，
+ * 历史 JSON 存储（userData/argus-llm-conversations.json）：K 线收盘 Agent 已改为每根独立单轮并写入 SQLite `agent_sessions`，
  * 此处不再由 bar-close 写入。保留文件与 wipeConversationStore 供清理旧数据或后续功能复用。
  */
 const { app } = require("electron");

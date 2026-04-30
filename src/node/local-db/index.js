@@ -5,8 +5,7 @@
  * - 单库文件位于仓库根目录、与 `src` 同级：`argus.sqlite`（WAL 模式）。
  * - 版本用 PRAGMA user_version；升级时在 applyMigrations() 中按版本递增追加 DDL。
  * - 通用键值：`kv_store(namespace, key)`，适合配置、功能开关、缓存等；值一般为 JSON 文本。
- * - `agent_bar_turns`：历史表（user_version ≥ 3）；v6 起新数据写入 `agent_sessions` + `agent_session_messages`，旧行由迁移复制到 `agent_sessions`。
- * - `agent_sessions` / `agent_session_messages`：收盘 Agent 会话与有序消息（user_version ≥ 6）。
+ * - `agent_sessions` / `agent_session_messages`：收盘 Agent 会话与有序消息（user_version ≥ 6）；v3–v5 曾用 `agent_bar_turns`，v6 复制进 sessions 后于 v11 删除该遗留表。
  * - `dashboard_equity_samples`：仪表盘权益曲线采样（user_version ≥ 7）。
  * - `agent_sessions.card_summary`：收盘后二次 LLM 卡片短摘要（user_version ≥ 8）。
  * - `order_intents`：旧版挂单意图记忆表（user_version = 9）；v10 起移除。
@@ -218,6 +217,12 @@ function applyMigrations(database) {
       DROP TABLE IF EXISTS order_intents;
     `);
     database.pragma("user_version = 10");
+  }
+  if (v < 11) {
+    database.exec(`
+      DROP TABLE IF EXISTS agent_bar_turns;
+    `);
+    database.pragma("user_version = 11");
   }
 }
 

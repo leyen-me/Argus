@@ -26,6 +26,7 @@ const TRADING_AGENT_TOOLS_POLICY_BLOCK = `
 
 - 请观察最近动作和最近仓位历史，默认情况下，请合理的控制交易频率，不要过于频繁的进行交易。除非用户明确要求
 - 交易频率是指每轮思考中，调用工具的次数。例如频繁开仓、频繁的调整止盈止损等，都属于过于频繁的交易。
+- 不要在说观望的时候调用工具。
 `;
 
 function resolveOpenAiApiKey(cfg) {

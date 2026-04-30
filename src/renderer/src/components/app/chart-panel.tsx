@@ -72,11 +72,12 @@ export function ChartPanel() {
             </CardTitle>
           </div>
           <div className="flex min-w-0 shrink flex-wrap items-center justify-end gap-1.5">
+            {/* 去掉 className 里的 `hidden` 可再次显示「测试截图」 */}
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              className="h-7 gap-1 px-2 text-[11px] font-semibold shadow-none"
+              className="hidden h-7 gap-1 px-2 text-[11px] font-semibold shadow-none"
               id="btn-test-chart-capture"
               title="仅在本页用 TradingView 拼图截图，不调后端；不影响当前品种、不整页刷新图表"
               disabled={testBusy}

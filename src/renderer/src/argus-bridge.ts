@@ -25,6 +25,8 @@ export type ArgusBridge = {
   getPromptStrategy: (id: string) => Promise<unknown>;
   savePromptStrategy: (payload: unknown) => Promise<unknown>;
   deletePromptStrategy: (id: string) => Promise<unknown>;
+  /** 调试：触发与收盘相同的浏览器截图链路（可选传入 tvSymbol） */
+  testChartCapture: (tvSymbol?: string) => Promise<unknown>;
 };
 
 const listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -165,6 +167,8 @@ export function installArgusBridge() {
     getPromptStrategy: (id) => rpc("prompt-strategies:get", [id]),
     savePromptStrategy: (payload) => rpc("prompt-strategies:save", [payload]),
     deletePromptStrategy: (id) => rpc("prompt-strategies:delete", [id]),
+    testChartCapture: (tvSymbol) =>
+      rpc("chartCaptureTest", tvSymbol != null && tvSymbol !== "" ? [tvSymbol] : []),
   };
 
   window.argus = bridge;

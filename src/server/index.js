@@ -32,7 +32,10 @@ const {
   getAgentSessionMessages,
 } = require(path.join(nodeRoot, "agent-bar-turns-store.js"));
 const { publish, subscribe } = require(path.join(nodeRoot, "runtime-bus.js"));
-const { ingestChartCaptureResult } = require(path.join(nodeRoot, "chart-capture-browser-bridge.js"));
+const {
+  ingestChartCaptureResult,
+  requestChartCaptureFromBrowser,
+} = require(path.join(nodeRoot, "chart-capture-browser-bridge.js"));
 
 const AGENT_DECISION_INTERVAL = "5";
 
@@ -85,6 +88,15 @@ async function routeMarket(cfg, tvSymbol) {
   });
 }
 
+async function rpcChartCaptureTest(tvSymbol) {
+  const cfg = loadAppConfig();
+  const sym =
+    typeof tvSymbol === "string" && tvSymbol.trim()
+      ? tvSymbol.trim()
+      : String(cfg.defaultSymbol || "").trim() || "OKX:BTCUSDT";
+  return requestChartCaptureFromBrowser(sym, 45000);
+}
+
 /** @type {Record<string, (...args: unknown[]) => unknown | Promise<unknown>>} */
 const rpcHandlers = {
   "config:get": () => loadAppConfig(),
@@ -132,6 +144,9 @@ const rpcHandlers = {
       "K 线收盘后会推送 market-bar-close（含 textForLlm 与截图）；填写 API Key 后即可调用 LLM。",
     received: payload ?? null,
   }),
+  // 调试截图（与收盘同源链路）；不含冒号的别名避免个别代理/缓存怪异行为
+  chartCaptureTest: rpcChartCaptureTest,
+  "chart-capture:test": rpcChartCaptureTest,
 };
 
 function broadcastWs(envelope) {
@@ -169,10 +184,11 @@ function createApp(distDir) {
 
   app.post("/api/rpc", async (req, res) => {
     try {
-      const method = req.body?.method;
+      const rawMethod = req.body?.method;
+      const method = typeof rawMethod === "string" ? rawMethod.trim() : "";
       const args = safeRpcArgs(req.body?.args);
-      if (typeof method !== "string" || !rpcHandlers[method]) {
-        res.status(400).json({ ok: false, error: `unknown method: ${method}` });
+      if (!method || !rpcHandlers[method]) {
+        res.status(400).json({ ok: false, error: `unknown method: ${rawMethod ?? ""}` });
         return;
       }
       const result = await rpcHandlers[method](...args);

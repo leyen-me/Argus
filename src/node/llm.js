@@ -102,6 +102,16 @@ function isDashScopeBaseUrl(baseURL) {
   return String(baseURL || "").toLowerCase().includes("dashscope.aliyuncs.com");
 }
 
+/**
+ * 线程里是否已经有过 assistant / tool。**首次**发问模型前通常仅有 system(+可选)+user；
+ * 一旦出现其一，后续 HTTP（工具回填后的续写、多轮聊天的后续轮次）均不再挂载深度思考。
+ * @param {ReadonlyArray<{ role?: string }>} messages
+ */
+function threadAlreadyHasAssistantOrTool(messages) {
+  if (!Array.isArray(messages)) return false;
+  return messages.some((m) => m && (m.role === "assistant" || m.role === "tool"));
+}
+
 /** @param {unknown} e
  * @param {object | null | undefined} cfg */
 function mapLlmSdkError(e, cfg) {
@@ -226,7 +236,7 @@ function buildUserTextForHistory(userText, hasImage) {
 
 /**
  * @param {Array<{ role: string, content: unknown }>} messages 须已含 system + 可选历史 + 本轮 user
- * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
+ * @param {{ appConfig: object, baseUrl?: string, model?: string, llmReasoningForThisRequest?: boolean }} options llmReasoningForThisRequest 为 false（如卡片摘要）时强制不附加深度思考；否则按线程是否已有 assistant/tool 判定。
  * @param {boolean} stream
  */
 function buildChatCompletionRequestFromMessages(messages, options, stream) {
@@ -251,14 +261,25 @@ function buildChatCompletionRequestFromMessages(messages, options, stream) {
     stream: !!stream,
     messages,
   };
-  if (cfg && cfg.llmReasoningEnabled === true) {
+  const allowReasoningThisHttp =
+    options?.llmReasoningForThisRequest !== false &&
+    !threadAlreadyHasAssistantOrTool(messages);
+  if (cfg && cfg.llmReasoningEnabled === true && allowReasoningThisHttp) {
     if (isOpenRouterBaseUrl(baseURL)) {
       body.reasoning = { enabled: true };
     } else {
       body.enable_thinking = true;
     }
   } else if (isDashScopeBaseUrl(baseURL)) {
-    /** 关闭界面「深度思考」时向通义显式关思考；否则部分模型仍可能走推理通道。 */
+    /** 关闭界面「深度思考」时向通义显式关思考；否则部分模型仍可能走推理通道。续写/tool 回填后的请求也需显式关。 */
+    body.enable_thinking = false;
+  } else if (
+    cfg &&
+    cfg.llmReasoningEnabled === true &&
+    !allowReasoningThisHttp &&
+    !isOpenRouterBaseUrl(baseURL)
+  ) {
+    /** 首轮用过 enable_thinking 的非 OpenRouter 网关：后续 completion 也需显式关闭，勿依赖网关默认。 */
     body.enable_thinking = false;
   }
 
@@ -490,7 +511,10 @@ const SUMMARY_LLM_MAX_MS = 60_000;
  * @param {number} param1.maxTokens
  */
 async function runCardSummaryCompletion(messages, { options, client, signal, maxTokens } = {}) {
-  const built = buildChatCompletionRequestFromMessages(messages, options, false);
+  const built = buildChatCompletionRequestFromMessages(messages, {
+    ...options,
+    llmReasoningForThisRequest: false,
+  }, false);
   if (built.error) {
     return "";
   }
@@ -638,7 +662,7 @@ async function summarizeAgentAnalysisForCard(assistantFull, options, extras = {}
       : llmAbortSignal(cfg);
   const initBuilt = buildChatCompletionRequestFromMessages(
     [{ role: "user", content: "x" }],
-    options,
+    { ...options, llmReasoningForThisRequest: false },
     false,
   );
   if (initBuilt.error) {
@@ -857,6 +881,11 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
 
 /**
  * 非流式多轮工具调用（Chat Completions tools），兼容 OpenAI 及多数 OpenAI 兼容网关。
+ *
+ * 深度思考：由 {@link buildChatCompletionRequestFromMessages} 统一决定——仅在**本条线程里尚未出现 assistant/tool**
+ * 的首次 completion 挂载（第一次把「齐备的 system+user」交给模型）；一旦模型产出 assistant 或执行过工具，
+ * 续写回合不再挂载，与「一轮分析取结论，之后只执行工具或收束」一致。
+ *
  * @param {Array<{ role: string, content?: unknown, tool_calls?: unknown, tool_call_id?: string }>} messages
  * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
  * @param {{
@@ -873,9 +902,9 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
   }
   const apiKey = resolveOpenAiApiKey(cfg);
   const signal = llmAbortSignal(cfg);
-  const built = buildChatCompletionRequestFromMessages(messages, options, false);
-  if (built.error) {
-    return { ok: false, text: built.error, toolTrace: [], messagesOut: messages };
+  const probe = buildChatCompletionRequestFromMessages(messages, options, false);
+  if (probe.error) {
+    return { ok: false, text: probe.error, toolTrace: [], messagesOut: messages };
   }
 
   const tools = agentOpts.tools;
@@ -885,19 +914,22 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
 
   const client = new OpenAI({
     apiKey,
-    baseURL: built.baseURL,
+    baseURL: probe.baseURL,
     timeout: llmRequestTimeoutMs(cfg),
     maxRetries: 0,
   });
 
-  const bodyBase = { ...built.body, tools, tool_choice: "auto" };
   let thread = [...messages];
   const toolTrace = [];
 
   try {
     for (let step = 1; step <= maxSteps; step++) {
+      const built = buildChatCompletionRequestFromMessages(thread, options, false);
+      if (built.error) {
+        return { ok: false, text: built.error, toolTrace, messagesOut: thread };
+      }
       const completion = await client.chat.completions.create(
-        { ...bodyBase, messages: thread },
+        { ...built.body, tools, tool_choice: "auto" },
         { signal },
       );
       const choice = completion?.choices?.[0];

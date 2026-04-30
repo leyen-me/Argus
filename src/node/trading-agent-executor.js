@@ -12,7 +12,6 @@ const TRADING_EXECUTOR_DEFAULT_DEPS = Object.freeze({
   amendSwapOrder: okxPerp.amendSwapOrder,
   amendSwapAlgoOrder: okxPerp.amendSwapAlgoOrder,
   executeAgentPerpOpen: okxPerp.executeAgentPerpOpen,
-  executeAgentPerpPreviewOpen: okxPerp.executeAgentPerpPreviewOpen,
   executeAgentPerpClose: okxPerp.executeAgentPerpClose,
 });
 
@@ -47,7 +46,6 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
     amendSwapOrder,
     amendSwapAlgoOrder,
     executeAgentPerpOpen,
-    executeAgentPerpPreviewOpen,
     executeAgentPerpClose,
   } = deps;
 
@@ -85,16 +83,6 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
 
     try {
       switch (name) {
-        case "preview_open_size": {
-          const gate = requireOkx(cfg);
-          if (!gate.ok) return { ok: false, message: gate.message };
-          return executeAgentPerpPreviewOpen(cfg, {
-            tvSymbol,
-            leverage: a.leverage,
-            margin_fraction: a.margin_fraction,
-            margin_mode: a.margin_mode,
-          });
-        }
         case "open_position": {
           const gate = requireOkx(cfg);
           if (!gate.ok) return { ok: false, message: gate.message };

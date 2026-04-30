@@ -7,10 +7,6 @@ const { loadSystemPromptsFromDisk } = require("./app-config");
 
 /** 交易 Agent：`resolveTradingAgentSystemPrompt` 在策略正文后附加；与用户策略库解耦。 */
 const TRADING_AGENT_TOOLS_POLICY_BLOCK = `
-#### 开仓预估与开仓
-- preview_open_size 是配合 open_position 一起使用的，仅做预估，不会实际下单。请不要在其他地方单独调用。
-- 同理，在调用 open_position 之前，请先调用 preview_open_size 进行预估。
-
 #### 限价单与市价单
 
 - 由于是 LLM Agent 交易，下单会有延迟，延迟会导致滑点、成交价格与预期不符。所以如果思考决策要开仓的话，请尽量使用限价单开仓。

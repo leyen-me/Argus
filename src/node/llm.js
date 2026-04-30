@@ -7,6 +7,14 @@ const { loadSystemPromptsFromDisk } = require("./app-config");
 
 /** 交易 Agent：`resolveTradingAgentSystemPrompt` 在策略正文后附加；与用户策略库解耦。 */
 const TRADING_AGENT_TOOLS_POLICY_BLOCK = `
+#### 工具介绍
+
+- open_position：开仓
+- close_position：平仓
+- cancel_order：撤销普通订单（不是止盈止损等算法单）
+- amend_order：修改普通订单
+- amend_tp_sl：修改止盈止损等算法单
+
 #### 限价单与市价单
 
 - 由于是 LLM Agent 交易，下单会有延迟，延迟会导致滑点、成交价格与预期不符。所以如果思考决策要开仓的话，请尽量使用限价单开仓。

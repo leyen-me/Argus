@@ -1,15 +1,65 @@
+/// <reference path="./vite-env.d.ts" />
+
 /** Web 模式：HTTP RPC + WebSocket，对齐 Electron preload 的 `window.argus` API */
-/* eslint-disable @typescript-eslint/no-explicit-any -- 各通道 payload 形状不同，由订阅方（renderer）自行解析 */
+
+/** `request-chart-capture` WebSocket 推送 */
+export type ChartCaptureRequestPayload = {
+  requestId?: string;
+  tvSymbol?: string;
+};
+
+/** `market-bar-close` 与服务端、`window.argusLastBarClose` 对齐 */
+export type MarketBarClosePayload = ArgusLastBarClose;
+
+/** `market-status` 推送 */
+export type MarketStatusPayload = {
+  text?: string;
+};
+
+/** `llm-stream-delta` 推送 */
+export type LlmStreamDeltaPayload = {
+  barCloseId: string;
+  full?: string | null;
+  reasoningFull?: string | null;
+  toolFull?: string | null;
+};
+
+/** `llm-stream-end` 推送 */
+export type LlmStreamEndPayload = {
+  barCloseId: string;
+  analysisText?: string | null;
+  cardSummary?: string | null;
+  reasoningText?: string | null;
+  toolTrace?: unknown[];
+  conversationKey?: string;
+  exchangeContext?: unknown;
+};
+
+/** `llm-stream-error` 推送 */
+export type LlmStreamErrorPayload = {
+  barCloseId: string;
+  message?: string | null;
+  toolTrace?: unknown[];
+};
+
+/** `okx-swap-status` 推送 */
+export type OkxSwapStatusPayload = {
+  ok?: boolean;
+  message?: string;
+  tvSymbol?: string;
+  position?: Record<string, unknown>;
+  simulated?: boolean;
+};
 
 export type ArgusBridge = {
-  onMarketBarClose: (callback: (payload: any) => void) => void;
-  onChartCaptureRequest: (callback: (payload: any) => void) => void;
+  onMarketBarClose: (callback: (payload: MarketBarClosePayload) => void) => void;
+  onChartCaptureRequest: (callback: (payload: ChartCaptureRequestPayload) => void) => void;
   submitChartCaptureResult: (result: unknown) => void;
-  onMarketStatus: (callback: (payload: any) => void) => void;
-  onLlmStreamDelta: (callback: (payload: any) => void) => void;
-  onLlmStreamEnd: (callback: (payload: any) => void) => void;
-  onLlmStreamError: (callback: (payload: any) => void) => void;
-  onOkxSwapStatus: (callback: (payload: any) => void) => void;
+  onMarketStatus: (callback: (payload: MarketStatusPayload) => void) => void;
+  onLlmStreamDelta: (callback: (payload: LlmStreamDeltaPayload) => void) => void;
+  onLlmStreamEnd: (callback: (payload: LlmStreamEndPayload) => void) => void;
+  onLlmStreamError: (callback: (payload: LlmStreamErrorPayload) => void) => void;
+  onOkxSwapStatus: (callback: (payload: OkxSwapStatusPayload) => void) => void;
   setMarketContext: (tvSymbol: string) => Promise<unknown>;
   requestAnalysis: (payload: unknown) => Promise<unknown>;
   getConfig: () => Promise<unknown>;
@@ -129,8 +179,10 @@ export function installArgusBridge() {
   connectWsLoop();
 
   const bridge: ArgusBridge = {
-    onMarketBarClose: (cb) => subscribeChannel("market-bar-close", cb),
-    onChartCaptureRequest: (cb) => subscribeChannel("request-chart-capture", cb),
+    onMarketBarClose: (cb) =>
+      subscribeChannel("market-bar-close", (p) => cb(p as MarketBarClosePayload)),
+    onChartCaptureRequest: (cb) =>
+      subscribeChannel("request-chart-capture", (p) => cb(p as ChartCaptureRequestPayload)),
     submitChartCaptureResult: (result: unknown) => {
       const ws = socketRef;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -143,11 +195,16 @@ export function installArgusBridge() {
           : {};
       ws.send(JSON.stringify({ type: "chart-capture-result", ...payload }));
     },
-    onMarketStatus: (cb) => subscribeChannel("market-status", cb),
-    onLlmStreamDelta: (cb) => subscribeChannel("llm-stream-delta", cb),
-    onLlmStreamEnd: (cb) => subscribeChannel("llm-stream-end", cb),
-    onLlmStreamError: (cb) => subscribeChannel("llm-stream-error", cb),
-    onOkxSwapStatus: (cb) => subscribeChannel("okx-swap-status", cb),
+    onMarketStatus: (cb) =>
+      subscribeChannel("market-status", (p) => cb(p as MarketStatusPayload)),
+    onLlmStreamDelta: (cb) =>
+      subscribeChannel("llm-stream-delta", (p) => cb(p as LlmStreamDeltaPayload)),
+    onLlmStreamEnd: (cb) =>
+      subscribeChannel("llm-stream-end", (p) => cb(p as LlmStreamEndPayload)),
+    onLlmStreamError: (cb) =>
+      subscribeChannel("llm-stream-error", (p) => cb(p as LlmStreamErrorPayload)),
+    onOkxSwapStatus: (cb) =>
+      subscribeChannel("okx-swap-status", (p) => cb(p as OkxSwapStatusPayload)),
 
     setMarketContext: (tvSymbol) => rpc("market:set-context", [tvSymbol]),
     requestAnalysis: (payload) => rpc("llm-request-analysis", [payload]),

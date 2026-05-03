@@ -9,6 +9,8 @@ declare global {
     reasoningText?: string;
     streaming?: boolean;
     error?: string | null;
+    skippedReason?: string | null;
+    enabled?: boolean;
   }
 
   /** 与 `onMarketBarClose` 推送结构对齐的缓存（仅用于 UI 增量更新） */
@@ -16,6 +18,9 @@ declare global {
     llm?: ArgusBarCloseLlmState;
     exchangeContext?: unknown;
     barCloseId?: string;
+    conversationKey?: string;
+    chartImage?: { dataUrl?: string | null };
+    chartCaptureError?: unknown;
     [key: string]: unknown;
   }
 

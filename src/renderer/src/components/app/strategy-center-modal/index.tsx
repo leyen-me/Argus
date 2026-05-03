@@ -30,8 +30,8 @@ type ArgusApi = {
     body: string;
     sort_order: number;
   } | null>;
-  savePromptStrategy?: (payload: { id: string; label: string; body: string }) => Promise<unknown>;
-  deletePromptStrategy?: (id: string) => Promise<unknown>;
+  savePromptStrategy?: (payload: { id: string; label: string; body: string }) => Promise<void>;
+  deletePromptStrategy?: (id: string) => Promise<void>;
 };
 
 function getArgus(): ArgusApi | undefined {

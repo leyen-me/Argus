@@ -10,6 +10,7 @@
  * - `agent_sessions.card_summary`：收盘后二次 LLM 卡片短摘要（user_version ≥ 8）。
  * - `agent_sessions.assistant_reasoning_text`：开盘 Agent 首次 completion 的深度思考快照（user_version ≥ 12）。
  * - `agent_sessions.assistant_decision` / `agent_session_messages.assistant_decision`：结构化交易决策快照（user_version ≥ 13）。
+ * - `prompt_strategies.decision_interval_tv` / `extras_json`：策略级决策周期与扩展 JSON 占位（user_version ≥ 14）。
  * - `order_intents`：旧版挂单意图记忆表（user_version = 9）；v10 起移除。
  * - 其他强关系数据可在同一库中新建表并递增 user_version；业务模块仅依赖 `getDatabase()`。
  *
@@ -298,6 +299,14 @@ function applyMigrations(database) {
     backfillAssistantDecisions(database);
     database.pragma("user_version = 13");
     v = 13;
+  }
+  if (v < 14) {
+    database.exec(`
+      ALTER TABLE prompt_strategies ADD COLUMN decision_interval_tv TEXT NOT NULL DEFAULT '5';
+      ALTER TABLE prompt_strategies ADD COLUMN extras_json TEXT NOT NULL DEFAULT '{}';
+    `);
+    database.pragma("user_version = 14");
+    v = 14;
   }
 }
 

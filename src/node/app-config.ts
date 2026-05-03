@@ -40,9 +40,11 @@ export type AppConfig = {
   dashboardBaselineEquityUsdt: number | null;
   dashboardAgentToolStatsSince: string | null;
   dashboardStrategyRanges: Record<string, { baselineEquityUsdt: number | null; statsSince: string | null }>;
+  /** 取自当前 `prompt_strategy` 行，非 kv 字段；normalizeConfig 时注入。 */
+  promptStrategyDecisionIntervalTv: import("../shared/strategy-fields.js").StrategyDecisionIntervalTv;
 };
 
-type AppSettingsSeed = Omit<AppConfig, "promptStrategies" | "systemPromptCrypto">;
+type AppSettingsSeed = Omit<AppConfig, "promptStrategies" | "systemPromptCrypto" | "promptStrategyDecisionIntervalTv">;
 
 /**
  * 首次安装 /「恢复默认」时使用的持久化字段种子（仅存在于代码）。
@@ -138,6 +140,7 @@ function defaultConfigFallback(): AppConfig {
     ...APP_SETTINGS_SEED,
     promptStrategy,
     promptStrategies: listPromptStrategies(),
+    promptStrategyDecisionIntervalTv: promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy),
     ...loadSystemPromptsFromDisk(promptStrategy),
   };
 }
@@ -148,7 +151,7 @@ function defaultConfigFallback(): AppConfig {
  */
 function stripSystemPromptsForPersistence(cfg) {
   if (!cfg || typeof cfg !== "object") return cfg;
-  const { systemPromptCrypto: _c, ...rest } = cfg;
+  const { systemPromptCrypto: _c, promptStrategyDecisionIntervalTv: _p, ...rest } = cfg;
   return rest;
 }
 
@@ -385,6 +388,9 @@ function normalizeConfig(raw: unknown): AppConfig {
     dashboardAgentToolStatsSince = null;
   }
 
+  const promptStrategyDecisionIntervalTv =
+    promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy);
+
   return {
     symbols,
     defaultSymbol,
@@ -394,6 +400,7 @@ function normalizeConfig(raw: unknown): AppConfig {
     openaiApiKey,
     promptStrategy,
     promptStrategies: listPromptStrategies(),
+    promptStrategyDecisionIntervalTv,
     systemPromptCrypto,
     llmRequestTimeoutMs,
     llmReasoningEnabled,

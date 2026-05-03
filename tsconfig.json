@@ -14,8 +14,9 @@
     "strictNullChecks": false,
     "allowJs": false,
     "paths": {
-      "@/*": ["./src/renderer/src/*"]
+      "@/*": ["./src/renderer/src/*"],
+      "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["vite.config.ts", "src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx"]
+  "include": ["vite.config.ts", "src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx", "src/shared/**/*.ts"]
 }

@@ -37,10 +37,9 @@ import {
   ingestChartCaptureResult,
   requestChartCaptureFromBrowser,
 } from "../node/chart-capture-browser-bridge.js";
+import { normalizeStrategyDecisionIntervalTv } from "../shared/strategy-fields.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const AGENT_DECISION_INTERVAL = "5";
 
 const wsClients: ClientWebSocket[] = [];
 
@@ -74,7 +73,10 @@ function stopBackgroundEquitySampler() {
 }
 
 async function routeMarket(cfg, tvSymbol) {
-  const interval = AGENT_DECISION_INTERVAL;
+  const interval =
+    typeof cfg.promptStrategyDecisionIntervalTv === "string"
+      ? normalizeStrategyDecisionIntervalTv(cfg.promptStrategyDecisionIntervalTv)
+      : promptStrategiesStore.getDecisionIntervalTvForStrategyId(cfg.promptStrategy);
   const sym = tvSymbol || cfg.defaultSymbol;
   const feed = inferFeed(sym);
 
@@ -132,12 +134,16 @@ const rpcHandlers = {
   "prompt-strategies:get": async (id) => promptStrategiesStore.getStrategy(id),
   "prompt-strategies:save": async (payload) => {
     promptStrategiesStore.saveStrategy(payload ?? {});
-    return loadAppConfig();
+    const next = loadAppConfig();
+    await routeMarket(next, next.defaultSymbol);
+    return next;
   },
   "prompt-strategies:delete": async (id) => {
     promptStrategiesStore.deleteStrategy(id);
     saveMergedConfigPayload({});
-    return loadAppConfig();
+    const next = loadAppConfig();
+    await routeMarket(next, next.defaultSymbol);
+    return next;
   },
   "llm-request-analysis": async (payload) => ({
     ok: true,

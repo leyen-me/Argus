@@ -13,6 +13,7 @@ export default defineConfig({
     alias: {
       "@renderer": path.resolve(process.cwd(), "src/renderer/src"),
       "@": path.resolve(process.cwd(), "src/renderer/src"),
+      "@shared": path.resolve(process.cwd(), "src/shared"),
     },
   },
   plugins: [react(), tailwindcss()],

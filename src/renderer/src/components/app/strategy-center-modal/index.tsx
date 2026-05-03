@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen } from "lucide-react";
+import { BookOpen, PencilLine, XIcon } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogDescription,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
@@ -19,24 +21,54 @@ import {
   ARGUS_STRATEGY_MODAL_CLOSE,
   ARGUS_STRATEGY_MODAL_OPEN,
 } from "@/lib/argus-strategy-modal-events";
+import {
+  STRATEGY_DECISION_INTERVAL_TV,
+  decisionIntervalLabel,
+  type StrategyDecisionIntervalTv,
+  type StrategyExtrasV1,
+  type StrategyIndicatorId,
+} from "@shared/strategy-fields";
 
 type StrategyMeta = { id: string; label: string; sort_order: number };
 
+type PromptStrategyRow = {
+  id: string;
+  label: string;
+  body: string;
+  sort_order: number;
+  decisionIntervalTv: StrategyDecisionIntervalTv;
+  extras: StrategyExtrasV1;
+};
+
 type ArgusApi = {
   listPromptStrategiesMeta?: () => Promise<StrategyMeta[]>;
-  getPromptStrategy?: (id: string) => Promise<{
-    id: string;
-    label: string;
-    body: string;
-    sort_order: number;
-  } | null>;
-  savePromptStrategy?: (payload: { id: string; label: string; body: string }) => Promise<void>;
+  getPromptStrategy?: (id: string) => Promise<PromptStrategyRow | null>;
+  savePromptStrategy?: (payload: Record<string, unknown>) => Promise<void>;
   deletePromptStrategy?: (id: string) => Promise<void>;
 };
+
+const MARKET_TF_META: { id: StrategyDecisionIntervalTv; label: string }[] = [
+  { id: "5", label: "5M" },
+  { id: "15", label: "15M" },
+  { id: "60", label: "1H" },
+  { id: "1D", label: "1D" },
+];
+
+const INDICATORS: { id: StrategyIndicatorId; label: string }[] = [
+  { id: "EM20", label: "EMA 20" },
+  { id: "BB", label: "布林带 BB" },
+  { id: "ATR", label: "ATR" },
+  { id: "MACD", label: "MACD" },
+];
 
 function getArgus(): ArgusApi | undefined {
   if (typeof window === "undefined") return undefined;
   return window.argus as ArgusApi | undefined;
+}
+
+function toggleInList<T>(list: T[], item: T): T[] {
+  const has = list.includes(item);
+  return has ? list.filter((x) => x !== item) : [...list, item];
 }
 
 export function StrategyCenterModal() {
@@ -46,16 +78,29 @@ export function StrategyCenterModal() {
   const [draftId, setDraftId] = useState("");
   const [draftLabel, setDraftLabel] = useState("");
   const [draftBody, setDraftBody] = useState("");
+  const [draftDecisionTv, setDraftDecisionTv] = useState<StrategyDecisionIntervalTv>("5");
+  const [draftExtras, setDraftExtras] = useState<StrategyExtrasV1>({
+    tokenSymbols: [],
+    marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
+    indicators: [],
+  });
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [titleEditing, setTitleEditing] = useState(false);
 
   const isNew = selectedId === null;
 
-  const applyRowToForm = (row: { id: string; label: string; body: string }) => {
+  const applyRowToForm = useCallback((row: PromptStrategyRow) => {
     setDraftId(row.id);
     setDraftLabel(row.label || row.id);
     setDraftBody(row.body || "");
-  };
+    setDraftDecisionTv(row.decisionIntervalTv);
+    setDraftExtras({
+      tokenSymbols: [...(row.extras?.tokenSymbols ?? [])],
+      marketTimeframes: [...(row.extras?.marketTimeframes ?? [...STRATEGY_DECISION_INTERVAL_TV])],
+      indicators: [...(row.extras?.indicators ?? [])],
+    });
+  }, []);
 
   const refreshList = useCallback(async (preferId?: string | null) => {
     const api = getArgus();
@@ -81,17 +126,24 @@ export function StrategyCenterModal() {
         setDraftId("");
         setDraftLabel("");
         setDraftBody("");
+        setDraftDecisionTv("5");
+        setDraftExtras({
+          tokenSymbols: [],
+          marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
+          indicators: [],
+        });
       }
     } catch (e) {
       console.error(e);
       setStatus("加载策略列表失败");
     }
-  }, []);
+  }, [applyRowToForm]);
 
   useEffect(() => {
     const onOpen = () => {
       setOpen(true);
       setStatus(null);
+      setTitleEditing(false);
       void refreshList();
     };
     const onClose = () => setOpen(false);
@@ -113,6 +165,7 @@ export function StrategyCenterModal() {
   const onSelectRow = (id: string) => {
     setSelectedId(id);
     setStatus(null);
+    setTitleEditing(false);
     void loadOne(id);
   };
 
@@ -121,13 +174,20 @@ export function StrategyCenterModal() {
     setDraftId("");
     setDraftLabel("");
     setDraftBody("");
+    setDraftDecisionTv("5");
+    setDraftExtras({
+      tokenSymbols: [],
+      marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
+      indicators: [],
+    });
     setStatus(null);
+    setTitleEditing(true);
   };
 
   const onSave = async () => {
     const api = getArgus();
     if (!api?.savePromptStrategy) {
-      setStatus("当前环境无法保存（非 Electron）");
+      setStatus("当前环境无法保存");
       return;
     }
     const id = (isNew ? draftId : selectedId || "").trim();
@@ -138,15 +198,26 @@ export function StrategyCenterModal() {
       return;
     }
     if (!body) {
-      setStatus("提示词正文不能为空");
+      setStatus("策略文本不能为空");
       return;
     }
     setBusy(true);
     setStatus(null);
     try {
-      await api.savePromptStrategy({ id, label, body });
+      await api.savePromptStrategy({
+        id,
+        label,
+        body,
+        decisionIntervalTv: draftDecisionTv,
+        extras: {
+          tokenSymbols: draftExtras.tokenSymbols,
+          marketTimeframes: draftExtras.marketTimeframes,
+          indicators: draftExtras.indicators,
+        },
+      });
       window.dispatchEvent(new CustomEvent(ARGUS_PROMPT_STRATEGIES_CHANGED));
       setStatus("已保存");
+      setTitleEditing(false);
       await refreshList(id);
     } catch (e) {
       console.error(e);
@@ -172,6 +243,7 @@ export function StrategyCenterModal() {
       setDraftId("");
       setDraftLabel("");
       setDraftBody("");
+      setDraftDecisionTv("5");
       await refreshList();
     } catch (e) {
       console.error(e);
@@ -181,146 +253,271 @@ export function StrategyCenterModal() {
     }
   };
 
+  const displayTitle = draftLabel.trim() || draftId.trim() || (isNew ? "新建策略" : "");
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
         showCloseButton={false}
         forceMount
         className={cn(
-          "flex h-[min(88vh,920px)] w-[min(1180px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1180px]",
+          "flex h-[min(90vh,940px)] w-[min(1240px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1240px]",
         )}
       >
-        <DialogHeader className="shrink-0 space-y-0 border-b border-border px-5 py-4 text-left">
+        <header className="flex shrink-0 flex-col gap-3 border-b border-border px-5 py-4">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <BookOpen className="size-4 opacity-80" aria-hidden />
+            <div className="flex min-w-0 items-center gap-2">
+              <BookOpen className="size-4 shrink-0 opacity-80" aria-hidden />
               <DialogTitle className="text-base font-semibold">策略中心</DialogTitle>
             </div>
             <DialogClose asChild>
+              <Button type="button" variant="ghost" size="icon-sm" className="shrink-0" aria-label="关闭">
+                <XIcon className="size-4" />
+              </Button>
+            </DialogClose>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {titleEditing ? (
+                <Input
+                  className="h-9 max-w-[min(420px,60vw)] text-sm font-medium"
+                  value={draftLabel}
+                  onChange={(e) => setDraftLabel(e.target.value)}
+                  placeholder="策略名称"
+                  disabled={busy}
+                  autoFocus
+                />
+              ) : (
+                <p className="m-0 min-w-0 truncate text-lg font-semibold tracking-tight text-foreground">
+                  {displayTitle}
+                </p>
+              )}
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-                id="btn-strategy-close"
-                aria-label="关闭"
-              >
-                ×
-              </Button>
-            </DialogClose>
-          </div>
-          <DialogDescription className="sr-only">管理系统提示词策略</DialogDescription>
-        </DialogHeader>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-0 sm:flex-row">
-          <aside className="flex w-full shrink-0 flex-col border-b border-border sm:w-[220px] sm:border-b-0 sm:border-r">
-            <div className="flex flex-wrap gap-2 border-b border-border/80 p-3">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => onNew()}
+                className="shrink-0"
+                onClick={() => setTitleEditing((v) => !v)}
                 disabled={busy}
+                aria-label={titleEditing ? "完成名称编辑" : "编辑策略名称"}
+                title="编辑名称"
               >
+                <PencilLine className="size-4" />
+              </Button>
+            </div>
+            <Button type="button" size="sm" className="shrink-0" onClick={() => void onSave()} disabled={busy}>
+              保存策略
+            </Button>
+          </div>
+          <DialogDescription className="sr-only">管理系统策略：决策周期、扩展项与提示词文本</DialogDescription>
+        </header>
+
+        <div className="flex min-h-0 flex-1">
+          <aside className="flex w-[200px] shrink-0 flex-col border-r border-border">
+            <div className="flex flex-wrap gap-2 border-b border-border/80 p-3">
+              <Button type="button" variant="secondary" size="sm" className="h-8 text-xs" onClick={() => onNew()} disabled={busy}>
                 新建
               </Button>
             </div>
-            <div className="min-h-[120px] flex-1 overflow-y-auto overscroll-contain p-2">
-              {list.length === 0 ? (
-                <p className="m-0 px-2 py-3 text-xs text-muted-foreground">
-                  {getArgus()?.listPromptStrategiesMeta
-                    ? "暂无策略，请先在侧栏新建或检查数据库。"
-                    : "请在 Electron 应用中使用策略中心。"}
-                </p>
-              ) : (
-                <ul className="m-0 list-none space-y-0.5 p-0">
-                  {list.map((row) => (
-                    <li key={row.id}>
-                      <button
-                        type="button"
-                        className={cn(
-                          "w-full rounded-md px-2.5 py-2 text-left text-xs transition-colors",
-                          selectedId === row.id
-                            ? "bg-muted font-medium text-foreground"
-                            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                        )}
-                        onClick={() => onSelectRow(row.id)}
-                      >
-                        <span className="block truncate font-mono text-[13px] text-foreground">{row.id}</span>
-                        {row.label && row.label !== row.id ? (
-                          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                            {row.label}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="p-2">
+                {list.length === 0 ? (
+                  <p className="m-0 px-2 py-3 text-xs text-muted-foreground">
+                    {getArgus()?.listPromptStrategiesMeta
+                      ? "暂无策略，请先新建。"
+                      : "请在已连接服务端的环境使用策略中心。"}
+                  </p>
+                ) : (
+                  <ul className="m-0 list-none space-y-0.5 p-0">
+                    {list.map((row) => (
+                      <li key={row.id}>
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors",
+                            selectedId === row.id
+                              ? "bg-muted font-medium text-foreground"
+                              : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                          )}
+                          onClick={() => onSelectRow(row.id)}
+                        >
+                          <span className="truncate font-mono text-[13px] text-foreground">{row.id}</span>
+                          {row.label && row.label !== row.id ? (
+                            <span className="truncate text-[11px] text-muted-foreground">{row.label}</span>
+                          ) : null}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </ScrollArea>
+            {selectedId ? (
+              <div className="border-t border-border p-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-full text-xs text-destructive hover:text-destructive"
+                  onClick={() => void onDelete()}
+                  disabled={busy || list.length <= 1}
+                >
+                  删除当前策略
+                </Button>
+              </div>
+            ) : null}
           </aside>
 
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="strategy-id-input" className="text-muted-foreground">
-                  策略 ID
-                </Label>
-                <Input
-                  id="strategy-id-input"
-                  className="font-mono text-sm"
-                  value={draftId}
-                  onChange={(e) => setDraftId(e.target.value)}
-                  placeholder="如 default、al_brooks"
-                  disabled={busy}
-                  readOnly={!isNew}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="strategy-label-input" className="text-muted-foreground">
-                  展示名称（可选）
-                </Label>
-                <Input
-                  id="strategy-label-input"
-                  className="text-sm"
-                  value={draftLabel}
-                  onChange={(e) => setDraftLabel(e.target.value)}
-                  placeholder="默认同 ID"
-                  disabled={busy}
-                />
-              </div>
-            </div>
+          <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[minmax(280px,340px)_1fr]">
+            <ScrollArea className="min-h-0 border-b border-border lg:border-b-0 lg:border-r">
+              <div className="space-y-5 p-4 pr-5">
+                {isNew ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="strategy-id-field" className="text-muted-foreground">
+                      策略 ID
+                    </Label>
+                    <Input
+                      id="strategy-id-field"
+                      className="font-mono text-sm"
+                      value={draftId}
+                      onChange={(e) => setDraftId(e.target.value)}
+                      placeholder="如 swing_1h、scalp_5m"
+                      disabled={busy}
+                    />
+                    <p className="m-0 text-[11px] text-muted-foreground">保存后不可修改；用于内部引用与文件级标识。</p>
+                  </div>
+                ) : null}
 
-            <div className="flex min-h-0 flex-1 flex-col space-y-1.5">
+                <section className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-foreground">代币范围</Label>
+                    <Badge variant="secondary" className="text-[10px] font-normal">
+                      即将推出
+                    </Badge>
+                  </div>
+                  <Input disabled placeholder="占位：不同策略可绑定不同交易对（未实现）" className="bg-muted/40 text-muted-foreground" />
+                </section>
+
+                <Separator />
+
+                <section>
+                  <div className="space-y-1">
+                    <Label className="text-foreground">决策时间</Label>
+                    <p className="m-0 text-[11px] leading-relaxed text-muted-foreground">
+                      K 线收盘触发 Agent 的周期；与当前策略绑定。
+                    </p>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {STRATEGY_DECISION_INTERVAL_TV.map((tv) => (
+                      <Button
+                        key={tv}
+                        type="button"
+                        size="sm"
+                        variant={draftDecisionTv === tv ? "default" : "outline"}
+                        className="h-9 justify-center text-xs font-medium"
+                        onClick={() => setDraftDecisionTv(tv)}
+                        disabled={busy}
+                      >
+                        {decisionIntervalLabel(tv)}
+                      </Button>
+                    ))}
+                  </div>
+                </section>
+
+                <Separator />
+
+                <section>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-foreground">市场数据</Label>
+                      <Badge variant="secondary" className="text-[10px] font-normal">
+                        占位
+                      </Badge>
+                    </div>
+                    <p className="m-0 text-[11px] leading-relaxed text-muted-foreground">
+                      选择拟提供给模型的多周期数据（已持久化，尚未接入行情筛选逻辑）。
+                    </p>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {MARKET_TF_META.map((m) => {
+                      const on = draftExtras.marketTimeframes.includes(m.id);
+                      return (
+                        <Button
+                          key={m.id}
+                          type="button"
+                          size="sm"
+                          variant={on ? "secondary" : "outline"}
+                          className="h-8 min-w-[52px] px-2 text-xs"
+                          onClick={() =>
+                            setDraftExtras((prev) => ({
+                              ...prev,
+                              marketTimeframes: toggleInList(prev.marketTimeframes, m.id),
+                            }))
+                          }
+                          disabled={busy}
+                        >
+                          {m.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <Separator />
+
+                <section>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-foreground">技术指标</Label>
+                      <Badge variant="secondary" className="text-[10px] font-normal">
+                        占位
+                      </Badge>
+                    </div>
+                    <p className="m-0 text-[11px] leading-relaxed text-muted-foreground">
+                      勾选会写入策略配置，图表与提示词尚未自动应用。
+                    </p>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {INDICATORS.map((ind) => {
+                      const on = draftExtras.indicators.includes(ind.id);
+                      return (
+                        <Button
+                          key={ind.id}
+                          type="button"
+                          size="sm"
+                          variant={on ? "secondary" : "outline"}
+                          className="h-8 px-2.5 text-xs"
+                          onClick={() =>
+                            setDraftExtras((prev) => ({
+                              ...prev,
+                              indicators: toggleInList(prev.indicators, ind.id),
+                            }))
+                          }
+                          disabled={busy}
+                        >
+                          {ind.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </section>
+              </div>
+            </ScrollArea>
+
+            <div className="flex min-h-0 min-w-0 flex-col gap-2 p-4 pl-5">
               <Label htmlFor="strategy-body" className="text-muted-foreground">
-                系统提示词（加密行情分析）
+                策略文本（系统提示词）
               </Label>
               <Textarea
                 id="strategy-body"
-                className="min-h-[280px] flex-1 resize-y font-mono text-[13px] leading-relaxed"
+                className="min-h-0 flex-1 resize-none font-mono text-[13px] leading-relaxed"
                 value={draftBody}
                 onChange={(e) => setDraftBody(e.target.value)}
                 disabled={busy}
                 spellCheck={false}
               />
-            </div>
-
-            {status ? <p className="m-0 text-xs text-muted-foreground">{status}</p> : null}
-
-            <div className="flex flex-wrap gap-2 border-t border-border/80 pt-3">
-              <Button type="button" size="sm" onClick={() => void onSave()} disabled={busy}>
-                保存
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() => void onDelete()}
-                disabled={busy || !selectedId}
-              >
-                删除当前
-              </Button>
+              {status ? <p className="m-0 text-xs text-muted-foreground">{status}</p> : null}
             </div>
           </div>
         </div>

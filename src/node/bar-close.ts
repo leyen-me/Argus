@@ -28,14 +28,11 @@ import {
 import { buildTradingAgentToolsForContext } from "./trading-agent-tools.js";
 import { createTradingToolExecutor } from "./trading-agent-executor.js";
 import { persistAgentBarTurn, listRecentAgentMemories } from "./agent-bar-turns-store.js";
-
-const AGENT_DECISION_INTERVAL = "5";
-const MULTI_TIMEFRAME_CAPTURE_SPECS = [
-  { interval: "1D", label: "1D" },
-  { interval: "60", label: "1H" },
-  { interval: "15", label: "15m" },
-  { interval: "5", label: "5m" },
-] as const;
+import {
+  MULTI_TIMEFRAME_CAPTURE_SPECS,
+  canonTradingViewInterval,
+  decisionIntervalExplain,
+} from "../shared/strategy-fields.js";
 
 type MultiTimeframeChartImage = {
   interval: string;
@@ -444,6 +441,8 @@ async function emitBarClose(ctx) {
   }
 
   const cfg = loadAppConfig();
+  const decisionIvCanon = canonTradingViewInterval(cfg.promptStrategyDecisionIntervalTv ?? "5");
+  const ctxIvCanon = canonTradingViewInterval(ctx.interval);
   const barCloseId = crypto.randomUUID();
 
   const llm: {
@@ -468,7 +467,7 @@ async function emitBarClose(ctx) {
     toolTrace: [],
   };
 
-  const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
+  const convKey = conversationKey(ctx.tvSymbol, canonTradingViewInterval(ctx.interval));
   const [exchangeCtx, recentCandlesPack, positionsHistory, recentAgentMemories] = await Promise.all([
     getOkxExchangeContextForBar(cfg, ctx.tvSymbol, ctx.interval),
     Promise.all(
@@ -534,14 +533,14 @@ async function emitBarClose(ctx) {
   if (
     chartCaptureError ||
     !chartImage?.base64 ||
-    ctx.interval !== AGENT_DECISION_INTERVAL ||
+    ctxIvCanon !== decisionIvCanon ||
     orderedChartImages.length !== MULTI_TIMEFRAME_CAPTURE_SPECS.length
   ) {
     finishSkipped(
       chartCaptureError
         ? `未调用 LLM：图表截图失败（${chartCaptureError}）。`
-        : ctx.interval !== AGENT_DECISION_INTERVAL
-          ? `未调用 LLM：当前触发周期不是 ${AGENT_DECISION_INTERVAL}m。`
+        : ctxIvCanon !== decisionIvCanon
+          ? `未调用 LLM：当前触发周期不是 ${decisionIntervalExplain(cfg.promptStrategyDecisionIntervalTv ?? "5")}。`
           : "未调用 LLM：多周期图表截图不完整。",
     );
     return;

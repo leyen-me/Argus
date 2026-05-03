@@ -1,4 +1,12 @@
 import * as localDb from "./local-db/index.js";
+import {
+  defaultStrategyExtras,
+  normalizeStrategyDecisionIntervalTv,
+  parseStrategyExtrasJson,
+  stringifyStrategyExtras,
+  type StrategyDecisionIntervalTv,
+  type StrategyExtrasV1,
+} from "../shared/strategy-fields.js";
 
 const DEFAULT_PROMPT_STRATEGY = "default";
 
@@ -55,21 +63,88 @@ function listStrategiesMeta() {
     .all();
 }
 
+/** @typedef {import("../shared/strategy-fields.js").StrategyDecisionIntervalTv} StrategyDecisionIntervalTv */
+/** @typedef {import("../shared/strategy-fields.js").StrategyExtrasV1} StrategyExtrasV1 */
+
+type StrategyRowNormalized = {
+  id: string;
+  label: string;
+  body: string;
+  sort_order: number;
+  decisionIntervalTv: StrategyDecisionIntervalTv;
+  extras: StrategyExtrasV1;
+};
+
+/**
+ * SQLite 列（snake_case）→ UI / API camelCase。
+ * @param {Record<string, unknown>} row
+ * @returns {StrategyRowNormalized}
+ */
+function mapStrategyRow(row: Record<string, unknown> | undefined): StrategyRowNormalized | null {
+  if (!row || typeof row.id !== "string" || !row.id.trim()) return null;
+  const extrasSrc =
+    typeof row.extras_json === "string"
+      ? row.extras_json
+      : "{}";
+  return {
+    id: row.id.trim(),
+    label: typeof row.label === "string" ? row.label : "",
+    body: typeof row.body === "string" ? row.body : "",
+    sort_order: Number(row.sort_order) || 0,
+    decisionIntervalTv: normalizeStrategyDecisionIntervalTv(row.decision_interval_tv),
+    extras: parseStrategyExtrasJson(extrasSrc),
+  };
+}
+
 /** @param {string} id */
-function getStrategy(id) {
+function getStrategy(id): StrategyRowNormalized | null {
   seedFromDiskIfEmpty();
   const row = localDb
     .getDatabase()
-    .prepare(`SELECT id, label, body, sort_order FROM prompt_strategies WHERE id = ?`)
-    .get(id);
-  return row || null;
+    .prepare(
+      `SELECT id, label, body, sort_order, decision_interval_tv, extras_json FROM prompt_strategies WHERE id = ?`,
+    )
+    .get(id) as Record<string, unknown> | undefined;
+  return row ? mapStrategyRow(row) : null;
 }
 
 /**
- * @param {{ id: string, label?: string, body: string }} payload
- * @returns {{ id: string, label: string, body: string, sort_order: number }}
+ * @param {unknown} strategyId
+ * @returns {StrategyDecisionIntervalTv}
  */
-function saveStrategy(payload: { id: string; label?: string; body: string }) {
+function getDecisionIntervalTvForStrategyId(strategyId: unknown): StrategyDecisionIntervalTv {
+  seedFromDiskIfEmpty();
+  if (typeof strategyId !== "string" || !strategyId.trim()) return "5";
+  const row = getStrategy(strategyId.trim());
+  return row ? row.decisionIntervalTv : "5";
+}
+
+/** @param {Partial<StrategyExtrasV1>} patch */
+function applyExtrasPatch(base: StrategyExtrasV1, patch: Partial<StrategyExtrasV1>): StrategyExtrasV1 {
+  return {
+    tokenSymbols: patch.tokenSymbols !== undefined ? [...patch.tokenSymbols] : [...base.tokenSymbols],
+    marketTimeframes:
+      patch.marketTimeframes !== undefined ? [...patch.marketTimeframes] : [...base.marketTimeframes],
+    indicators: patch.indicators !== undefined ? [...patch.indicators] : [...base.indicators],
+  };
+}
+
+/**
+ * @param {{
+ *   id: string;
+ *   label?: string;
+ *   body: string;
+ *   decisionIntervalTv?: unknown;
+ *   extras?: Partial<StrategyExtrasV1>;
+ * }} payload
+ */
+function saveStrategy(payload: {
+  id: string;
+  label?: string;
+  body: string;
+  decisionIntervalTv?: unknown;
+  extras?: Partial<StrategyExtrasV1>;
+}) {
   seedFromDiskIfEmpty();
   const id = typeof payload?.id === "string" ? payload.id.trim() : "";
   if (!ID_RE.test(id)) {
@@ -81,20 +156,42 @@ function saveStrategy(payload: { id: string; label?: string; body: string }) {
   if (!label) label = id;
 
   const db = localDb.getDatabase();
-  const existing = db.prepare(`SELECT id FROM prompt_strategies WHERE id = ?`).get(id);
-  if (existing) {
+  const existingRow = db
+    .prepare(`SELECT id, extras_json, decision_interval_tv FROM prompt_strategies WHERE id = ?`)
+    .get(id) as { id: string; extras_json?: string; decision_interval_tv?: string } | undefined;
+
+  const existingExtras = parseStrategyExtrasJson(existingRow?.extras_json);
+
+  const decisionIv = existingRow
+    ? payload.decisionIntervalTv !== undefined
+      ? normalizeStrategyDecisionIntervalTv(payload.decisionIntervalTv)
+      : normalizeStrategyDecisionIntervalTv(existingRow.decision_interval_tv)
+    : normalizeStrategyDecisionIntervalTv(payload.decisionIntervalTv);
+
+  const extrasMerged = stringifyStrategyExtras(
+    payload.extras && typeof payload.extras === "object"
+      ? applyExtrasPatch(existingExtras, payload.extras)
+      : existingExtras,
+  );
+
+  if (existingRow) {
     db.prepare(
-      `UPDATE prompt_strategies SET label = ?, body = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(label, body, id);
+      `UPDATE prompt_strategies SET label = ?, body = ?, decision_interval_tv = ?, extras_json = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(label, body, decisionIv, extrasMerged, id);
   } else {
+    const extrasNew = stringifyStrategyExtras(
+      payload.extras && typeof payload.extras === "object"
+        ? applyExtrasPatch(defaultStrategyExtras(), payload.extras)
+        : defaultStrategyExtras(),
+    );
     const maxRow = db
       .prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM prompt_strategies`)
       .get() as { m?: number } | undefined;
     const sort_order = (maxRow?.m ?? -1) + 1;
     db.prepare(
-      `INSERT INTO prompt_strategies (id, label, body, sort_order, updated_at)
-       VALUES (?, ?, ?, ?, datetime('now'))`,
-    ).run(id, label, body, sort_order);
+      `INSERT INTO prompt_strategies (id, label, body, sort_order, decision_interval_tv, extras_json, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+    ).run(id, label, body, sort_order, decisionIv, extrasNew);
   }
   return getStrategy(id);
 }
@@ -120,6 +217,7 @@ export {
   getStrategyBody,
   listStrategiesMeta,
   getStrategy,
+  getDecisionIntervalTvForStrategyId,
   saveStrategy,
   deleteStrategy,
   validateStrategyId,

@@ -1,7 +1,8 @@
 /* global TradingView */
+import { canonTradingViewInterval } from "@shared/strategy-fields";
+
 /** TradingView 内置：MAExp = EMA，周期由 length 指定 */
 const DEFAULT_EMA_LENGTH = 20;
-const AGENT_DECISION_INTERVAL = "5";
 const MULTI_TIMEFRAME_SPECS = [
   {
     interval: "1D",
@@ -22,7 +23,7 @@ const MULTI_TIMEFRAME_SPECS = [
     containerId: "tradingview_chart_15m",
   },
   {
-    interval: AGENT_DECISION_INTERVAL,
+    interval: "5",
     label: "5m",
     caption: "5 分钟",
     containerId: "tradingview_chart_5m",
@@ -36,7 +37,7 @@ let tvWidgetRenderSeq = 0;
 let tvLayoutObserver = null;
 let lastTvWidgetRequest = {
   symbol: "OKX:BTCUSDT",
-  interval: AGENT_DECISION_INTERVAL,
+  interval: "5",
 };
 
 function normalizeTradingViewSymbolForPerp(symbol) {
@@ -73,7 +74,7 @@ function areTradingViewContainersReady() {
 function scheduleTradingViewWidget(symbol, interval, options: { debounceMs?: number; attempt?: number } = {}) {
   const { debounceMs = 0, attempt = 0 } = options;
   const nextSymbol = symbol || "OKX:BTCUSDT";
-  const nextInterval = String(interval || AGENT_DECISION_INTERVAL);
+  const nextInterval = String(interval || chartInterval || "5");
   lastTvWidgetRequest = { symbol: nextSymbol, interval: nextInterval };
   const seq = ++tvWidgetRenderSeq;
   cancelPendingTradingViewRender();
@@ -156,7 +157,7 @@ function setLastChartScreenshot(dataUrl) {
  */
 window.argusLastBarClose = null;
 
-async function captureTradingViewPng(interval = AGENT_DECISION_INTERVAL) {
+async function captureTradingViewPng(interval = "5") {
   const widget = tvWidgets.get(String(interval));
   if (!widget || typeof widget.ready !== "function") {
     throw new Error(`无图表：${interval}`);
@@ -283,6 +284,7 @@ const FALLBACK_APP_CONFIG = {
   dashboardBaselineEquityUsdt: null,
   dashboardAgentToolStatsSince: null,
   dashboardStrategyRanges: {},
+  promptStrategyDecisionIntervalTv: "5",
 };
 
 type RendererAppConfig = typeof FALLBACK_APP_CONFIG;
@@ -295,8 +297,10 @@ function asOkxSwapPositionSnapshot(raw: unknown): OkxSwapPositionSnapshot {
   return raw as OkxSwapPositionSnapshot;
 }
 
-/** Agent 决策周期固定为 5 分钟，左侧同时展示 1D / 1H / 15m / 5m */
-let chartInterval = AGENT_DECISION_INTERVAL;
+/** `chart-interval-select` 的 option value（可能与 canonical `1D`/`D` 对齐）；会话 key 用 chartIntervalCanonical。 */
+let chartInterval = "5";
+/** 与主进程 OKX WS / bar-close `conversationKey` 对齐（如 `1D`）。 */
+let chartIntervalCanonical = "5";
 
 /** 按 `品种|周期` 缓存最近一次 OKX 快照（收盘推送），切换品种时可恢复展示 */
 window.argusExchangeContextCache = window.argusExchangeContextCache || Object.create(null);
@@ -308,15 +312,16 @@ window.argusExchangeContextCache = window.argusExchangeContextCache || Object.cr
  */
 function conversationKeyForUi(tvSymbol, interval) {
   const sym = String(tvSymbol || "").trim();
-  const iv = String(interval ?? chartInterval ?? "5").trim();
-  return sym ? `${sym}|${iv}` : "";
+  const rawIv = interval ?? chartIntervalCanonical ?? chartInterval ?? "5";
+  const ivCanon = canonTradingViewInterval(rawIv) || "5";
+  return sym ? `${sym}|${ivCanon}` : "";
 }
 
-/** 当前界面选中的品种 + chartInterval，与主进程 `conversationKey(tvSymbol, interval)` 对齐 */
+/** 当前界面选中的品种 + 策略决策周期 canonical，与主进程 `conversationKey(tvSymbol, interval)` 对齐 */
 function currentConversationKeyForUi() {
   const sel = document.getElementById("symbol-select");
   const sym = sel?.value?.trim() || "";
-  return conversationKeyForUi(sym, chartInterval);
+  return conversationKeyForUi(sym, chartIntervalCanonical);
 }
 
 /**
@@ -564,7 +569,7 @@ async function loadNextLlmHistoryPage() {
 
   const sel = document.getElementById("symbol-select");
   const tvSymbol = sel?.value?.trim() || "";
-  const interval = chartInterval || "5";
+  const interval = chartIntervalCanonical || canonTradingViewInterval(chartInterval) || "5";
   if (!tvSymbol) {
     updateLlmHistorySentinelText("请先选择交易品种");
     return;
@@ -1980,15 +1985,22 @@ function applySymbolSelect(config: Pick<RendererAppConfig, "symbols" | "defaultS
 }
 
 /**
- * 同步左侧行情标题栏 K 线周期控件，并更新内存中的 `chartInterval`。
- * @param {string} interval
+ * 根据策略决策周期（TradingView 写法）同步原生 select 与 React Select，并写入 canonical 供 conversationKey 使用。
+ * @param {string} intervalRaw
  */
-function applyChartIntervalSelect(_interval) {
-  let iv = AGENT_DECISION_INTERVAL;
+function applyChartIntervalSelect(intervalRaw) {
+  chartIntervalCanonical = canonTradingViewInterval(intervalRaw) || "5";
+  let iv = chartIntervalCanonical;
   const sel = document.getElementById("chart-interval-select");
-  if (sel) {
-    const has = [...sel.options].some((o) => o.value === iv);
-    if (!has) iv = "5";
+  if (sel instanceof HTMLSelectElement) {
+    const optionValues = [...sel.options].map((o) => o.value);
+    if (chartIntervalCanonical === "1D") {
+      if (optionValues.includes("1D")) iv = "1D";
+      else if (optionValues.includes("D")) iv = "D";
+      else iv = "5";
+    } else if (!optionValues.includes(iv)) {
+      iv = "5";
+    }
     sel.value = iv;
   }
   chartInterval = iv;
@@ -2049,8 +2061,7 @@ async function persistChartPreferences(partial) {
   }
   try {
     const saved = asRendererAppConfig(await window.argus.saveConfig(partial));
-    chartInterval = saved.interval || chartInterval;
-    applyChartIntervalSelect(chartInterval);
+    applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
     applySymbolSelect(saved);
   } catch (err) {
     console.error(err);
@@ -2074,6 +2085,7 @@ async function persistPromptStrategyPreference(promptStrategy) {
   try {
     const saved = asRendererAppConfig(await window.argus.saveConfig({ promptStrategy: next }));
     applyPromptStrategySelect(saved);
+    applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
     setLlmStatus(next ? `已切换策略：${saved.promptStrategy || next}` : "已清空当前策略选择");
   } catch (err) {
     console.error(err);
@@ -2220,6 +2232,7 @@ function initConfigCenter() {
     if (okxSk) okxSk.value = cfg.okxSecretKey ?? FALLBACK_APP_CONFIG.okxSecretKey;
     if (okxPh) okxPh.value = cfg.okxPassphrase ?? FALLBACK_APP_CONFIG.okxPassphrase;
     applyPromptStrategySelect(cfg);
+    applyChartIntervalSelect(cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
   };
 
   window.addEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, () => {
@@ -2227,6 +2240,9 @@ function initConfigCenter() {
       try {
         const cfg = await loadAppConfig();
         fillConfigModalFields(cfg);
+        const symEl = document.getElementById("symbol-select");
+        const sym = symEl?.value?.trim() || cfg.defaultSymbol || FALLBACK_APP_CONFIG.defaultSymbol;
+        createTradingViewWidget(sym, chartInterval);
       } catch (e) {
         console.error(e);
       }
@@ -2311,8 +2327,9 @@ function initConfigCenter() {
         if (!window.argus || typeof window.argus.resetConfig !== "function") {
           fillConfigModalFields(FALLBACK_APP_CONFIG);
           applySymbolSelect(FALLBACK_APP_CONFIG);
-          chartInterval = FALLBACK_APP_CONFIG.interval || "5";
-          applyChartIntervalSelect(chartInterval);
+          applyChartIntervalSelect(
+            FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv ?? "5",
+          );
           createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol, chartInterval);
           setLlmStatus("已恢复界面为内置默认（非 Electron 环境不会写入磁盘）");
           refreshExchangeContextBarFromCache();
@@ -2322,8 +2339,7 @@ function initConfigCenter() {
           const saved = asRendererAppConfig(await window.argus.resetConfig());
           fillConfigModalFields(saved);
           applySymbolSelect(saved);
-          chartInterval = saved.interval || "5";
-          applyChartIntervalSelect(chartInterval);
+          applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
           createTradingViewWidget(saved.defaultSymbol, chartInterval);
           setLlmStatus("配置已恢复默认");
           refreshExchangeContextBarFromCache();
@@ -2402,8 +2418,7 @@ function initConfigCenter() {
             }),
           );
           applySymbolSelect(saved);
-          chartInterval = saved.interval || chartInterval;
-          applyChartIntervalSelect(chartInterval);
+          applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
           createTradingViewWidget(saved.defaultSymbol, chartInterval);
           closeModal();
           refreshExchangeContextBarFromCache();
@@ -2534,19 +2549,16 @@ function initSymbolSelect() {
 
 function initChartIntervalSelect() {
   const sel = document.getElementById("chart-interval-select");
-  if (!sel) return;
+  if (!(sel instanceof HTMLSelectElement)) return;
   sel.addEventListener("change", () => {
-    const iv = sel.value;
-    chartInterval = iv;
     const symEl = document.getElementById("symbol-select");
     const sym = symEl?.value?.trim() || "OKX:BTCUSDT";
-    createTradingViewWidget(sym, iv);
-    void (async () => {
-      await persistChartPreferences({ interval: iv });
-      await reloadLlmHistoryFromStore();
-      refreshExchangeContextBarFromCache();
-      void refreshOkxPositionBar();
-    })();
+    applyChartIntervalSelect(chartIntervalCanonical);
+    setLlmStatus("主周期由当前策略「决策时间」决定，请在策略中心修改");
+    createTradingViewWidget(sym, chartInterval);
+    void reloadLlmHistoryFromStore();
+    refreshExchangeContextBarFromCache();
+    void refreshOkxPositionBar();
   });
 }
 
@@ -3034,7 +3046,9 @@ export function initArgusApp() {
     const cfg = await loadAppConfig();
     initTradingViewAutoLayout();
     applySymbolSelect(cfg);
-    applyChartIntervalSelect(cfg.interval || "5");
+    applyChartIntervalSelect(
+      cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv,
+    );
     applyPromptStrategySelect(cfg);
     const params =
       typeof window !== "undefined" && typeof URLSearchParams !== "undefined"

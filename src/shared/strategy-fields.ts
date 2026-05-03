@@ -1,0 +1,128 @@
+/**
+ * 策略维度的决策周期与扩展字段（前后端共用，避免散落魔法字符串）。
+ * TradingView / OKX 周期写法：`5`、`15`、`60`、`1D`。
+ */
+
+export const STRATEGY_DECISION_INTERVAL_TV = ["5", "15", "60", "1D"] as const;
+export type StrategyDecisionIntervalTv = (typeof STRATEGY_DECISION_INTERVAL_TV)[number];
+
+/** 送入 LLM 的多周期图表与 K 线索引顺序（固定四宫格）；与前端 TradingView 容器一致。 */
+export const MULTI_TIMEFRAME_CAPTURE_SPECS = [
+  { interval: "1D", label: "1D" },
+  { interval: "60", label: "1H" },
+  { interval: "15", label: "15m" },
+  { interval: "5", label: "5m" },
+] as const;
+
+export type StrategyIndicatorId = "EM20" | "BB" | "ATR" | "MACD";
+
+export type StrategyExtrasV1 = {
+  /** 占位：代币 / 合约范围 */
+  tokenSymbols: string[];
+  /** 占位：拟投喂模型的多周期（多选），尚未接入数据管线 */
+  marketTimeframes: StrategyDecisionIntervalTv[];
+  /** 占位：技术指标勾选 */
+  indicators: StrategyIndicatorId[];
+};
+
+export function defaultStrategyExtras(): StrategyExtrasV1 {
+  return {
+    tokenSymbols: [],
+    marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
+    indicators: [],
+  };
+}
+
+export function normalizeStrategyDecisionIntervalTv(raw: unknown): StrategyDecisionIntervalTv {
+  let v = String(raw ?? "5").trim();
+  if (v.toUpperCase() === "D") v = "1D";
+  return STRATEGY_DECISION_INTERVAL_TV.includes(v as StrategyDecisionIntervalTv)
+    ? (v as StrategyDecisionIntervalTv)
+    : "5";
+}
+
+export function decisionIntervalLabel(tv: StrategyDecisionIntervalTv): string {
+  switch (tv) {
+    case "15":
+      return "15 分钟";
+    case "60":
+      return "1 小时";
+    case "1D":
+      return "日线";
+    default:
+      return "5 分钟";
+  }
+}
+
+/** 与会话跳过提示中的周期描述一致（非一律加 m 后缀）。 */
+export function decisionIntervalExplain(tv: StrategyDecisionIntervalTv): string {
+  switch (tv) {
+    case "15":
+      return "15 分钟";
+    case "60":
+      return "1 小时";
+    case "1D":
+      return "日线";
+    default:
+      return "5 分钟";
+  }
+}
+
+const INDICATORS: StrategyIndicatorId[] = ["EM20", "BB", "ATR", "MACD"];
+
+function isIndicator(id: unknown): id is StrategyIndicatorId {
+  return typeof id === "string" && INDICATORS.includes(id as StrategyIndicatorId);
+}
+
+export function normalizeStrategyIndicators(raw: unknown): StrategyIndicatorId[] {
+  if (!Array.isArray(raw)) return [];
+  const out = raw.filter(isIndicator);
+  return out.length ? [...new Set(out)] : [];
+}
+
+export function normalizeStrategyMarketTimeframes(raw: unknown): StrategyDecisionIntervalTv[] {
+  if (!Array.isArray(raw)) return [...STRATEGY_DECISION_INTERVAL_TV];
+  const out = raw
+    .map((x) => normalizeStrategyDecisionIntervalTv(x))
+    .filter((x, i, a) => a.indexOf(x) === i);
+  return out.length ? out : [...STRATEGY_DECISION_INTERVAL_TV];
+}
+
+export function parseStrategyExtrasJson(raw: unknown): StrategyExtrasV1 {
+  let o: Record<string, unknown> = {};
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) o = parsed as Record<string, unknown>;
+    } catch {
+      o = {};
+    }
+  }
+  const def = defaultStrategyExtras();
+  const tokenRaw = o.tokenSymbols;
+  const symbols = Array.isArray(tokenRaw)
+    ? tokenRaw.map((t) => String(t).trim()).filter(Boolean)
+    : def.tokenSymbols;
+  const marketTf = normalizeStrategyMarketTimeframes(o.marketTimeframes);
+  let indicators = normalizeStrategyIndicators(o.indicators);
+  if (!indicators.length && Array.isArray(o.indicators)) indicators = def.indicators;
+  return {
+    tokenSymbols: symbols,
+    marketTimeframes: marketTf.length ? marketTf : def.marketTimeframes,
+    indicators,
+  };
+}
+
+export function stringifyStrategyExtras(extras: StrategyExtrasV1): string {
+  return JSON.stringify(extras);
+}
+
+/** 与 OKX WS / TradingView `interval` 比较用（统一 `D` ≈ `1D`）。 */
+export function canonTradingViewInterval(tv: unknown): string {
+  const raw = String(tv ?? "").trim();
+  if (!raw) return "";
+  const u = raw.toUpperCase();
+  if (u === "D" || u === "1D") return "1D";
+  if (/^[0-9]+$/.test(raw)) return raw;
+  return raw;
+}

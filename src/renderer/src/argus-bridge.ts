@@ -1,14 +1,15 @@
 /** Web 模式：HTTP RPC + WebSocket，对齐 Electron preload 的 `window.argus` API */
+/* eslint-disable @typescript-eslint/no-explicit-any -- 各通道 payload 形状不同，由订阅方（renderer）自行解析 */
 
 export type ArgusBridge = {
-  onMarketBarClose: (callback: (payload: unknown) => void) => void;
-  onChartCaptureRequest: (callback: (payload: unknown) => void) => void;
+  onMarketBarClose: (callback: (payload: any) => void) => void;
+  onChartCaptureRequest: (callback: (payload: any) => void) => void;
   submitChartCaptureResult: (result: unknown) => void;
-  onMarketStatus: (callback: (payload: unknown) => void) => void;
-  onLlmStreamDelta: (callback: (payload: unknown) => void) => void;
-  onLlmStreamEnd: (callback: (payload: unknown) => void) => void;
-  onLlmStreamError: (callback: (payload: unknown) => void) => void;
-  onOkxSwapStatus: (callback: (payload: unknown) => void) => void;
+  onMarketStatus: (callback: (payload: any) => void) => void;
+  onLlmStreamDelta: (callback: (payload: any) => void) => void;
+  onLlmStreamEnd: (callback: (payload: any) => void) => void;
+  onLlmStreamError: (callback: (payload: any) => void) => void;
+  onOkxSwapStatus: (callback: (payload: any) => void) => void;
   setMarketContext: (tvSymbol: string) => Promise<unknown>;
   requestAnalysis: (payload: unknown) => Promise<unknown>;
   getConfig: () => Promise<unknown>;

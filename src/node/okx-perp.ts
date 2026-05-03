@@ -1,4 +1,3 @@
-// @ts-nocheck — 自 JS 迁移：动态 REST/SDK 载荷形状复杂，后续再收紧类型。
 /**
  * OKX USDT 永续（SWAP）REST：Agent 工具与快照，仅处理 OKX: 前缀品种。
  * 开仓张数：保证金 = 可用 USDT × margin_fraction，名义 ≈ 保证金 × 杠杆；fraction / 杠杆 / 逐仓|全仓
@@ -7,6 +6,17 @@
 import crypto from "node:crypto";
 import https from "node:https";
 import { inferFeed } from "./market.js";
+
+/** OKX REST JSON 行/对象的宽松形状（字段逐个在校验中使用）。 */
+type OkxApiRow = Record<string, unknown>;
+
+/** 从持仓接口提炼的数字维度（含逐仓/全仓模式，可能缺失）。 */
+type SwapPositionDetail = {
+  posNum: number;
+  absPos: number;
+  posSide: string;
+  mgnMode?: string;
+};
 
 const OKX_REST = "https://www.okx.com";
 const DEFAULT_OKX_SWAP_LEVERAGE = 10;
@@ -121,7 +131,7 @@ function createOkxClient(opts) {
 
     return new Promise((resolve, reject) => {
       const req = https.request(reqOpts, (res) => {
-        const chunks = [];
+        const chunks: Buffer[] = [];
         res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
           const raw = Buffer.concat(chunks).toString("utf8");
@@ -159,7 +169,7 @@ function publicGet(pathWithQuery) {
         headers: { "Content-Type": "application/json" },
       },
       (res) => {
-        const chunks = [];
+        const chunks: Buffer[] = [];
         res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
           try {
@@ -219,7 +229,7 @@ async function fetchRecentCandlesForTv(tvSymbol, intervalTv, limit = 30) {
   }
   try {
     const q = new URLSearchParams({ instId, bar, limit: String(lim) });
-    const j = await publicGet(`/api/v5/market/candles?${q}`);
+    const j = (await publicGet(`/api/v5/market/candles?${q}`)) as OkxApiRow;
     const data = Array.isArray(j.data) ? j.data : [];
     const rows = data
       .map((row) => {
@@ -237,7 +247,9 @@ async function fetchRecentCandlesForTv(tvSymbol, intervalTv, limit = 30) {
           turnover: row[7] != null && row[7] !== "" ? String(row[7]) : null,
         };
       })
-      .filter(Boolean);
+      .filter(
+        (x): x is NonNullable<typeof x> => x != null,
+      );
     rows.sort((a, b) => a.ts - b.ts);
     return { ok: true, rows, instId, bar };
   } catch (e) {
@@ -250,26 +262,26 @@ async function fetchRecentCandlesForTv(tvSymbol, intervalTv, limit = 30) {
  * @param {string} instId
  */
 async function fetchSwapInstrument(instId) {
-  const j = await publicGet(`/api/v5/public/instruments?instType=SWAP&instId=${encodeURIComponent(instId)}`);
-  const row = j.data?.[0];
+  const j = (await publicGet(`/api/v5/public/instruments?instType=SWAP&instId=${encodeURIComponent(instId)}`)) as OkxApiRow;
+  const row = j.data?.[0] as OkxApiRow | undefined;
   if (!row) throw new Error(`未找到 SWAP 合约 ${instId}`);
-  const ctVal = parseFloat(row.ctVal);
-  const lotSz = parseFloat(row.lotSz);
-  const minSz = parseFloat(row.minSz);
+  const ctVal = parseFloat(String(row.ctVal ?? ""));
+  const lotSz = parseFloat(String(row.lotSz ?? ""));
+  const minSz = parseFloat(String(row.minSz ?? ""));
   if (!Number.isFinite(ctVal) || ctVal <= 0) throw new Error(`${instId} ctVal 无效`);
   if (!Number.isFinite(lotSz) || lotSz <= 0) throw new Error(`${instId} lotSz 无效`);
-  const tickSz = parseFloat(row.tickSz);
+  const tickSz = parseFloat(String(row.tickSz ?? ""));
   if (!Number.isFinite(tickSz) || tickSz <= 0) throw new Error(`${instId} tickSz 无效`);
-  return { instId: row.instId, ctVal, lotSz, minSz, tickSz };
+  return { instId: String(row.instId ?? instId), ctVal, lotSz, minSz, tickSz };
 }
 
 /**
  * @param {string} instId
  */
 async function fetchTickerLast(instId) {
-  const j = await publicGet(`/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`);
-  const row = j.data?.[0];
-  const px = parseFloat(row?.last || row?.markPx || row?.idxPx || "");
+  const j = (await publicGet(`/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`)) as OkxApiRow;
+  const row = j.data?.[0] as OkxApiRow | undefined;
+  const px = parseFloat(String(row?.last ?? row?.markPx ?? row?.idxPx ?? ""));
   if (!Number.isFinite(px) || px <= 0) throw new Error(`${instId} 无有效行情价`);
   return px;
 }
@@ -279,8 +291,8 @@ async function fetchTickerLast(instId) {
  */
 async function fetchAccountPosMode(client) {
   try {
-    const j = await client.request("GET", "/api/v5/account/config", "");
-    const mode = j.data?.[0]?.posMode;
+    const j = (await client.request("GET", "/api/v5/account/config", "")) as OkxApiRow;
+    const mode = (j.data?.[0] as OkxApiRow | undefined)?.posMode;
     if (mode === "long_short_mode") return "hedge";
     if (mode === "net_mode") return "net";
   } catch {
@@ -318,19 +330,21 @@ async function fetchUsdtAvailEq(client) {
  * }>}
  */
 async function fetchUsdtAccountMetrics(client) {
-  const j = await client.request("GET", "/api/v5/account/balance?ccy=USDT", "");
-  const top = j.data?.[0];
+  const j = (await client.request("GET", "/api/v5/account/balance?ccy=USDT", "")) as OkxApiRow;
+  const top = j.data?.[0] as OkxApiRow | undefined;
   if (!top || typeof top !== "object") {
     throw new Error("OKX balance 无数据");
   }
-  const adjEq = parseFloat(top.adjEq ?? "");
-  const imr = parseFloat(top.imr ?? "");
-  const mmr = parseFloat(top.mmr ?? "");
-  const detail = Array.isArray(top.details) ? top.details.find((d) => d.ccy === "USDT") : null;
-  const usdtAvailEq = detail ? parseFloat(detail.availEq ?? detail.availBal ?? "") : NaN;
-  const usdtEq = detail ? parseFloat(detail.eq ?? "") : NaN;
-  const usdtUpl = detail ? parseFloat(detail.upl ?? "") : NaN;
-  const usdtFrozenBal = detail ? parseFloat(detail.frozenBal ?? "") : NaN;
+  const adjEq = parseFloat(String(top.adjEq ?? ""));
+  const imr = parseFloat(String(top.imr ?? ""));
+  const mmr = parseFloat(String(top.mmr ?? ""));
+  const detail = Array.isArray(top.details)
+    ? (top.details as OkxApiRow[]).find((d) => d.ccy === "USDT")
+    : null;
+  const usdtAvailEq = detail ? parseFloat(String(detail.availEq ?? detail.availBal ?? "")) : NaN;
+  const usdtEq = detail ? parseFloat(String(detail.eq ?? "")) : NaN;
+  const usdtUpl = detail ? parseFloat(String(detail.upl ?? "")) : NaN;
+  const usdtFrozenBal = detail ? parseFloat(String(detail.frozenBal ?? "")) : NaN;
   return {
     adjEq: Number.isFinite(adjEq) ? adjEq : null,
     usdtAvailEq: Number.isFinite(usdtAvailEq) ? usdtAvailEq : null,
@@ -347,9 +361,9 @@ async function fetchUsdtAccountMetrics(client) {
  * @param {ReturnType<createOkxClient>} client
  */
 async function fetchOpenSwapPositionsAll(client) {
-  const j = await client.request("GET", "/api/v5/account/positions?instType=SWAP", "");
-  const rows = Array.isArray(j.data) ? j.data : [];
-  const out = [];
+  const j = (await client.request("GET", "/api/v5/account/positions?instType=SWAP", "")) as OkxApiRow;
+  const rows = Array.isArray(j.data) ? (j.data as OkxApiRow[]) : [];
+  const out: NonNullable<ReturnType<typeof serializeSwapPositionRow>>[] = [];
   for (const r of rows) {
     if (swapPositionRowAbsContracts(r) <= 0) continue;
     const ser = serializeSwapPositionRow(r);
@@ -362,9 +376,9 @@ async function fetchOpenSwapPositionsAll(client) {
  * 持仓接口同时返回 pos / availPos（见 OKX GET /api/v5/account/positions 响应字段说明）。
  * @param {object} r
  */
-function swapPositionRowAbsContracts(r) {
-  const p = parseFloat(r.pos);
-  const a = parseFloat(r.availPos);
+function swapPositionRowAbsContracts(r: OkxApiRow) {
+  const p = parseFloat(String(r.pos ?? ""));
+  const a = parseFloat(String(r.availPos ?? ""));
   const ap = Number.isFinite(Math.abs(p)) ? Math.abs(p) : 0;
   const aa = Number.isFinite(Math.abs(a)) ? Math.abs(a) : 0;
   return Math.max(ap, aa);
@@ -373,10 +387,10 @@ function swapPositionRowAbsContracts(r) {
 /**
  * @param {object} r
  */
-function effectiveSwapPosNum(r) {
-  const p = parseFloat(r.pos);
+function effectiveSwapPosNum(r: OkxApiRow) {
+  const p = parseFloat(String(r.pos ?? ""));
   if (Number.isFinite(p) && p !== 0) return p;
-  const a = parseFloat(r.availPos);
+  const a = parseFloat(String(r.availPos ?? ""));
   if (!Number.isFinite(a) || a === 0) return 0;
   const ps = String(r.posSide || "net");
   if (ps === "short") return -Math.abs(a);
@@ -387,8 +401,8 @@ function effectiveSwapPosNum(r) {
  * @param {object[]} rows
  * @returns {{ detail: { posNum: number, absPos: number, posSide: string }, row: object | null }}
  */
-function pickBestSwapPositionRowData(rows) {
-  let row = null;
+function pickBestSwapPositionRowData(rows: OkxApiRow[]) {
+  let row: OkxApiRow | null = null;
   let bestAbs = 0;
   for (const r of rows) {
     const absPos = swapPositionRowAbsContracts(r);
@@ -417,10 +431,9 @@ function pickBestSwapPositionRowData(rows) {
  * @param {object} row
  * @returns {object | null}
  */
-function serializeSwapPositionRow(row) {
+function serializeSwapPositionRow(row: OkxApiRow) {
   if (!row || typeof row !== "object") return null;
-  /** @param {string} k */
-  const pick = (k) => {
+  const pick = (k: string) => {
     const v = row[k];
     if (v == null) return undefined;
     if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
@@ -450,15 +463,15 @@ function serializeSwapPositionRow(row) {
  * @param {string} instId
  */
 async function fetchSwapPositionRows(client, instId) {
-  const j = await client.request(
+  const j = (await client.request(
     "GET",
     `/api/v5/account/positions?instType=SWAP&instId=${encodeURIComponent(instId)}`,
     "",
-  );
-  let rows = Array.isArray(j.data) ? j.data : [];
+  )) as OkxApiRow;
+  let rows = Array.isArray(j.data) ? (j.data as OkxApiRow[]) : [];
   if (!rows.length) {
-    const jAll = await client.request("GET", "/api/v5/account/positions?instType=SWAP", "");
-    rows = (Array.isArray(jAll.data) ? jAll.data : []).filter((r) => r.instId === instId);
+    const jAll = (await client.request("GET", "/api/v5/account/positions?instType=SWAP", "")) as OkxApiRow;
+    rows = (Array.isArray(jAll.data) ? (jAll.data as OkxApiRow[]) : []).filter((r) => r.instId === instId);
   }
   return rows;
 }
@@ -516,12 +529,13 @@ async function getOkxSwapPositionSnapshot(cfg, tvSymbol) {
  * @param {string} ordId
  */
 async function fetchSwapOrderRow(client, instId, ordId) {
-  const j = await client.request(
+  const j = (await client.request(
     "GET",
     `/api/v5/trade/order?instId=${encodeURIComponent(instId)}&ordId=${encodeURIComponent(ordId)}`,
     "",
-  );
-  return j.data?.[0] ?? null;
+  )) as OkxApiRow;
+  const row = j.data?.[0];
+  return (typeof row === "object" && row ? (row as OkxApiRow) : null) ?? null;
 }
 
 /**
@@ -532,7 +546,7 @@ async function fetchSwapOrderRow(client, instId, ordId) {
  */
 async function waitSwapOrderFilled(client, instId, ordId) {
   const terminalBad = new Set(["canceled", "mmp_canceled"]);
-  let last = null;
+  let last: OkxApiRow | null = null;
   const maxTry = 45;
   const stepMs = 400;
   for (let i = 0; i < maxTry; i++) {
@@ -541,7 +555,7 @@ async function waitSwapOrderFilled(client, instId, ordId) {
       throw new Error(`OKX GET /trade/order 无数据 ordId=${ordId}`);
     }
     const st = String(last.state || "");
-    const acc = parseFloat(last.accFillSz || "0");
+    const acc = parseFloat(String(last.accFillSz ?? "0"));
     if (st === "filled" || (acc > 0 && (st === "partially_filled" || st === "filled"))) {
       return last;
     }
@@ -563,8 +577,12 @@ async function waitSwapOrderFilled(client, instId, ordId) {
  * @param {string} instId
  * @param {object[] | null} [cachedRows] 若已拉取过 {@link fetchSwapPositionRows} 可传入以避免重复请求
  */
-async function fetchSwapPositionDetail(client, instId, cachedRows = null) {
-  const rows = Array.isArray(cachedRows) ? cachedRows : await fetchSwapPositionRows(client, instId);
+async function fetchSwapPositionDetail(
+  client,
+  instId,
+  cachedRows: OkxApiRow[] | null = null,
+): Promise<SwapPositionDetail> {
+  const rows = Array.isArray(cachedRows) ? (cachedRows as OkxApiRow[]) : await fetchSwapPositionRows(client, instId);
   const { detail, row } = pickBestSwapPositionRowData(rows);
   if (!row || row.mgnMode == null) return detail;
   const raw = String(row.mgnMode).toLowerCase();
@@ -647,7 +665,7 @@ function resolveCloseParams(posMode, detail) {
  * @param {boolean} wantLong
  * @returns {{ ok: true } | { ok: false, message: string }}
  */
-function validateAgentOpenAgainstPositions(rows, posMode, wantLong) {
+function validateAgentOpenAgainstPositions(rows: OkxApiRow[], posMode, wantLong) {
   const list = Array.isArray(rows) ? rows : [];
   if (!list.length) return { ok: true };
   if (posMode === "hedge") {
@@ -723,7 +741,7 @@ async function setLeverageSafe(client, p) {
  */
 async function placeMarket(client, p) {
   /** 永续：双向持仓须 posSide=long|short；单向(net) 须省略 posSide，传 "net" 会报 51000 */
-  const bodyObj = {
+  const bodyObj: Record<string, unknown> = {
     instId: p.instId,
     tdMode: p.tdMode,
     side: p.side,
@@ -755,7 +773,18 @@ function isOkx51000PosSide(err) {
  * @param {{ instId: string, tdMode: string, side: string, sz: string, reduceOnly: boolean }} base
  * @param {Array<"long"|"short"|undefined>} attempts
  */
-async function placeSwapMarketPosSideFallback(client, base, attempts) {
+async function placeSwapMarketPosSideFallback(
+  client,
+  base: {
+    instId: string;
+    tdMode: string;
+    side: string;
+    sz: string;
+    reduceOnly: boolean;
+    attachAlgoOrds?: unknown[];
+  },
+  attempts,
+) {
   let last;
   for (let i = 0; i < attempts.length; i++) {
     const ps = attempts[i];
@@ -786,7 +815,7 @@ async function placeSwapMarketPosSideFallback(client, base, attempts) {
  * @param {string} p.clOrdId
  */
 async function placeLimit(client, p) {
-  const bodyObj = {
+  const bodyObj: Record<string, unknown> = {
     instId: p.instId,
     tdMode: p.tdMode,
     side: p.side,
@@ -812,7 +841,19 @@ async function placeLimit(client, p) {
  * @param {string} px
  * @param {Array<"long"|"short"|undefined>} attempts
  */
-async function placeSwapLimitPosSideFallback(client, base, px, attempts) {
+async function placeSwapLimitPosSideFallback(
+  client,
+  base: {
+    instId: string;
+    tdMode: string;
+    side: string;
+    sz: string;
+    reduceOnly: boolean;
+    attachAlgoOrds?: unknown[];
+  },
+  px,
+  attempts,
+) {
   let last;
   for (let i = 0; i < attempts.length; i++) {
     const ps = attempts[i];
@@ -983,8 +1024,10 @@ async function smokeSwapOpenLong(opts) {
 
   const openBody = await placeSwapMarketPosSideFallback(client, openBase, attempts);
 
-  const openOrdId = openBody.data?.[0]?.ordId ?? "";
-  const openClOrdId = openBody.data?.[0]?.clOrdId ?? "";
+  const openOb = openBody as OkxApiRow;
+  const openD0 = Array.isArray(openOb.data) ? (openOb.data[0] as OkxApiRow | undefined) : undefined;
+  const openOrdId = openD0?.ordId != null ? String(openD0.ordId) : "";
+  const openClOrdId = openD0?.clOrdId != null ? String(openD0.clOrdId) : "";
   if (!openOrdId) {
     throw new Error("OKX 下单未返回 ordId，无法用 GET /trade/order 校验是否成交（请查响应 data[0]）");
   }
@@ -996,7 +1039,8 @@ async function smokeSwapOpenLong(opts) {
     openSz,
     openOrdId,
     openClOrdId,
-    accFillSz: filledOpen.accFillSz != null ? String(filledOpen.accFillSz).trim() : "",
+    accFillSz:
+      filledOpen.accFillSz != null ? String(filledOpen.accFillSz as string | number).trim() : "",
     pxType: "market",
     simulated: !!simulated,
     seeOrdersOnPhoneHint: simulated
@@ -1046,7 +1090,7 @@ async function smokeSwapClosePosition(opts) {
 
   const posMode = await fetchAccountPosMode(client);
 
-  let detail;
+  let detail: SwapPositionDetail;
   try {
     detail = await fetchSwapPositionDetail(client, instId);
   } catch (e) {
@@ -1097,8 +1141,10 @@ async function smokeSwapClosePosition(opts) {
     closeBody = await placeSwapLimitPosSideFallback(client, closeBase, pxStr, attemptsClose);
   }
 
-  const closeOrdId = closeBody.data?.[0]?.ordId ?? "";
-  const closeClOrdId = closeBody.data?.[0]?.clOrdId ?? "";
+  const closeOb = closeBody as OkxApiRow;
+  const closeD0 = Array.isArray(closeOb.data) ? (closeOb.data[0] as OkxApiRow | undefined) : undefined;
+  const closeOrdId = closeD0?.ordId != null ? String(closeD0.ordId) : "";
+  const closeClOrdId = closeD0?.clOrdId != null ? String(closeD0.clOrdId) : "";
 
   if (closeOrdId) {
     await waitSwapOrderFilled(client, instId, closeOrdId);
@@ -1276,7 +1322,7 @@ async function cancelSwapOrder(client, instId, ordId) {
  * @param {{ instId: string, ordId: string, newPx?: string | number, newSz?: string | number }} p
  */
 async function amendSwapOrder(client, p) {
-  const bodyObj = { instId: p.instId, ordId: String(p.ordId) };
+  const bodyObj: Record<string, unknown> = { instId: p.instId, ordId: String(p.ordId) };
   if (p.newPx != null && String(p.newPx).trim() !== "") bodyObj.newPx = String(p.newPx);
   if (p.newSz != null && String(p.newSz).trim() !== "") bodyObj.newSz = String(p.newSz);
   const json = await client.request("POST", "/api/v5/trade/amend-order", JSON.stringify(bodyObj));
@@ -1304,7 +1350,7 @@ async function amendSwapOrder(client, p) {
  * }} p tpSlTriggerPxType：未单独指定 newTp/newSl 的 PxType 时，对本次涉及的止盈/止损腿共用触发价基准
  */
 async function amendSwapAlgoOrder(client, p) {
-  const bodyObj = { instId: p.instId };
+  const bodyObj: Record<string, unknown> = { instId: p.instId };
   if (p.algoId != null && String(p.algoId).trim() !== "") bodyObj.algoId = String(p.algoId);
   if (p.algoClOrdId != null && String(p.algoClOrdId).trim() !== "") bodyObj.algoClOrdId = String(p.algoClOrdId);
   if (!bodyObj.algoId && !bodyObj.algoClOrdId) {
@@ -1421,12 +1467,20 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol, _interval = "") {
     const position = await fetchSwapPositionSnapshot(client, instId);
     const { pending_orders, pending_algo_orders } = await fetchSwapPendingOrderSummaries(client, instId);
 
-    /** @type {number | null} */
-    let usdt_avail_eq = null;
-    /** @type {{ ct_val: number, lot_sz: number, min_sz: number, tick_sz: number, last_px: number } | null} */
-    let contract_sizing = null;
-    /** @type {{ margin_fraction: number, leverage: number, estimated_contracts: number, meets_min_sz: boolean }[] | null} */
-    let sizing_examples = null;
+    let usdt_avail_eq: number | null = null;
+    let contract_sizing: {
+      ct_val: number;
+      lot_sz: number;
+      min_sz: number;
+      tick_sz: number;
+      last_px: number;
+    } | null = null;
+    let sizing_examples: Array<{
+      margin_fraction: number;
+      leverage: number;
+      estimated_contracts: number;
+      meets_min_sz: boolean;
+    }> | null = null;
     let sizing_note =
       "开仓张数由本机按 OKX 规则计算：保证金≈usdt_avail_eq×margin_fraction，名义≈保证金×leverage，张数=floor_step(名义/(ct_val×last_px), lot_sz)，且须≥min_sz；下表为按当前 last_px 的参考值，实际以下单时为准。";
 
@@ -1524,7 +1578,7 @@ function buildAttachAlgoOrdsForAgentOpen(o) {
     }
   }
 
-  const algo = {};
+  const algo: Record<string, string> = {};
   if (hasTp) {
     algo.tpTriggerPx = formatOkxPx(tpRaw, inst.tickSz);
     algo.tpOrdPx = "-1";
@@ -1622,7 +1676,14 @@ async function executeAgentPerpOpen(cfg, args) {
   }
 
   const tradeSide = isLong ? "buy" : "sell";
-  const openBase = {
+  const openBase: {
+    instId: string;
+    tdMode: string;
+    side: string;
+    sz: string;
+    reduceOnly: boolean;
+    attachAlgoOrds?: unknown[];
+  } = {
     instId,
     tdMode,
     side: tradeSide,
@@ -1660,8 +1721,10 @@ async function executeAgentPerpOpen(cfg, args) {
     ord = await placeSwapMarketPosSideFallback(client, openBase, attempts);
   }
 
-  const ordId = ord.data?.[0]?.ordId ?? "";
-  let filled = null;
+  const ordData = (ord as OkxApiRow).data;
+  const ordRow0 = Array.isArray(ordData) ? (ordData[0] as OkxApiRow | undefined) : undefined;
+  const ordId = ordRow0?.ordId != null ? String(ordRow0.ordId) : "";
+  let filled: OkxApiRow | null = null;
   if (orderType === "market" && ordId) {
     try {
       filled = await waitSwapOrderFilled(client, instId, ordId);
@@ -1800,7 +1863,9 @@ async function executeAgentPerpClose(cfg, args) {
     closeBody = await placeSwapMarketPosSideFallback(client, closeBase, attemptsClose);
   }
 
-  const ordId = closeBody.data?.[0]?.ordId ?? "";
+  const closeData = (closeBody as OkxApiRow).data;
+  const closeRow0 = Array.isArray(closeData) ? (closeData[0] as OkxApiRow | undefined) : undefined;
+  const ordId = closeRow0?.ordId != null ? String(closeRow0.ordId) : "";
   if (ordId && orderType !== "limit") {
     try {
       await waitSwapOrderFilled(client, instId, ordId);
@@ -1862,7 +1927,10 @@ function swapPositionHistoryEffectiveTimeMs(row) {
  * @param {{ request: Function }} client {@link createOkxClient}
  * @param {{ beginMs?: number | null, tvSymbol?: string | null, maxPages?: number }} [opts]
  */
-async function aggregateSwapClosePositionStats(client, opts = {}) {
+async function aggregateSwapClosePositionStats(
+  client,
+  opts: { beginMs?: number | null; tvSymbol?: string | null; maxPages?: number } = {},
+) {
   const instId = tvSymbolToSwapInstId(opts?.tvSymbol);
   if (!instId) {
     return {
@@ -1894,27 +1962,28 @@ async function aggregateSwapClosePositionStats(client, opts = {}) {
   let pagesFetched = 0;
   let capped = false;
   /** @type {number | null} */
-  let endMs = null;
+  let endMs: number | null = null;
 
   for (let page = 0; page < maxPages; page++) {
     const q = new URLSearchParams({ instType: "SWAP", instId, limit: "100" });
     if (beginMs != null) q.set("begin", String(beginMs));
     if (endMs != null && Number.isFinite(endMs) && endMs > 0) q.set("end", String(endMs));
 
-    const json = await client.request("GET", `/api/v5/account/positions-history?${q.toString()}`, "");
-    const rows = Array.isArray(json?.data) ? json.data : [];
+    const json = (await client.request("GET", `/api/v5/account/positions-history?${q.toString()}`, "")) as OkxApiRow;
+    const rows = Array.isArray(json.data) ? (json.data as OkxApiRow[]) : [];
     pagesFetched += 1;
 
     if (rows.length === 0) break;
 
     let oldestMs = Number.POSITIVE_INFINITY;
     for (const row of rows) {
-      if (!row || typeof row !== "object") continue;
-      if (row.instId != null && String(row.instId) !== instId) continue;
-      const effectiveMs = swapPositionHistoryEffectiveTimeMs(row);
+      const r = row as OkxApiRow;
+      if (!r || typeof r !== "object") continue;
+      if (r.instId != null && String(r.instId) !== instId) continue;
+      const effectiveMs = swapPositionHistoryEffectiveTimeMs(r);
       if (Number.isFinite(effectiveMs)) oldestMs = Math.min(oldestMs, effectiveMs);
       if (beginMs != null && Number.isFinite(effectiveMs) && effectiveMs < beginMs) continue;
-      const pnl = parseSwapPositionHistoryRealizedPnl(row);
+      const pnl = parseSwapPositionHistoryRealizedPnl(r);
       if (pnl == null) continue;
       realizedPnlSum += pnl;
       if (pnl > 0) wins += 1;
@@ -1989,7 +2058,7 @@ async function fetchRecentSwapPositionsHistoryForBar(cfg, tvSymbol, maxRows = 10
   try {
     const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
     const q = new URLSearchParams({ instType: "SWAP", instId, limit: String(n) });
-    const json = await client.request("GET", `/api/v5/account/positions-history?${q.toString()}`, "");
+    const json = (await client.request("GET", `/api/v5/account/positions-history?${q.toString()}`, "")) as OkxApiRow;
     if (String(json?.code) !== "0") {
       return { ok: false, message: formatOkxErrorBody(json) };
     }

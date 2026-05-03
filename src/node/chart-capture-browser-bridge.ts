@@ -4,14 +4,34 @@
 import crypto from "node:crypto";
 import { publish } from "./runtime-bus.js";
 
-/** @type {Map<string, { resolve: (v: unknown) => void, reject: (e: Error) => void, timer: NodeJS.Timeout }>} */
-const pending = new Map();
+export type BrowserMultiChart = {
+  interval: string;
+  label: string;
+  mimeType: string;
+  base64: string;
+  dataUrl: string;
+};
+
+export type BrowserChartCaptureOk = {
+  mimeType: string;
+  base64: string;
+  dataUrl: string;
+  charts: BrowserMultiChart[];
+};
+
+type PendingEntry = {
+  resolve: (v: BrowserChartCaptureOk) => void;
+  reject: (e: Error) => void;
+  timer: NodeJS.Timeout;
+};
+
+const pending = new Map<string, PendingEntry>();
 
 /**
  * @param {string} tvSymbol
  * @param {number} [timeoutMs]
  */
-function requestChartCaptureFromBrowser(tvSymbol, timeoutMs = 22000) {
+function requestChartCaptureFromBrowser(tvSymbol: string, timeoutMs = 22000): Promise<BrowserChartCaptureOk> {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -82,7 +102,7 @@ function ingestChartCaptureResult(raw) {
       base64: String(raw.base64 || ""),
       dataUrl: String(raw.dataUrl || ""),
       charts,
-    });
+    } satisfies BrowserChartCaptureOk);
     return;
   }
 

@@ -1,9 +1,12 @@
-// @ts-nocheck — 自 JS 迁移：OpenAI 流式与 reasoning 字段依供应商而异，后续再收紧类型。
 /**
  * OpenAI 兼容 Chat Completions（官方 `openai` Node SDK + 任意兼容端点），供 OKX WS K 线收盘分析共用。
  * 启用条件：在配置中填写 openaiApiKey，或设置环境变量 OPENAI_API_KEY（配置优先）。
  */
 import { OpenAI, APIError, APIUserAbortError } from "openai";
+import type {
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
+} from "openai/resources/chat/completions";
 import { loadSystemPromptsFromDisk } from "./app-config.js";
 
 /** 交易 Agent：`resolveTradingAgentSystemPrompt` 在策略正文后附加；与用户策略库解耦。 */
@@ -61,8 +64,8 @@ function isLlmEnabled(cfg) {
 /**
  * @param {object | null | undefined} cfg loadAppConfig() 结果（须含 systemPromptCrypto，来自库表 prompt_strategies）
  */
-function resolveSystemPrompt(cfg) {
-  const p = cfg || loadSystemPromptsFromDisk();
+function resolveSystemPrompt(cfg?: { systemPromptCrypto?: string } | null) {
+  const p = cfg ?? loadSystemPromptsFromDisk();
   return p.systemPromptCrypto;
 }
 
@@ -84,7 +87,10 @@ function resolveTradingAgentSystemPrompt(cfg) {
  * @param {string} strategyBody
  * @param {ReadonlyArray<string | undefined | null>} fragments
  */
-function composeSystemPrompt(strategyBody, fragments = []) {
+function composeSystemPrompt(
+  strategyBody: string,
+  fragments: ReadonlyArray<string | undefined | null> = [],
+) {
   const base = typeof strategyBody === "string" ? strategyBody.trimEnd() : "";
   const rest = fragments
     .map((x) => (typeof x === "string" ? x.trim() : ""))
@@ -283,7 +289,12 @@ function buildChatCompletionRequestFromMessages(messages, options, stream) {
     "https://api.openai.com/v1";
   const baseURL = baseRaw.replace(/\/+$/, "");
 
-  const body = {
+  const body: Record<string, unknown> & {
+    model: string;
+    temperature: number;
+    stream: boolean;
+    messages: unknown;
+  } = {
     model,
     temperature: 0.3,
     stream: !!stream,
@@ -548,7 +559,10 @@ async function streamOpenAIChat(messages, options, onEvent) {
   const wantReasoning = !!(cfg && cfg.llmReasoningEnabled === true);
 
   try {
-    const stream = await client.chat.completions.create(built.body, { signal });
+    const stream = await client.chat.completions.create(
+      built.body as unknown as ChatCompletionCreateParamsStreaming,
+      { signal },
+    );
     for await (const chunk of stream) {
       const delta = chunk.choices?.[0]?.delta;
       const d =
@@ -597,10 +611,8 @@ async function streamOpenAIChat(messages, options, onEvent) {
   };
 }
 
-/**
- * 非流式（备用）
- */
-async function callOpenAIChat(userText, options = {}) {
+/** 非流式（备用） */
+async function callOpenAIChat(userText: string, options: Record<string, unknown> = {}) {
   const cfg = options.appConfig;
   if (!isLlmEnabled(cfg)) {
     return { ok: false, text: "LLM 未启用。" };
@@ -620,7 +632,10 @@ async function callOpenAIChat(userText, options = {}) {
   });
 
   try {
-    const completion = await client.chat.completions.create(built.body, { signal });
+    const completion = await client.chat.completions.create(
+      built.body as unknown as ChatCompletionCreateParamsNonStreaming,
+      { signal },
+    );
     const rawMsg = completion?.choices?.[0]?.message?.content;
     const text = messageContentToString(rawMsg).trim();
     if (!text) {
@@ -659,7 +674,16 @@ const SUMMARY_LLM_MAX_MS = 60_000;
  * @param {AbortSignal} param1.signal
  * @param {number} param1.maxTokens
  */
-async function runCardSummaryCompletion(messages, { options, client, signal, maxTokens } = {}) {
+async function runCardSummaryCompletion(
+  messages: unknown,
+  opts: {
+    options: Record<string, unknown>;
+    client: OpenAI;
+    signal: AbortSignal;
+    maxTokens: number;
+  },
+) {
+  const { options, client, signal, maxTokens } = opts;
   const built = buildChatCompletionRequestFromMessages(messages, {
     ...options,
     llmReasoningForThisRequest: false,
@@ -667,14 +691,17 @@ async function runCardSummaryCompletion(messages, { options, client, signal, max
   if (built.error) {
     return "";
   }
-  const body = { ...built.body, temperature: 0.15, max_tokens: maxTokens };
+  const body: Record<string, unknown> = { ...built.body, temperature: 0.15, max_tokens: maxTokens };
   if (isOpenRouterBaseUrl(built.baseURL) && "reasoning" in body) {
     delete body.reasoning;
   }
   if (isAliyunCompatibleThinkingBaseUrl(built.baseURL)) {
     body.enable_thinking = false;
   }
-  const completion = await client.chat.completions.create(/** @type {any} */ (body), { signal });
+  const completion = await client.chat.completions.create(
+    body as unknown as ChatCompletionCreateParamsNonStreaming,
+    { signal },
+  );
   const rawMsg = completion?.choices?.[0]?.message?.content;
   return messageContentToString(rawMsg).trim();
 }
@@ -694,7 +721,7 @@ function normalizeOneLineCardText(s) {
  */
 function buildCardSummarySourceFromAgentThread(messagesOut) {
   if (!Array.isArray(messagesOut) || messagesOut.length === 0) return "";
-  const chunks = [];
+  const chunks: string[] = [];
   let asstStep = 0;
   for (const m of messagesOut) {
     if (!m || typeof m.role !== "string") continue;
@@ -780,7 +807,11 @@ async function compressCardLineForTightLimit(longLine, options, client, signal) 
  * @param {{ messagesOut?: ReadonlyArray<{ role?: string, content?: unknown, tool_calls?: unknown }> }} [extras] 若提供 `runTradingAgentTurn` 的完整 thread，则摘要基于多步助手+工具摘编，而非仅最后一轮
  * @returns {Promise<{ ok: boolean, text?: string }>}
  */
-async function summarizeAgentAnalysisForCard(assistantFull, options, extras = {}) {
+async function summarizeAgentAnalysisForCard(
+  assistantFull: string,
+  options: Record<string, unknown>,
+  extras: { messagesOut?: ReadonlyArray<Record<string, unknown>> } = {},
+) {
   const cfg = options.appConfig;
   if (!isLlmEnabled(cfg)) {
     return { ok: false };
@@ -1069,7 +1100,7 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
   });
 
   const thread = [...messages];
-  const toolTrace = [];
+  const toolTrace: Array<{ name: string; args: Record<string, unknown>; result: unknown }> = [];
   let reasoningAcc = "";
   const wantReasoning = !!(cfg && cfg.llmReasoningEnabled === true);
 
@@ -1080,7 +1111,7 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
         return { ok: false, text: built.error, toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() };
       }
       const completion = await client.chat.completions.create(
-        { ...built.body, tools, tool_choice: "auto" },
+        { ...built.body, tools, tool_choice: "auto" } as unknown as ChatCompletionCreateParamsNonStreaming,
         { signal },
       );
       const choice = completion?.choices?.[0];

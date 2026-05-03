@@ -1,8 +1,9 @@
-// @ts-nocheck — 与 SQLite 行映射、动态载荷：保持与历史 CJS 脚本同级宽松校验。
 /**
  * 每根 K 线收盘 Agent：`agent_sessions`（会话元数据 + 图）+ `agent_session_messages`（有序 API 消息，便于排查）。
  */
 import { getDatabase } from "./local-db/index.js";
+
+type SqlRow = Record<string, unknown>;
 
 /**
  * 多模态 user 中的 data: 大图不落 messages 表，避免与 chart_png 重复；排查时对照 session 行。
@@ -262,7 +263,7 @@ function listAgentBarTurnsPage(args: Record<string, unknown> = {}) {
   sql += ` ORDER BY captured_at DESC, bar_close_id DESC LIMIT ?`;
   params.push(limit);
 
-  const raw = db.prepare(sql).all(...params);
+  const raw = db.prepare(sql).all(...params) as SqlRow[];
   const rows = raw.map((r) => {
     let toolTrace: unknown[] | null = null;
     if (typeof r.tool_trace_json === "string" && r.tool_trace_json.trim()) {
@@ -315,11 +316,18 @@ function getAgentBarTurnChart(barCloseId) {
   if (!id) return null;
   const row = getDatabase()
     .prepare(`SELECT chart_mime, chart_png FROM agent_sessions WHERE bar_close_id = ?`)
-    .get(id);
+    .get(id) as { chart_png?: unknown; chart_mime?: string } | undefined;
   if (!row || !row.chart_png) return null;
   const mime = typeof row.chart_mime === "string" && row.chart_mime.trim() ? row.chart_mime : "image/png";
   const buf = row.chart_png;
-  const b64 = Buffer.isBuffer(buf) ? buf.toString("base64") : Buffer.from(buf).toString("base64");
+  let b64: string;
+  if (Buffer.isBuffer(buf)) {
+    b64 = buf.toString("base64");
+  } else if (buf instanceof Uint8Array) {
+    b64 = Buffer.from(buf).toString("base64");
+  } else {
+    b64 = Buffer.from(String(buf)).toString("base64");
+  }
   return { mimeType: mime, base64: b64, dataUrl: `data:${mime};base64,${b64}` };
 }
 
@@ -346,7 +354,10 @@ function getAgentSessionMessages(barCloseId) {
   const db = getDatabase();
   const reasoningRow = db
     .prepare(`SELECT assistant_reasoning_text, assistant_decision FROM agent_sessions WHERE bar_close_id = ?`)
-    .get(id);
+    .get(id) as {
+      assistant_reasoning_text?: unknown;
+      assistant_decision?: unknown;
+    } | undefined;
   let assistantReasoningText: string | null = null;
   let assistantDecision: string | null = null;
   if (
@@ -364,7 +375,7 @@ function getAgentSessionMessages(barCloseId) {
       `SELECT seq, role, content_json, tool_calls_json, tool_call_id, name, assistant_decision
        FROM agent_session_messages WHERE bar_close_id = ? ORDER BY seq ASC`,
     )
-    .all(id);
+    .all(id) as SqlRow[];
   const messages = raw.map((r) => {
     let content: unknown = null;
     if (typeof r.content_json === "string" && r.content_json.length > 0) {
@@ -453,7 +464,7 @@ function listRecentAgentMemories(args: Record<string, unknown> = {}) {
        ORDER BY captured_at DESC, bar_close_id DESC
        LIMIT ?`,
     )
-    .all(tvSymbol, interval, limit);
+    .all(tvSymbol, interval, limit) as SqlRow[];
 
   return rows.map((row) => {
     const toolTrace = safeJsonParse(row.tool_trace_json);

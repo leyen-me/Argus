@@ -1,6 +1,4 @@
 /* global TradingView */
-// @ts-nocheck — 遗留巨型脚本由 JS 迁入；后续可拆模块并逐步收紧类型。
-
 /** TradingView 内置：MAExp = EMA，周期由 length 指定 */
 const DEFAULT_EMA_LENGTH = 20;
 const AGENT_DECISION_INTERVAL = "5";
@@ -72,7 +70,7 @@ function areTradingViewContainersReady() {
   });
 }
 
-function scheduleTradingViewWidget(symbol, interval, options = {}) {
+function scheduleTradingViewWidget(symbol, interval, options: { debounceMs?: number; attempt?: number } = {}) {
   const { debounceMs = 0, attempt = 0 } = options;
   const nextSymbol = symbol || "OKX:BTCUSDT";
   const nextInterval = String(interval || AGENT_DECISION_INTERVAL);
@@ -166,18 +164,19 @@ async function captureTradingViewPng(interval = AGENT_DECISION_INTERVAL) {
   if (typeof widget.imageCanvas !== "function") {
     throw new Error(`图表不支持截图：${interval}`);
   }
-  const canvas = await new Promise((resolve, reject) => {
+  const canvasUnknown = await new Promise((resolve, reject) => {
     widget.ready(() => {
       widget.imageCanvas().then(resolve).catch(reject);
     });
   });
+  const canvas = canvasUnknown as HTMLCanvasElement;
   const dataUrl = canvas.toDataURL("image/png");
   const comma = dataUrl.indexOf(",");
   const base64 = comma === -1 ? "" : dataUrl.slice(comma + 1);
   return { mimeType: "image/png", dataUrl, base64 };
 }
 
-function loadImageElement(dataUrl) {
+function loadImageElement(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
@@ -285,6 +284,16 @@ const FALLBACK_APP_CONFIG = {
   dashboardAgentToolStatsSince: null,
   dashboardStrategyRanges: {},
 };
+
+type RendererAppConfig = typeof FALLBACK_APP_CONFIG;
+
+function asRendererAppConfig(raw: unknown): RendererAppConfig {
+  return raw as RendererAppConfig;
+}
+
+function asOkxSwapPositionSnapshot(raw: unknown): OkxSwapPositionSnapshot {
+  return raw as OkxSwapPositionSnapshot;
+}
 
 /** Agent 决策周期固定为 5 分钟，左侧同时展示 1D / 1H / 15m / 5m */
 let chartInterval = AGENT_DECISION_INTERVAL;
@@ -564,12 +573,12 @@ async function loadNextLlmHistoryPage() {
   llmHistoryLoading = true;
   updateLlmHistorySentinelText("加载中…");
   try {
-    const res = await window.argus.listAgentBarTurnsPage({
+    const res = (await window.argus.listAgentBarTurnsPage({
       tvSymbol,
       interval,
       limit: LLM_HISTORY_PAGE_SIZE,
       cursor: llmHistoryCursor,
-    });
+    })) as { rows: unknown[]; nextCursor: unknown; hasMore: boolean };
 
     const sentinel = document.getElementById("llm-history-load-more");
     if (!sentinel) {
@@ -1245,19 +1254,19 @@ async function openLlmSessionDetailModal(barCloseId) {
   try {
     const rawSession = await window.argus.getAgentSessionMessages(barCloseId);
     /** @type {unknown[]} */
-    let msgs = [];
+    let msgs: unknown[] = [];
     let assistantReasoningText = "";
     if (Array.isArray(rawSession)) {
       msgs = rawSession;
     } else if (rawSession && typeof rawSession === "object") {
-      const rs = /** @type {{ messages?: unknown; assistantReasoningText?: unknown }} */ (rawSession);
+      const rs = rawSession as { messages?: unknown; assistantReasoningText?: unknown };
       msgs = Array.isArray(rs.messages) ? rs.messages : [];
       assistantReasoningText =
         typeof rs.assistantReasoningText === "string" && rs.assistantReasoningText.trim()
           ? rs.assistantReasoningText.trim()
           : "";
     }
-    let chartData = null;
+    let chartData: unknown = null;
     if (typeof window.argus.getAgentBarTurnChart === "function") {
       try {
         chartData = await window.argus.getAgentBarTurnChart(barCloseId);
@@ -1273,7 +1282,11 @@ async function openLlmSessionDetailModal(barCloseId) {
       }
       return;
     }
-    renderSessionMessagesInto(bodyEl, msgs, chartData?.dataUrl || "", assistantReasoningText);
+    const chartUrl =
+      chartData && typeof chartData === "object" && chartData !== null && "dataUrl" in chartData
+        ? String((chartData as { dataUrl?: unknown }).dataUrl ?? "")
+        : "";
+    renderSessionMessagesInto(bodyEl, msgs, chartUrl, assistantReasoningText);
   } catch (e) {
     if (loading) loading.hidden = true;
     const msg = e instanceof Error ? e.message : String(e);
@@ -1930,10 +1943,10 @@ function appendLlmRound(payload) {
   return round.querySelector(".llm-bubble--assistant");
 }
 
-async function loadAppConfig() {
+async function loadAppConfig(): Promise<RendererAppConfig> {
   if (window.argus && typeof window.argus.getConfig === "function") {
     try {
-      return await window.argus.getConfig();
+      return asRendererAppConfig(await window.argus.getConfig());
     } catch {
       /* ignore */
     }
@@ -1941,7 +1954,7 @@ async function loadAppConfig() {
   return FALLBACK_APP_CONFIG;
 }
 
-function applySymbolSelect(config) {
+function applySymbolSelect(config: Pick<RendererAppConfig, "symbols" | "defaultSymbol">) {
   const sel = document.getElementById("symbol-select");
   if (!sel) return;
   sel.replaceChildren();
@@ -2035,7 +2048,7 @@ async function persistChartPreferences(partial) {
     return;
   }
   try {
-    const saved = await window.argus.saveConfig(partial);
+    const saved = asRendererAppConfig(await window.argus.saveConfig(partial));
     chartInterval = saved.interval || chartInterval;
     applyChartIntervalSelect(chartInterval);
     applySymbolSelect(saved);
@@ -2059,7 +2072,7 @@ async function persistPromptStrategyPreference(promptStrategy) {
     return;
   }
   try {
-    const saved = await window.argus.saveConfig({ promptStrategy: next });
+    const saved = asRendererAppConfig(await window.argus.saveConfig({ promptStrategy: next }));
     applyPromptStrategySelect(saved);
     setLlmStatus(next ? `已切换策略：${saved.promptStrategy || next}` : "已清空当前策略选择");
   } catch (err) {
@@ -2306,7 +2319,7 @@ function initConfigCenter() {
           return;
         }
         try {
-          const saved = await window.argus.resetConfig();
+          const saved = asRendererAppConfig(await window.argus.resetConfig());
           fillConfigModalFields(saved);
           applySymbolSelect(saved);
           chartInterval = saved.interval || "5";
@@ -2370,7 +2383,8 @@ function initConfigCenter() {
           return;
         }
         try {
-          const saved = await window.argus.saveConfig({
+          const saved = asRendererAppConfig(
+            await window.argus.saveConfig({
             symbols,
             openaiBaseUrl,
             openaiModel,
@@ -2385,7 +2399,8 @@ function initConfigCenter() {
             okxApiKey,
             okxSecretKey,
             okxPassphrase,
-          });
+            }),
+          );
           applySymbolSelect(saved);
           chartInterval = saved.interval || chartInterval;
           applyChartIntervalSelect(chartInterval);
@@ -2546,7 +2561,7 @@ function initPromptStrategySelect() {
 /**
  * 助手气泡展示用：模型与流式接口常在行首或段间输出 \\n\\n；配合 CSS pre-wrap 会原样显示，看起来像「多出一行」或双倍段距。
  */
-function normalizeAssistantDisplayText(s) {
+function normalizeAssistantDisplayText(s: unknown): string {
   if (s == null || s === "") return "";
   return String(s)
     .replace(/\r\n/g, "\n")
@@ -2556,15 +2571,12 @@ function normalizeAssistantDisplayText(s) {
 
 /**
  * 右侧「状态」徽章用短标签（约 2～4 字），完整句子由元素 title 展示。
- * @param {string} full
- * @returns {string}
  */
-function shortLlmStatusLabel(full) {
+function shortLlmStatusLabel(full: string | null | undefined): string {
   const t = String(full ?? "").trim();
   if (!t) return "就绪";
 
-  /** @type {readonly (readonly [(s: string) => boolean, string])[]} */
-  const rules = [
+  const rules: ReadonlyArray<readonly [(s: string) => boolean, string]> = [
     [(s) => s.includes("LLM 输出中"), "分析中"],
     [(s) => s.includes("收盘（截图异常）"), "截图异常"],
     [(s) => s.includes("收盘 · LLM 已分析"), "已分析"],
@@ -2594,10 +2606,8 @@ function shortLlmStatusLabel(full) {
   return `${t.slice(0, 5)}…`;
 }
 
-/**
- * @param {string} text 完整状态句（主进程或本页逻辑原文）
- */
-function setLlmStatus(text) {
+/** 主进程或本页逻辑写入的完整状态句 */
+function setLlmStatus(text: string | null | undefined): void {
   const el = document.getElementById("llm-status");
   if (!el) return;
   const full = String(text ?? "").trim() || "就绪";
@@ -2721,7 +2731,7 @@ function initChartCaptureBridge() {
       window.argus.submitChartCaptureResult({
         requestId,
         ok: false,
-        error: e.message || String(e),
+        error: e instanceof Error ? e.message || String(e) : String(e),
       });
     }
   });
@@ -2893,10 +2903,7 @@ function bindMarketStatus() {
   });
 }
 
-/**
- * @param {object | null} r `getOkxSwapPosition` 返回
- */
-function formatOkxPositionLine(r) {
+function formatOkxPositionLine(r: OkxSwapPositionSnapshot | null | undefined): string {
   if (!r) return "—";
   if (r.skipped && r.reason === "not_okx_chart") return "";
   if (r.skipped && r.reason === "okx_swap_disabled") {
@@ -2936,7 +2943,7 @@ async function refreshOkxPositionBar() {
   }
   textEl.textContent = "查询中…";
   try {
-    const r = await window.argus.getOkxSwapPosition(sym);
+    const r = asOkxSwapPositionSnapshot(await window.argus.getOkxSwapPosition(sym));
     const posLine = formatOkxPositionLine(r);
     const ordersLine = formatPendingOrdersSummaryLine(r?.pending_orders, r?.pending_algo_orders);
     const line =

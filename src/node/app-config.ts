@@ -1,4 +1,3 @@
-// @ts-nocheck — 自 JS 迁移：normalizeConfig 与冻结种子字面量较宽，后续可提炼 AppConfig 接口。
 import * as localDb from "./local-db/index.js";
 import * as promptStrategiesStore from "./prompt-strategies-store.js";
 
@@ -12,11 +11,43 @@ const DEFAULT_PROMPT_STRATEGY = promptStrategiesStore.DEFAULT_PROMPT_STRATEGY;
 
 const ALLOWED_INTERVAL = new Set(["1", "3", "5", "15", "30", "60", "120", "240", "D", "1D"]);
 
+/** `normalizeConfig` / `loadAppConfig` 的规范化形状（布尔与数字为宽类型，避免字面量收窄导致分支不可达）。 */
+export type AppConfig = {
+  symbols: { label: string; value: string }[];
+  defaultSymbol: string;
+  interval: string;
+  openaiBaseUrl: string;
+  openaiModel: string;
+  openaiApiKey: string;
+  promptStrategy: string;
+  promptStrategies: string[];
+  systemPromptCrypto: string;
+  llmRequestTimeoutMs: number;
+  llmReasoningEnabled: boolean;
+  barCloseAgentAutoEnabled: boolean;
+  tradeNotifyEmailEnabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPass: string;
+  notifyEmailTo: string;
+  okxSwapTradingEnabled: boolean;
+  okxSimulated: boolean;
+  okxApiKey: string;
+  okxSecretKey: string;
+  okxPassphrase: string;
+  dashboardBaselineEquityUsdt: number | null;
+  dashboardAgentToolStatsSince: string | null;
+  dashboardStrategyRanges: Record<string, { baselineEquityUsdt: number | null; statsSince: string | null }>;
+};
+
+type AppSettingsSeed = Omit<AppConfig, "promptStrategies" | "systemPromptCrypto">;
+
 /**
  * 首次安装 /「恢复默认」时使用的持久化字段种子（仅存在于代码）。
- * @type {Readonly<Record<string, unknown>>}
  */
-const APP_SETTINGS_SEED = Object.freeze({
+const APP_SETTINGS_SEED: AppSettingsSeed = Object.freeze({
   symbols: [
     { label: "BTC/USDT", value: "OKX:BTCUSDT" },
     { label: "ETH/USDT", value: "OKX:ETHUSDT" },
@@ -88,10 +119,8 @@ function resolvePromptStrategyId(preferred) {
 
 /**
  * 从本地库 `prompt_strategies` 读取当前策略的系统提示词（每次 `loadAppConfig` / 规范化时重新查询）。
- * @param {string} [strategyId]
- * @returns {{ systemPromptCrypto: string }}
  */
-function loadSystemPromptsFromDisk(strategyId) {
+function loadSystemPromptsFromDisk(strategyId?: string) {
   const id = resolvePromptStrategyId(strategyId);
   return {
     systemPromptCrypto: normalizeSystemPromptField(
@@ -101,13 +130,14 @@ function loadSystemPromptsFromDisk(strategyId) {
   };
 }
 
-function defaultConfigFallback() {
+function defaultConfigFallback(): AppConfig {
   const promptStrategy = resolvePromptStrategyId(
     typeof APP_SETTINGS_SEED.promptStrategy === "string" ? APP_SETTINGS_SEED.promptStrategy : undefined,
   );
   return {
     ...APP_SETTINGS_SEED,
     promptStrategy,
+    promptStrategies: listPromptStrategies(),
     ...loadSystemPromptsFromDisk(promptStrategy),
   };
 }
@@ -187,25 +217,25 @@ function normalizeOpenAiModel(raw) {
   return raw.trim();
 }
 
-function normalizeDashboardStrategyRanges(raw) {
+function normalizeDashboardStrategyRanges(raw: unknown): AppConfig["dashboardStrategyRanges"] {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const out = {};
-  for (const [strategyIdRaw, value] of Object.entries(raw)) {
+  const out: AppConfig["dashboardStrategyRanges"] = {};
+  for (const [strategyIdRaw, value] of Object.entries(raw as Record<string, unknown>)) {
     const strategyId = typeof strategyIdRaw === "string" ? strategyIdRaw.trim() : "";
     if (!strategyId || !value || typeof value !== "object" || Array.isArray(value)) continue;
 
-    let baselineEquityUsdt = null;
+    let baselineEquityUsdt: number | null = null;
     if ("baselineEquityUsdt" in value) {
-      const v = value.baselineEquityUsdt;
+      const v = (value as { baselineEquityUsdt?: unknown }).baselineEquityUsdt;
       if (v !== null && v !== "") {
         const n = Number(v);
         baselineEquityUsdt = Number.isFinite(n) && n >= 0 ? n : null;
       }
     }
 
-    let statsSince = null;
+    let statsSince: string | null = null;
     if ("statsSince" in value) {
-      const v = value.statsSince;
+      const v = (value as { statsSince?: unknown }).statsSince;
       if (typeof v === "string" && v.trim()) {
         const t = Date.parse(v.trim());
         statsSince = Number.isFinite(t) ? v.trim() : null;
@@ -219,10 +249,11 @@ function normalizeDashboardStrategyRanges(raw) {
   return out;
 }
 
-function normalizeConfig(raw) {
+function normalizeConfig(raw: unknown): AppConfig {
   const base = defaultConfigFallback();
   if (!raw || typeof raw !== "object") return base;
-  let symbols = Array.isArray(raw.symbols) ? raw.symbols : base.symbols;
+  const r = raw as Record<string, unknown>;
+  let symbols = Array.isArray(r.symbols) ? r.symbols : base.symbols;
   symbols = symbols
     .filter((s) => s && typeof s.label === "string" && typeof s.value === "string")
     .map((s) => ({
@@ -239,77 +270,77 @@ function normalizeConfig(raw) {
   if (symbols.length === 0) symbols = base.symbols;
 
   let defaultSymbol =
-    typeof raw.defaultSymbol === "string" ? raw.defaultSymbol.trim() : "";
+    typeof r.defaultSymbol === "string" ? r.defaultSymbol.trim() : "";
   if (!symbols.some((s) => s.value === defaultSymbol)) {
     defaultSymbol = symbols[0].value;
   }
 
-  let interval = typeof raw.interval === "string" ? raw.interval.trim() : base.interval;
+  let interval = typeof r.interval === "string" ? r.interval.trim() : base.interval;
   if (!ALLOWED_INTERVAL.has(interval)) interval = base.interval;
 
   const openaiBaseUrl = normalizeOpenAiBaseUrl(
-    typeof raw.openaiBaseUrl === "string" ? raw.openaiBaseUrl : base.openaiBaseUrl,
+    typeof r.openaiBaseUrl === "string" ? r.openaiBaseUrl : base.openaiBaseUrl,
   );
   const openaiModel = normalizeOpenAiModel(
-    typeof raw.openaiModel === "string" ? raw.openaiModel : base.openaiModel,
+    typeof r.openaiModel === "string" ? r.openaiModel : base.openaiModel,
   );
   const openaiApiKey =
-    typeof raw.openaiApiKey === "string" ? raw.openaiApiKey.trim() : base.openaiApiKey;
+    typeof r.openaiApiKey === "string" ? r.openaiApiKey.trim() : base.openaiApiKey;
 
   const promptStrategy = resolvePromptStrategyId(
-    typeof raw.promptStrategy === "string" && raw.promptStrategy.trim()
-      ? raw.promptStrategy.trim()
+    typeof r.promptStrategy === "string" && r.promptStrategy.trim()
+      ? r.promptStrategy.trim()
       : base.promptStrategy,
   );
   const { systemPromptCrypto } = loadSystemPromptsFromDisk(promptStrategy);
 
   let llmRequestTimeoutMs = base.llmRequestTimeoutMs;
-  const tt = Number(raw.llmRequestTimeoutMs);
+  const tt = Number(r.llmRequestTimeoutMs);
   if (Number.isFinite(tt) && tt > 0) llmRequestTimeoutMs = Math.floor(tt);
 
   let llmReasoningEnabled = base.llmReasoningEnabled;
-  if (raw.llmReasoningEnabled === true) llmReasoningEnabled = true;
-  else if (raw.llmReasoningEnabled === false) llmReasoningEnabled = false;
+  if (r.llmReasoningEnabled === true) llmReasoningEnabled = true;
+  else if (r.llmReasoningEnabled === false) llmReasoningEnabled = false;
 
   let barCloseAgentAutoEnabled = base.barCloseAgentAutoEnabled;
-  if (raw.barCloseAgentAutoEnabled === false) barCloseAgentAutoEnabled = false;
-  else if (raw.barCloseAgentAutoEnabled === true) barCloseAgentAutoEnabled = true;
+  if (r.barCloseAgentAutoEnabled === false) barCloseAgentAutoEnabled = false;
+  else if (r.barCloseAgentAutoEnabled === true) barCloseAgentAutoEnabled = true;
 
   let tradeNotifyEmailEnabled = base.tradeNotifyEmailEnabled;
-  if (raw.tradeNotifyEmailEnabled === true) tradeNotifyEmailEnabled = true;
-  else if (raw.tradeNotifyEmailEnabled === false) tradeNotifyEmailEnabled = false;
+  if (r.tradeNotifyEmailEnabled === true) tradeNotifyEmailEnabled = true;
+  else if (r.tradeNotifyEmailEnabled === false) tradeNotifyEmailEnabled = false;
 
   const smtpHost =
-    typeof raw.smtpHost === "string" && raw.smtpHost.trim() ? raw.smtpHost.trim() : base.smtpHost;
+    typeof r.smtpHost === "string" && r.smtpHost.trim() ? r.smtpHost.trim() : base.smtpHost;
   let smtpPort = base.smtpPort;
-  const sp = Number(raw.smtpPort);
+  const sp = Number(r.smtpPort);
   if (Number.isFinite(sp) && sp > 0) smtpPort = Math.floor(sp);
   let smtpSecure = base.smtpSecure;
-  if (raw.smtpSecure === true) smtpSecure = true;
-  else if (raw.smtpSecure === false) smtpSecure = false;
+  if (r.smtpSecure === true) smtpSecure = true;
+  else if (r.smtpSecure === false) smtpSecure = false;
 
-  const smtpUser = typeof raw.smtpUser === "string" ? raw.smtpUser.trim() : base.smtpUser;
-  const smtpPass = typeof raw.smtpPass === "string" ? raw.smtpPass.trim() : base.smtpPass;
+  const smtpUser = typeof r.smtpUser === "string" ? r.smtpUser.trim() : base.smtpUser;
+  const smtpPass = typeof r.smtpPass === "string" ? r.smtpPass.trim() : base.smtpPass;
   const notifyEmailTo =
-    typeof raw.notifyEmailTo === "string" ? raw.notifyEmailTo.trim() : base.notifyEmailTo;
+    typeof r.notifyEmailTo === "string" ? r.notifyEmailTo.trim() : base.notifyEmailTo;
 
   let okxSwapTradingEnabled = base.okxSwapTradingEnabled;
-  if (raw.okxSwapTradingEnabled === true) okxSwapTradingEnabled = true;
-  else if (raw.okxSwapTradingEnabled === false) okxSwapTradingEnabled = false;
+  if (r.okxSwapTradingEnabled === true) okxSwapTradingEnabled = true;
+  else if (r.okxSwapTradingEnabled === false) okxSwapTradingEnabled = false;
 
   let okxSimulated = base.okxSimulated;
-  if (raw.okxSimulated === true) okxSimulated = true;
-  else if (raw.okxSimulated === false) okxSimulated = false;
+  if (r.okxSimulated === true) okxSimulated = true;
+  else if (r.okxSimulated === false) okxSimulated = false;
 
-  const okxApiKey = typeof raw.okxApiKey === "string" ? raw.okxApiKey.trim() : base.okxApiKey;
+  const okxApiKey = typeof r.okxApiKey === "string" ? r.okxApiKey.trim() : base.okxApiKey;
   const okxSecretKey =
-    typeof raw.okxSecretKey === "string" ? raw.okxSecretKey.trim() : base.okxSecretKey;
+    typeof r.okxSecretKey === "string" ? r.okxSecretKey.trim() : base.okxSecretKey;
   const okxPassphrase =
-    typeof raw.okxPassphrase === "string" ? raw.okxPassphrase.trim() : base.okxPassphrase;
+    typeof r.okxPassphrase === "string" ? r.okxPassphrase.trim() : base.okxPassphrase;
 
   let dashboardBaselineEquityUsdt = base.dashboardBaselineEquityUsdt;
-  if ("dashboardBaselineEquityUsdt" in raw) {
-    const v = raw.dashboardBaselineEquityUsdt;
+  if ("dashboardBaselineEquityUsdt" in r) {
+    const v = r.dashboardBaselineEquityUsdt;
     if (v === null || v === "") dashboardBaselineEquityUsdt = null;
     else {
       const n = Number(v);
@@ -318,8 +349,8 @@ function normalizeConfig(raw) {
   }
 
   let dashboardAgentToolStatsSince = base.dashboardAgentToolStatsSince;
-  if ("dashboardAgentToolStatsSince" in raw) {
-    const v = raw.dashboardAgentToolStatsSince;
+  if ("dashboardAgentToolStatsSince" in r) {
+    const v = r.dashboardAgentToolStatsSince;
     if (v === null || v === "") dashboardAgentToolStatsSince = null;
     else if (typeof v === "string" && v.trim()) {
       const t = Date.parse(v.trim());
@@ -329,8 +360,8 @@ function normalizeConfig(raw) {
     }
   }
 
-  const hasExplicitDashboardStrategyRanges = "dashboardStrategyRanges" in raw;
-  const dashboardStrategyRanges = normalizeDashboardStrategyRanges(raw.dashboardStrategyRanges);
+  const hasExplicitDashboardStrategyRanges = "dashboardStrategyRanges" in r;
+  const dashboardStrategyRanges = normalizeDashboardStrategyRanges(r.dashboardStrategyRanges);
   if (
     !hasExplicitDashboardStrategyRanges &&
     !(promptStrategy in dashboardStrategyRanges) &&
@@ -388,8 +419,13 @@ function normalizeConfig(raw) {
 function loadAppConfig() {
   ensurePersistedConfig();
   const rawStr = localDb.kvGet(localDb.KV_NS_APP, localDb.KV_KEY_SETTINGS);
+  if (typeof rawStr !== "string" || !rawStr.trim()) {
+    const repaired = normalizeConfig(defaultConfigFallback());
+    persistLoadedConfig(repaired);
+    return repaired;
+  }
   try {
-    const raw = JSON.parse(rawStr);
+    const raw: unknown = JSON.parse(rawStr);
     return normalizeConfig(raw);
   } catch {
     const repaired = normalizeConfig(defaultConfigFallback());
@@ -403,7 +439,7 @@ function loadAppConfig() {
  * @param {Record<string, unknown>} payload
  * @returns {ReturnType<typeof normalizeConfig>}
  */
-function saveMergedConfigPayload(payload) {
+function saveMergedConfigPayload(payload: Record<string, unknown>) {
   const current = loadAppConfig();
   const merged = { ...current, ...payload };
   const next = normalizeConfig(merged);

@@ -11,6 +11,8 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
     "allowJs": false,
     "baseUrl": ".",
     "paths": {

@@ -1,4 +1,3 @@
-// @ts-nocheck — 策略表行映射保持宽松。
 import * as localDb from "./local-db/index.js";
 
 const DEFAULT_PROMPT_STRATEGY = "default";
@@ -10,7 +9,7 @@ function seedFromDiskIfEmpty() {
   localDb.getDatabase();
 }
 
-function normalizeBody(raw, fallback) {
+function normalizeBody(raw: unknown, fallback: string): string {
   if (typeof raw !== "string") return fallback;
   const t = raw.trim();
   return t.length ? t : fallback;
@@ -24,7 +23,7 @@ function listStrategyIds() {
     .prepare(
       `SELECT id FROM prompt_strategies ORDER BY sort_order ASC, id ASC`,
     )
-    .all();
+    .all() as { id: string }[];
   return rows.map((r) => r.id);
 }
 
@@ -38,7 +37,7 @@ function getStrategyBody(strategyId) {
   const row = localDb
     .getDatabase()
     .prepare(`SELECT body FROM prompt_strategies WHERE id = ?`)
-    .get(id);
+    .get(id) as { body?: string } | undefined;
   if (row && typeof row.body === "string" && row.body.trim()) {
     return row.body.trim();
   }
@@ -70,7 +69,7 @@ function getStrategy(id) {
  * @param {{ id: string, label?: string, body: string }} payload
  * @returns {{ id: string, label: string, body: string, sort_order: number }}
  */
-function saveStrategy(payload) {
+function saveStrategy(payload: { id: string; label?: string; body: string }) {
   seedFromDiskIfEmpty();
   const id = typeof payload?.id === "string" ? payload.id.trim() : "";
   if (!ID_RE.test(id)) {
@@ -88,7 +87,9 @@ function saveStrategy(payload) {
       `UPDATE prompt_strategies SET label = ?, body = ?, updated_at = datetime('now') WHERE id = ?`,
     ).run(label, body, id);
   } else {
-    const maxRow = db.prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM prompt_strategies`).get();
+    const maxRow = db
+      .prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM prompt_strategies`)
+      .get() as { m?: number } | undefined;
     const sort_order = (maxRow?.m ?? -1) + 1;
     db.prepare(
       `INSERT INTO prompt_strategies (id, label, body, sort_order, updated_at)

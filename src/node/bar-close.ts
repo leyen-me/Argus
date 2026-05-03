@@ -1,10 +1,9 @@
-// @ts-nocheck — K 线收盘链路与捕获包形状复杂，与历史 CJS 脚本同级宽松校验。
 /**
  * K 线收盘后：请求渲染进程截取左侧 TradingView，与行情数据组装为统一 payload（供后续多模态 LLM + OKX Agent）。
  */
 import crypto from "node:crypto";
 import { publish } from "./runtime-bus.js";
-import { requestChartCaptureFromBrowser } from "./chart-capture-browser-bridge.js";
+import { requestChartCaptureFromBrowser, type BrowserChartCaptureOk } from "./chart-capture-browser-bridge.js";
 import { loadAppConfig } from "./app-config.js";
 import { conversationKey } from "./llm-context.js";
 import {
@@ -415,7 +414,7 @@ function formatToolCallPreview(toolCalls) {
  * @param {string} tvSymbol
  * @param {number} [timeoutMs]
  */
-async function requestChartCapture(tvSymbol, timeoutMs = 45000) {
+async function requestChartCapture(tvSymbol: string, timeoutMs = 45000): Promise<BrowserChartCaptureOk> {
   return requestChartCaptureFromBrowser(tvSymbol, timeoutMs);
 }
 
@@ -638,7 +637,7 @@ async function emitBarClose(ctx) {
         ? summarizeAgentAnalysisForCard(agentResult.text, streamOpts, {
             messagesOut: agentResult.messagesOut,
           })
-        : Promise.resolve(/** @type {{ ok: boolean, text?: string }} */ ({ ok: false }));
+        : Promise.resolve({ ok: false } as { ok: boolean; text?: string });
     const [sumResult, exchangeAfter] = await Promise.all([
       summaryP,
       getOkxExchangeContextForBar(cfg, ctx.tvSymbol, ctx.interval),

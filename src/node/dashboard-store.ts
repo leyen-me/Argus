@@ -1,5 +1,7 @@
-// @ts-nocheck — SQLite 行映射保持宽松。
 import { getDatabase } from "./local-db/index.js";
+
+type EquitySampleLastRow = { captured_at?: string; equity_usdt?: unknown };
+type EquitySampleRow = { t?: unknown; equity?: unknown };
 
 const MAX_ROWS = 2500;
 const DEDUP_EPS = 1e-6;
@@ -16,7 +18,7 @@ function appendEquitySampleIfNeeded(equityUsdt) {
     .prepare(
       `SELECT equity_usdt, captured_at FROM dashboard_equity_samples ORDER BY id DESC LIMIT 1`,
     )
-    .get();
+    .get() as EquitySampleLastRow | undefined;
   const now = Date.now();
   if (last && typeof last.captured_at === "string") {
     const lastMs = Date.parse(last.captured_at);
@@ -45,7 +47,7 @@ function listRecentEquitySamples(limit = 400) {
        ORDER BY id DESC
        LIMIT ?`,
     )
-    .all(n);
+    .all(n) as EquitySampleRow[];
   return rows
     .map((r) => ({
       t: String(r.t || ""),

@@ -1,4 +1,3 @@
-// @ts-nocheck — 自 JS 迁移：与 okx-perp 补丁对象共用 loosely typed 载荷。
 /**
  * 交易 Agent 工具：仅执行 OKX 永续 REST，无本地模拟仓。
  */
@@ -17,7 +16,12 @@ const TRADING_EXECUTOR_DEFAULT_DEPS = Object.freeze({
   executeAgentPerpClose: okxPerp.executeAgentPerpClose,
 });
 
-function requireOkx(cfg) {
+type OkxRestClient = ReturnType<typeof okxPerp.createOkxClient>;
+type MakeClientResult =
+  | { ok: false; message: string }
+  | { ok: true; client: OkxRestClient; simulated: boolean };
+
+function requireOkx(cfg): { ok: false; message: string } | { ok: true } {
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
     return { ok: false, message: "请在配置中心启用「OKX 永续」并填写 API Key / Secret / Passphrase。" };
   }
@@ -63,7 +67,7 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
     });
   };
 
-  const makeClient = () => {
+  const makeClient = (): MakeClientResult => {
     const gate = requireOkx(cfg);
     if (!gate.ok) return gate;
     const apiKey = cfg.okxApiKey.trim();
@@ -94,7 +98,10 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
           };
           const tpTriggerPx = pickPx(a.take_profit_trigger_price ?? a.tp_trigger_price);
           const slTriggerPx = pickPx(a.stop_loss_trigger_price ?? a.sl_trigger_price);
-          if (!(Number.isFinite(slTriggerPx) && slTriggerPx > 0)) {
+          if (
+            slTriggerPx === undefined ||
+            !(Number.isFinite(slTriggerPx) && slTriggerPx > 0)
+          ) {
             const warnMsg =
               "open_position 必须提供 stop_loss_trigger_price；当前已启用强制止损规则。请先明确失效点，再决定是否下单。";
             sendOkxStatus({ ok: false, message: warnMsg });
@@ -181,7 +188,7 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
         }
         case "cancel_order": {
           const triplet = makeClient();
-          if (!triplet.ok) return { ok: false, message: triplet.message };
+          if (triplet.ok === false) return { ok: false, message: triplet.message };
           const instId = tvSymbolToSwapInstId(tvSymbol);
           if (!instId) return { ok: false, message: "无效品种" };
           await cancelSwapOrder(triplet.client, instId, String(a.order_id));
@@ -190,13 +197,18 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
         }
         case "amend_order": {
           const triplet = makeClient();
-          if (!triplet.ok) return { ok: false, message: triplet.message };
+          if (triplet.ok === false) return { ok: false, message: triplet.message };
           const instId = tvSymbolToSwapInstId(tvSymbol);
           if (!instId) return { ok: false, message: "无效品种" };
           if (a.new_price == null && a.new_size == null) {
             return { ok: false, message: "amend_order 需要提供 new_price 或 new_size" };
           }
-          const patch = { instId, ordId: String(a.order_id) };
+          const patch: {
+            instId: string;
+            ordId: string;
+            newPx?: unknown;
+            newSz?: unknown;
+          } = { instId, ordId: String(a.order_id) };
           if (a.new_price != null) patch.newPx = a.new_price;
           if (a.new_size != null) patch.newSz = a.new_size;
           await amendSwapOrder(triplet.client, patch);
@@ -205,7 +217,7 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
         }
         case "amend_tp_sl": {
           const triplet = makeClient();
-          if (!triplet.ok) return { ok: false, message: triplet.message };
+          if (triplet.ok === false) return { ok: false, message: triplet.message };
           const instId = tvSymbolToSwapInstId(tvSymbol);
           if (!instId) return { ok: false, message: "无效品种" };
           const algoId = a.algo_id != null ? String(a.algo_id).trim() : "";
@@ -241,7 +253,18 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
           if (tpSlTriggerPxType !== "mark" && tpSlTriggerPxType !== "index") {
             tpSlTriggerPxType = "last";
           }
-          const patch = { instId, algoId, tpSlTriggerPxType };
+          const patch: {
+            instId: string;
+            algoId: string;
+            tpSlTriggerPxType: string;
+            newSz?: number;
+            newTpTriggerPx?: number;
+            newSlTriggerPx?: number;
+            newTpOrdPx?: number;
+            newSlOrdPx?: number;
+            newTpTriggerPxType?: string;
+            newSlTriggerPxType?: string;
+          } = { instId, algoId, tpSlTriggerPxType };
           if (newSz !== undefined) patch.newSz = newSz;
           if (newTpTriggerPx !== undefined) patch.newTpTriggerPx = newTpTriggerPx;
           if (newSlTriggerPx !== undefined) patch.newSlTriggerPx = newSlTriggerPx;

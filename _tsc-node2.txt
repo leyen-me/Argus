@@ -1,0 +1,94 @@
+﻿src/node/agent-bar-turns-store.ts(323,75): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{}' is not assignable to parameter of type 'WithImplicitCoercion<string | ArrayLike<number>>'.
+src/node/llm.ts(560,31): error TS2504: Type '(Stream<ChatCompletionChunk> & { _request_id?: string | null | undefined; }) | (ChatCompletion & { _request_id?: string | null | undefined; })' must have a '[Symbol.asyncIterator]()' method that returns an async iterator.
+src/node/llm.ts(632,32): error TS2339: Property 'choices' does not exist on type '(Stream<ChatCompletionChunk> & { _request_id?: string | null | undefined; }) | (ChatCompletion & { _request_id?: string | null | undefined; })'.
+  Property 'choices' does not exist on type 'Stream<ChatCompletionChunk> & { _request_id?: string | null | undefined; }'.
+src/node/llm.ts(694,59): error TS2352: Conversion of type 'Record<string, unknown>' to type 'ChatCompletionCreateParams' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type 'Record<string, unknown>' is missing the following properties from type 'ChatCompletionCreateParamsStreaming': stream, messages, model
+src/node/llm.ts(695,30): error TS2339: Property 'choices' does not exist on type '(Stream<ChatCompletionChunk> & { _request_id?: string | null | undefined; }) | (ChatCompletion & { _request_id?: string | null | undefined; })'.
+  Property 'choices' does not exist on type 'Stream<ChatCompletionChunk> & { _request_id?: string | null | undefined; }'.
+src/node/llm.ts(1107,34): error TS2339: Property 'choices' does not exist on type '(Stream<ChatCompletionChunk> & { _request_id?: string | null | undefined; }) | (ChatCompletion & { _request_id?: string | null | undefined; })'.
+  Property 'choices' does not exist on type 'Stream<ChatCompletionChunk> & { _request_id?: string | null | undefined; }'.
+src/node/okx-perp.ts(124,43): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/node/okx-perp.ts(162,43): error TS2345: Argument of type 'any' is not assignable to parameter of type 'never'.
+src/node/okx-perp.ts(222,32): error TS18046: 'j' is of type 'unknown'.
+src/node/okx-perp.ts(222,42): error TS18046: 'j' is of type 'unknown'.
+src/node/okx-perp.ts(253,15): error TS18046: 'j' is of type 'unknown'.
+src/node/okx-perp.ts(270,15): error TS18046: 'j' is of type 'unknown'.
+src/node/okx-perp.ts(355,23): error TS2345: Argument of type '{ instId: string | number | boolean | undefined; posSide: string | number | boolean | undefined; pos: string | number | boolean | undefined; availPos: string | number | boolean | undefined; ... 10 more ...; ccy: string | ... 2 more ... | undefined; }' is not assignable to parameter of type 'never'.
+src/node/okx-perp.ts(404,30): error TS2339: Property 'posSide' does not exist on type 'never'.
+src/node/okx-perp.ts(542,28): error TS2339: Property 'state' does not exist on type 'never'.
+src/node/okx-perp.ts(543,33): error TS2339: Property 'accFillSz' does not exist on type 'never'.
+src/node/okx-perp.ts(548,31): error TS2339: Property 'cancelSourceReason' does not exist on type 'never'.
+src/node/okx-perp.ts(548,70): error TS2339: Property 'cancelSourceReason' does not exist on type 'never'.
+src/node/okx-perp.ts(550,52): error TS2339: Property 'accFillSz' does not exist on type 'never'.
+src/node/okx-perp.ts(556,68): error TS2339: Property 'state' does not exist on type 'never'.
+src/node/okx-perp.ts(556,93): error TS2339: Property 'accFillSz' does not exist on type 'never'.
+src/node/okx-perp.ts(568,19): error TS2339: Property 'mgnMode' does not exist on type 'never'.
+src/node/okx-perp.ts(569,26): error TS2339: Property 'mgnMode' does not exist on type 'never'.
+src/node/okx-perp.ts(735,13): error TS2339: Property 'posSide' does not exist on type '{ instId: any; tdMode: any; side: any; ordType: string; sz: any; reduceOnly: any; clOrdId: any; }'.
+src/node/okx-perp.ts(738,13): error TS2339: Property 'attachAlgoOrds' does not exist on type '{ instId: any; tdMode: any; side: any; ordType: string; sz: any; reduceOnly: any; clOrdId: any; }'.
+src/node/okx-perp.ts(799,13): error TS2339: Property 'posSide' does not exist on type '{ instId: any; tdMode: any; side: any; ordType: string; sz: any; px: any; reduceOnly: any; clOrdId: any; }'.
+src/node/okx-perp.ts(802,13): error TS2339: Property 'attachAlgoOrds' does not exist on type '{ instId: any; tdMode: any; side: any; ordType: string; sz: any; px: any; reduceOnly: any; clOrdId: any; }'.
+src/node/okx-perp.ts(998,27): error TS2339: Property 'accFillSz' does not exist on type 'never'.
+src/node/okx-perp.ts(998,65): error TS2339: Property 'accFillSz' does not exist on type 'never'.
+src/node/okx-perp.ts(1279,65): error TS2339: Property 'newPx' does not exist on type '{ instId: any; ordId: string; }'.
+src/node/okx-perp.ts(1280,65): error TS2339: Property 'newSz' does not exist on type '{ instId: any; ordId: string; }'.
+src/node/okx-perp.ts(1307,67): error TS2339: Property 'algoId' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1308,77): error TS2339: Property 'algoClOrdId' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1309,16): error TS2339: Property 'algoId' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1309,35): error TS2339: Property 'algoClOrdId' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1312,65): error TS2339: Property 'newSz' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1314,13): error TS2339: Property 'newTpTriggerPx' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1317,13): error TS2339: Property 'newTpOrdPx' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1320,13): error TS2339: Property 'newSlTriggerPx' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1323,13): error TS2339: Property 'newSlOrdPx' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1327,15): error TS2339: Property 'newTpTriggerPx' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1327,49): error TS2339: Property 'newTpOrdPx' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1329,13): error TS2339: Property 'newTpTriggerPxType' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1332,15): error TS2339: Property 'newSlTriggerPx' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1332,49): error TS2339: Property 'newSlOrdPx' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1334,13): error TS2339: Property 'newSlTriggerPxType' does not exist on type '{ instId: any; }'.
+src/node/okx-perp.ts(1438,7): error TS2322: Type 'number' is not assignable to type 'null'.
+src/node/okx-perp.ts(1439,7): error TS2322: Type '{ ct_val: number; lot_sz: number; min_sz: number; tick_sz: number; last_px: number; }' is not assignable to type 'null'.
+src/node/okx-perp.ts(1451,7): error TS2322: Type '{ margin_fraction: number; leverage: number; estimated_contracts: number; meets_min_sz: boolean; }[]' is not assignable to type 'null'.
+src/node/okx-perp.ts(1528,10): error TS2339: Property 'tpTriggerPx' does not exist on type '{}'.
+src/node/okx-perp.ts(1529,10): error TS2339: Property 'tpOrdPx' does not exist on type '{}'.
+src/node/okx-perp.ts(1530,10): error TS2339: Property 'tpTriggerPxType' does not exist on type '{}'.
+src/node/okx-perp.ts(1533,10): error TS2339: Property 'slTriggerPx' does not exist on type '{}'.
+src/node/okx-perp.ts(1534,10): error TS2339: Property 'slOrdPx' does not exist on type '{}'.
+src/node/okx-perp.ts(1535,10): error TS2339: Property 'slTriggerPxType' does not exist on type '{}'.
+src/node/okx-perp.ts(1651,14): error TS2339: Property 'attachAlgoOrds' does not exist on type '{ instId: string; tdMode: string; side: string; sz: string; reduceOnly: boolean; }'.
+src/node/okx-perp.ts(1681,24): error TS2339: Property 'accFillSz' does not exist on type 'never'.
+src/node/okx-perp.ts(1681,58): error TS2339: Property 'accFillSz' does not exist on type 'never'.
+src/node/okx-perp.ts(1774,12): error TS2339: Property 'mgnMode' does not exist on type '{ posNum: number; absPos: number; posSide: string; } | { mgnMode: string; posNum: number; absPos: number; posSide: string; }'.
+  Property 'mgnMode' does not exist on type '{ posNum: number; absPos: number; posSide: string; }'.
+src/node/okx-perp.ts(1776,16): error TS2339: Property 'mgnMode' does not exist on type '{ posNum: number; absPos: number; posSide: string; } | { mgnMode: string; posNum: number; absPos: number; posSide: string; }'.
+  Property 'mgnMode' does not exist on type '{ posNum: number; absPos: number; posSide: string; }'.
+src/node/okx-perp.ts(1865,45): error TS2339: Property 'tvSymbol' does not exist on type '{}'.
+src/node/okx-perp.ts(1880,17): error TS2339: Property 'maxPages' does not exist on type '{}'.
+src/node/okx-perp.ts(1880,63): error TS2339: Property 'maxPages' does not exist on type '{}'.
+src/node/okx-perp.ts(1880,81): error TS2339: Property 'maxPages' does not exist on type '{}'.
+src/node/okx-perp.ts(1881,25): error TS2339: Property 'maxPages' does not exist on type '{}'.
+src/node/okx-perp.ts(1885,10): error TS2339: Property 'beginMs' does not exist on type '{}'.
+src/node/okx-perp.ts(1885,57): error TS2339: Property 'beginMs' does not exist on type '{}'.
+src/node/okx-perp.ts(1885,82): error TS2339: Property 'beginMs' does not exist on type '{}'.
+src/node/okx-perp.ts(1886,32): error TS2339: Property 'beginMs' does not exist on type '{}'.
+src/node/okx-perp.ts(1927,5): error TS2322: Type 'number' is not assignable to type 'null'.
+src/node/okx-perp.ts(1928,37): error TS18047: 'endMs' is possibly 'null'.
+src/node/okx-perp.ts(1992,22): error TS2339: Property 'code' does not exist on type '{}'.
+src/node/okx-perp.ts(1995,38): error TS2339: Property 'data' does not exist on type '{}'.
+src/node/okx-perp.ts(1995,51): error TS2339: Property 'data' does not exist on type '{}'.
+src/node/trading-agent-executor.ts(186,74): error TS2339: Property 'message' does not exist on type '{ ok: boolean; message: string; } | { ok: boolean; message?: undefined; } | { ok: boolean; client: { request: (method: any, requestPath: any, bodyStr?: string) => Promise<unknown>; }; simulated: boolean; }'.
+  Property 'message' does not exist on type '{ ok: boolean; client: { request: (method: any, requestPath: any, bodyStr?: string) => Promise<unknown>; }; simulated: boolean; }'.
+src/node/trading-agent-executor.ts(189,41): error TS2339: Property 'client' does not exist on type '{ ok: boolean; message: string; } | { ok: boolean; message?: undefined; } | { ok: boolean; client: { request: (method: any, requestPath: any, bodyStr?: string) => Promise<unknown>; }; simulated: boolean; }'.
+  Property 'client' does not exist on type '{ ok: boolean; message: string; }'.
+src/node/trading-agent-executor.ts(195,74): error TS2339: Property 'message' does not exist on type '{ ok: boolean; message: string; } | { ok: boolean; message?: undefined; } | { ok: boolean; client: { request: (method: any, requestPath: any, bodyStr?: string) => Promise<unknown>; }; simulated: boolean; }'.
+  Property 'message' does not exist on type '{ ok: boolean; client: { request: (method: any, requestPath: any, bodyStr?: string) => Promise<unknown>; }; simulated: boolean; }'.
+src/node/trading-agent-executor.ts(209,40): error TS2339: Property 'client' does not exist on type '{ ok: boolean; message: string; } | { ok: boolean; message?: undefined; } | { ok: boolean; client: { request: (method: any, requestPath: any, bodyStr?: string) => Promise<unknown>; }; simulated: boolean; }'.
+  Property 'client' does not exist on type '{ ok: boolean; message: string; }'.
+src/node/trading-agent-executor.ts(215,74): error TS2339: Property 'message' does not exist on type '{ ok: boolean; message: string; } | { ok: boolean; message?: undefined; } | { ok: boolean; client: { request: (method: any, requestPath: any, bodyStr?: string) => Promise<unknown>; }; simulated: boolean; }'.
+  Property 'message' does not exist on type '{ ok: boolean; client: { request: (method: any, requestPath: any, bodyStr?: string) => Promise<unknown>; }; simulated: boolean; }'.
+src/node/trading-agent-executor.ts(268,44): error TS2339: Property 'client' does not exist on type '{ ok: boolean; message: string; } | { ok: boolean; message?: undefined; } | { ok: boolean; client: { request: (method: any, requestPath: any, bodyStr?: string) => Promise<unknown>; }; simulated: boolean; }'.
+  Property 'client' does not exist on type '{ ok: boolean; message: string; }'.

@@ -1,6 +1,7 @@
-// @ts-nocheck — 仪表盘聚合与 OKX 载荷较宽。
 import * as okxPerp from "./okx-perp.js";
 import * as dashboardStore from "./dashboard-store.js";
+
+type OkxSwapCloseStats = Awaited<ReturnType<typeof okxPerp.aggregateSwapClosePositionStats>>;
 
 const BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS = 60_000;
 
@@ -170,8 +171,7 @@ async function getDashboardSnapshot(cfg) {
       dashboardAgentToolStatsSince && Number.isFinite(Date.parse(dashboardAgentToolStatsSince.trim()))
         ? Date.parse(dashboardAgentToolStatsSince.trim())
         : NaN;
-    /** @type {Awaited<ReturnType<typeof okxPerp.aggregateSwapClosePositionStats>> | null} */
-    let swapClosePositionStats = null;
+    let swapClosePositionStats: OkxSwapCloseStats | null = null;
     if (Number.isFinite(sinceMs)) {
       try {
         swapClosePositionStats = await okxPerp.aggregateSwapClosePositionStats(client, {

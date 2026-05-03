@@ -1,7 +1,8 @@
+// @ts-nocheck — 与 SQLite 行映射、动态载荷：保持与历史 CJS 脚本同级宽松校验。
 /**
  * 每根 K 线收盘 Agent：`agent_sessions`（会话元数据 + 图）+ `agent_session_messages`（有序 API 消息，便于排查）。
  */
-const { getDatabase } = require("./local-db");
+import { getDatabase } from "./local-db/index.js";
 
 /**
  * 多模态 user 中的 data: 大图不落 messages 表，避免与 chart_png 重复；排查时对照 session 行。
@@ -472,7 +473,7 @@ function listRecentAgentMemories(args: Record<string, unknown> = {}) {
   });
 }
 
-module.exports = {
+export {
   persistAgentBarTurn,
   listAgentBarTurnsPage,
   getAgentBarTurnChart,

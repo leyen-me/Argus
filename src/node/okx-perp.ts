@@ -4,9 +4,9 @@
  * 开仓张数：保证金 = 可用 USDT × margin_fraction，名义 ≈ 保证金 × 杠杆；fraction / 杠杆 / 逐仓|全仓
  * 优先取自 open_position 工具入参；未传时回退到内置默认值。
  */
-const crypto = require("crypto");
-const https = require("https");
-const { inferFeed } = require("./market");
+import crypto from "node:crypto";
+import https from "node:https";
+import { inferFeed } from "./market.js";
 
 const OKX_REST = "https://www.okx.com";
 const DEFAULT_OKX_SWAP_LEVERAGE = 10;
@@ -2001,7 +2001,7 @@ async function fetchRecentSwapPositionsHistoryForBar(cfg, tvSymbol, maxRows = 10
   }
 }
 
-module.exports = {
+export {
   tvSymbolToSwapInstId,
   tvIntervalToOkxCandleBar,
   fetchRecentCandlesForTv,

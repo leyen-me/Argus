@@ -3,7 +3,7 @@
  * @typedef {{ channel: string, payload: unknown }} BusEnvelope
  */
 
-const { EventEmitter } = require("events");
+import { EventEmitter } from "node:events";
 
 const bus = new EventEmitter();
 bus.setMaxListeners(200);
@@ -31,4 +31,4 @@ function subscribe(fn) {
   };
 }
 
-module.exports = { publish, subscribe };
+export { publish, subscribe };

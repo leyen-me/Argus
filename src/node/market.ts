@@ -8,4 +8,4 @@ function inferFeed(value) {
   return null;
 }
 
-module.exports = { inferFeed };
+export { inferFeed };

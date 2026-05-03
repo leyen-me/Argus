@@ -2,9 +2,9 @@
 /**
  * 交易 Agent 工具：仅执行 OKX 永续 REST，无本地模拟仓。
  */
-const okxPerp = require("./okx-perp");
-const { notifyTradePositionIfNeeded } = require("./trade-notify-email");
-const { publish } = require("./runtime-bus");
+import * as okxPerp from "./okx-perp.js";
+import { notifyTradePositionIfNeeded } from "./trade-notify-email.js";
+import { publish } from "./runtime-bus.js";
 
 /** 供单测注入 mock；生产路径使用默认实现。 */
 const TRADING_EXECUTOR_DEFAULT_DEPS = Object.freeze({
@@ -262,8 +262,4 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
   };
 }
 
-module.exports = {
-  createTradingToolExecutor,
-  TRADING_EXECUTOR_DEFAULT_DEPS,
-  requireOkx,
-};
+export { createTradingToolExecutor, TRADING_EXECUTOR_DEFAULT_DEPS, requireOkx };

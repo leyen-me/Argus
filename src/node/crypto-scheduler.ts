@@ -3,9 +3,9 @@
  * OKX: data[][8] confirm === "1"
  * @see https://www.okx.com/docs-v5/en/#websocket-api-public-channel-candlesticks-channel
  */
-const WebSocket = require("ws");
-const { emitBarClose } = require("./bar-close");
-const { publish } = require("./runtime-bus");
+import WebSocket from "ws";
+import { emitBarClose } from "./bar-close.js";
+import { publish } from "./runtime-bus.js";
 
 const DEFAULT_RUNTIME = Object.freeze({
   WebSocketImpl: WebSocket,
@@ -382,10 +382,10 @@ function __resetRuntimeForTests() {
   intentionalClose = false;
 }
 
-module.exports = {
+export {
   start,
   stop,
-  okxInstIdFromTv: okxSwapInstIdFromTv,
+  okxSwapInstIdFromTv as okxInstIdFromTv,
   __setRuntimeForTests,
   __resetRuntimeForTests,
 };

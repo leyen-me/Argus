@@ -1,8 +1,8 @@
 /**
  * K 线收盘截图：请求「已连接 WebSocket 的浏览器页」用 TradingView Widget 截图并回传（等同原 Electron IPC）。
  */
-const crypto = require("crypto");
-const { publish } = require("./runtime-bus");
+import crypto from "node:crypto";
+import { publish } from "./runtime-bus.js";
 
 /** @type {Map<string, { resolve: (v: unknown) => void, reject: (e: Error) => void, timer: NodeJS.Timeout }>} */
 const pending = new Map();
@@ -89,7 +89,4 @@ function ingestChartCaptureResult(raw) {
   entry.reject(new Error(typeof raw.error === "string" ? raw.error : "截图失败"));
 }
 
-module.exports = {
-  requestChartCaptureFromBrowser,
-  ingestChartCaptureResult,
-};
+export { requestChartCaptureFromBrowser, ingestChartCaptureResult };

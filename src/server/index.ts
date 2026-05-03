@@ -4,41 +4,41 @@
 
 import type { WebSocket as ClientWebSocket } from "ws";
 import type { Request, Response, NextFunction } from "express";
-
-const express = require("express");
-const http = require("http");
-const path = require("path");
-const fs = require("fs");
-const { WebSocketServer } = require("ws");
-
-const nodeRoot = path.join(__dirname, "..", "node");
-const cryptoSched = require(path.join(nodeRoot, "crypto-scheduler"));
-const { inferFeed } = require(path.join(nodeRoot, "market"));
-const {
+import express from "express";
+import http from "node:http";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import { WebSocketServer } from "ws";
+import * as cryptoSched from "../node/crypto-scheduler.js";
+import { inferFeed } from "../node/market.js";
+import {
   loadAppConfig,
   databasePath,
   resetAppConfig,
   saveMergedConfigPayload,
-} = require(path.join(nodeRoot, "app-config"));
-const promptStrategiesStore = require(path.join(nodeRoot, "prompt-strategies-store"));
-const { closeDatabase } = require(path.join(nodeRoot, "local-db", "index"));
-const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context"));
-const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp"));
-const {
+} from "../node/app-config.js";
+import * as promptStrategiesStore from "../node/prompt-strategies-store.js";
+import { closeDatabase } from "../node/local-db/index.js";
+import { wipeConversationStore } from "../node/llm-context.js";
+import { getOkxSwapPositionSnapshot } from "../node/okx-perp.js";
+import {
   BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS,
   getDashboardSnapshot,
   sampleDashboardEquityOnce,
-} = require(path.join(nodeRoot, "dashboard-service"));
-const {
+} from "../node/dashboard-service.js";
+import {
   listAgentBarTurnsPage,
   getAgentBarTurnChart,
   getAgentSessionMessages,
-} = require(path.join(nodeRoot, "agent-bar-turns-store"));
-const { publish, subscribe } = require(path.join(nodeRoot, "runtime-bus"));
-const {
+} from "../node/agent-bar-turns-store.js";
+import { publish, subscribe } from "../node/runtime-bus.js";
+import {
   ingestChartCaptureResult,
   requestChartCaptureFromBrowser,
-} = require(path.join(nodeRoot, "chart-capture-browser-bridge"));
+} from "../node/chart-capture-browser-bridge.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const AGENT_DECISION_INTERVAL = "5";
 

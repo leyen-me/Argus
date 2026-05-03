@@ -2,7 +2,7 @@
  * 交易仓位邮件通知（Agent `open_position` / `close_position` 成功时触发；默认适配 QQ 邮箱 SMTP）。
  * 需在 QQ 邮箱网页版开启 SMTP，并使用「授权码」作为密码，而非 QQ 登录密码。
  */
-const nodemailer = require("nodemailer");
+import nodemailer from "nodemailer";
 
 /**
  * @param {object} cfg `loadAppConfig()` 结果
@@ -110,7 +110,4 @@ async function notifyTradePositionIfNeeded(cfg, detail) {
   });
 }
 
-module.exports = {
-  notifyTradePositionIfNeeded,
-  isNotablePositionChange,
-};
+export { notifyTradePositionIfNeeded, isNotablePositionChange };

@@ -1,6 +1,7 @@
 {
   "name": "argus",
   "version": "0.1.0",
+  "type": "module",
   "description": "Multimodal fusion analysis — TradingView + LLM",
   "main": "src/server/index.ts",
   "pnpm": {

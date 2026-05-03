@@ -1,6 +1,6 @@
 // @ts-nocheck — 自 JS 迁移：normalizeConfig 与冻结种子字面量较宽，后续可提炼 AppConfig 接口。
-const localDb = require("./local-db");
-const promptStrategiesStore = require("./prompt-strategies-store");
+import * as localDb from "./local-db/index.js";
+import * as promptStrategiesStore from "./prompt-strategies-store.js";
 
 /**
  * 应用可序列化设置保存在仓库根目录 `argus.sqlite`（`local-db`）的 kv `app/settings` 中。
@@ -411,7 +411,7 @@ function saveMergedConfigPayload(payload) {
   return next;
 }
 
-module.exports = {
+export {
   APP_SETTINGS_SEED,
   loadAppConfig,
   normalizeConfig,

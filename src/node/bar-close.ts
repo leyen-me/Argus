@@ -1,12 +1,13 @@
+// @ts-nocheck — K 线收盘链路与捕获包形状复杂，与历史 CJS 脚本同级宽松校验。
 /**
  * K 线收盘后：请求渲染进程截取左侧 TradingView，与行情数据组装为统一 payload（供后续多模态 LLM + OKX Agent）。
  */
-const crypto = require("crypto");
-const { publish } = require("./runtime-bus");
-const { requestChartCaptureFromBrowser } = require("./chart-capture-browser-bridge");
-const { loadAppConfig } = require("./app-config");
-const { conversationKey } = require("./llm-context");
-const {
+import crypto from "node:crypto";
+import { publish } from "./runtime-bus.js";
+import { requestChartCaptureFromBrowser } from "./chart-capture-browser-bridge.js";
+import { loadAppConfig } from "./app-config.js";
+import { conversationKey } from "./llm-context.js";
+import {
   isLlmEnabled,
   buildMultiTimeframeUserPrompt,
   runTradingAgentTurn,
@@ -17,17 +18,17 @@ const {
   mdCell,
   mdTable,
   summarizeAgentAnalysisForCard,
-} = require("./llm");
-const {
+} from "./llm.js";
+import {
   getOkxExchangeContextForBar,
   isOkxExchangeContextReadyForBarAgent,
   describeOkxExchangeContextGateFailure,
   fetchRecentCandlesForTv,
   fetchRecentSwapPositionsHistoryForBar,
-} = require("./okx-perp");
-const { buildTradingAgentToolsForContext } = require("./trading-agent-tools");
-const { createTradingToolExecutor } = require("./trading-agent-executor");
-const { persistAgentBarTurn, listRecentAgentMemories } = require("./agent-bar-turns-store");
+} from "./okx-perp.js";
+import { buildTradingAgentToolsForContext } from "./trading-agent-tools.js";
+import { createTradingToolExecutor } from "./trading-agent-executor.js";
+import { persistAgentBarTurn, listRecentAgentMemories } from "./agent-bar-turns-store.js";
 
 const AGENT_DECISION_INTERVAL = "5";
 const MULTI_TIMEFRAME_CAPTURE_SPECS = [
@@ -725,4 +726,4 @@ async function emitBarClose(ctx) {
   }
 }
 
-module.exports = { emitBarClose, requestChartCapture };
+export { emitBarClose, requestChartCapture };

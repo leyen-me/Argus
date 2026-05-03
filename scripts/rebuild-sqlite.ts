@@ -2,10 +2,11 @@
  * better-sqlite3 绑定当前 Node ABI；切换 Node 大版本后必须重建。
  * pnpm 仓库优先用 `pnpm rebuild`，否则回退 `npm rebuild`。
  */
-const { spawnSync } = require("child_process");
-const path = require("path");
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = path.join(__dirname, "..");
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function tryRebuild(cmd: string, args: readonly string[]) {
   const r = spawnSync(cmd, args, {

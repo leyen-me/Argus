@@ -1,4 +1,5 @@
-const localDb = require("./local-db");
+// @ts-nocheck — 策略表行映射保持宽松。
+import * as localDb from "./local-db/index.js";
 
 const DEFAULT_PROMPT_STRATEGY = "default";
 
@@ -111,7 +112,7 @@ function validateStrategyId(id) {
   return ID_RE.test(typeof id === "string" ? id.trim() : "");
 }
 
-module.exports = {
+export {
   DEFAULT_PROMPT_STRATEGY,
   seedFromDiskIfEmpty,
   listStrategyIds,

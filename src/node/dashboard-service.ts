@@ -1,5 +1,6 @@
-const okxPerp = require("./okx-perp");
-const dashboardStore = require("./dashboard-store");
+// @ts-nocheck — 仪表盘聚合与 OKX 载荷较宽。
+import * as okxPerp from "./okx-perp.js";
+import * as dashboardStore from "./dashboard-store.js";
 
 const BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS = 60_000;
 
@@ -209,7 +210,7 @@ async function getDashboardSnapshot(cfg) {
   }
 }
 
-module.exports = {
+export {
   BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS,
   buildEquitySeriesForDashboard,
   equitySamplePullLimit,

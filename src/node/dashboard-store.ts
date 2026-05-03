@@ -1,4 +1,5 @@
-const { getDatabase } = require("./local-db");
+// @ts-nocheck — SQLite 行映射保持宽松。
+import { getDatabase } from "./local-db/index.js";
 
 const MAX_ROWS = 2500;
 const DEDUP_EPS = 1e-6;
@@ -69,7 +70,4 @@ function pruneOldSamples(db) {
   ).run(del);
 }
 
-module.exports = {
-  appendEquitySampleIfNeeded,
-  listRecentEquitySamples,
-};
+export { appendEquitySampleIfNeeded, listRecentEquitySamples };

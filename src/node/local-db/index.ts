@@ -16,9 +16,12 @@
  * 约定命名空间（namespace）示例：
  * - app — 应用级；键 `settings` 存可序列化的应用设置（不含运行时注入的 systemPromptCrypto 正文）。
  */
-const fs = require("fs");
-const path = require("path");
-const Database = require("better-sqlite3");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import("better-sqlite3").Database | null} */
 let _db: import("better-sqlite3").Database | null = null;
@@ -394,7 +397,7 @@ function getDatabase() {
 function kvGet(namespace, key) {
   const row = getDatabase()
     .prepare(`SELECT value FROM kv_store WHERE namespace = ? AND key = ?`)
-    .get(namespace, key);
+    .get(namespace, key) as { value: unknown } | undefined;
   return row ? row.value : null;
 }
 
@@ -428,7 +431,7 @@ function closeDatabase() {
   }
 }
 
-module.exports = {
+export {
   KV_NS_APP,
   KV_KEY_SETTINGS,
   databasePath,

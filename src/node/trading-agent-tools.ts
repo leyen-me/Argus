@@ -153,4 +153,4 @@ function buildTradingAgentToolsForContext(_exchangeCtx) {
   return TRADING_AGENT_TOOLS;
 }
 
-module.exports = { TRADING_AGENT_TOOLS, buildTradingAgentToolsForContext };
+export { TRADING_AGENT_TOOLS, buildTradingAgentToolsForContext };

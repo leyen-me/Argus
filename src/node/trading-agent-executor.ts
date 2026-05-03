@@ -77,7 +77,7 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
     };
   };
 
-  return async function executeTradingTool(name, args, meta = {}) {
+  return async function executeTradingTool(name, args, _meta = {}) {
     const a = args && typeof args === "object" ? args : {};
 
     try {

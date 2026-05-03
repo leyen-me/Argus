@@ -35,7 +35,17 @@ const MULTI_TIMEFRAME_CAPTURE_SPECS = [
   { interval: "60", label: "1H" },
   { interval: "15", label: "15m" },
   { interval: "5", label: "5m" },
-];
+] as const;
+
+type MultiTimeframeChartImage = {
+  interval: string;
+  label: string;
+  mimeType: string;
+  base64: string;
+  dataUrl: string;
+};
+
+type PrimaryChartImage = { mimeType: string; base64: string; dataUrl: string };
 
 /** @param {boolean | null | undefined} b */
 function zhBool(b) {
@@ -280,7 +290,6 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
   }
 
   const cs = exchangeCtx.contract_sizing;
-  const sim = exchangeCtx.simulated !== false;
   const accountBlock = mdTable(
     ["USDT 可用权益", "ct_val", "lot_sz", "min_sz", "tick_sz", "last_px"],
     [
@@ -419,9 +428,9 @@ async function requestChartCapture(tvSymbol, timeoutMs = 45000) {
  * }} ctx
  */
 async function emitBarClose(ctx) {
-  let chartImage = null;
-  let chartImages = [];
-  let chartCaptureError = null;
+  let chartImage: PrimaryChartImage | null = null;
+  let chartImages: MultiTimeframeChartImage[] = [];
+  let chartCaptureError: string | null = null;
   try {
     const capturePack = await requestChartCapture(ctx.tvSymbol);
     chartImage = {
@@ -437,8 +446,17 @@ async function emitBarClose(ctx) {
   const cfg = loadAppConfig();
   const barCloseId = crypto.randomUUID();
 
-  /** @type {{ enabled: boolean, streaming: boolean, reasoningEnabled?: boolean, reasoningText?: string | null, analysisText: string | null, cardSummary?: string | null, skippedReason: string | null, error: string | null, toolTrace: unknown[] }} */
-  const llm = {
+  const llm: {
+    enabled: boolean;
+    streaming: boolean;
+    reasoningEnabled?: boolean;
+    reasoningText?: string | null;
+    analysisText: string | null;
+    cardSummary?: string | null;
+    skippedReason: string | null;
+    error: string | null;
+    toolTrace: unknown[];
+  } = {
     enabled: isLlmEnabled(cfg),
     reasoningEnabled: cfg.llmReasoningEnabled === true,
     reasoningText: null,

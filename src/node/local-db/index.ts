@@ -21,7 +21,7 @@ const path = require("path");
 const Database = require("better-sqlite3");
 
 /** @type {import("better-sqlite3").Database | null} */
-let _db = null;
+let _db: import("better-sqlite3").Database | null = null;
 
 const KV_NS_APP = "app";
 const KV_KEY_SETTINGS = "settings";
@@ -384,10 +384,11 @@ function getDatabase() {
   if (_db) return _db;
   const p = databasePath();
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  _db = new Database(p);
-  _db.pragma("journal_mode = WAL");
-  applyMigrations(_db);
-  return _db;
+  const db = new Database(p);
+  db.pragma("journal_mode = WAL");
+  applyMigrations(db);
+  _db = db;
+  return db;
 }
 
 function kvGet(namespace, key) {

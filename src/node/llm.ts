@@ -142,7 +142,7 @@ function threadAlreadyHasAssistantOrTool(messages) {
 
 /** @param {unknown} e
  * @param {object | null | undefined} cfg */
-function mapLlmSdkError(e, cfg) {
+function mapLlmSdkError(e, _cfg) {
   const timeoutMsg =
     "LLM 请求超时（可在应用设置里改 llmRequestTimeoutMs，单位毫秒）";
   if (e instanceof APIUserAbortError) {
@@ -845,7 +845,7 @@ async function summarizeAgentAnalysisForCard(assistantFull, options, extras = {}
       oneLine = oneLine.slice(0, CARD_SUMMARY_MAX_OUT_CHARS - 1) + "…";
     }
     return { ok: true, text: oneLine };
-  } catch (e) {
+  } catch (_e) {
     return { ok: false };
   }
 }
@@ -1068,7 +1068,7 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
     maxRetries: 0,
   });
 
-  let thread = [...messages];
+  const thread = [...messages];
   const toolTrace = [];
   let reasoningAcc = "";
   const wantReasoning = !!(cfg && cfg.llmReasoningEnabled === true);

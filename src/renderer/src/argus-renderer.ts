@@ -1966,14 +1966,11 @@ function applySymbolSelect(config) {
   );
 }
 
-/** 与 `src/node/app-config.js` 中 `ALLOWED_INTERVAL` 一致 */
-const CHART_INTERVAL_ALLOWED = new Set(["1", "3", "5", "15", "30", "60", "120", "240", "D", "1D"]);
-
 /**
  * 同步左侧行情标题栏 K 线周期控件，并更新内存中的 `chartInterval`。
  * @param {string} interval
  */
-function applyChartIntervalSelect(interval) {
+function applyChartIntervalSelect(_interval) {
   let iv = AGENT_DECISION_INTERVAL;
   const sel = document.getElementById("chart-interval-select");
   if (sel) {
@@ -2443,7 +2440,7 @@ function destroyWidget() {
   }
 }
 
-function createTradingViewWidgetNow(symbol, interval) {
+function createTradingViewWidgetNow(symbol, _interval) {
   destroyWidget();
 
   if (typeof TradingView === "undefined" || !TradingView.widget) {
@@ -2555,32 +2552,6 @@ function normalizeAssistantDisplayText(s) {
     .replace(/\r\n/g, "\n")
     .replace(/^\n+/, "")
     .replace(/\n{3,}/g, "\n\n");
-}
-
-function formatBarClosePreview(payload) {
-  if (!payload || payload.kind !== "bar_close") return JSON.stringify(payload, null, 2);
-  const safe = JSON.parse(JSON.stringify(payload));
-  if (safe.chartImage?.base64) {
-    const n = safe.chartImage.base64.length;
-    safe.chartImage = {
-      ...safe.chartImage,
-      base64: `[省略 ${n} 字符，完整数据在 window.argusLastBarClose.chartImage.base64]`,
-    };
-  }
-  if (Array.isArray(safe.multiChartImages)) {
-    safe.multiChartImages = safe.multiChartImages.map((item) => {
-      if (!item?.base64) return item;
-      return {
-        ...item,
-        base64: `[省略 ${String(item.base64).length} 字符]`,
-      };
-    });
-  }
-  if (typeof safe.fullUserPromptForDisplay === "string" && safe.fullUserPromptForDisplay.length > 400) {
-    const n = safe.fullUserPromptForDisplay.length;
-    safe.fullUserPromptForDisplay = `${safe.fullUserPromptForDisplay.slice(0, 400)}… [共 ${n} 字符]`;
-  }
-  return JSON.stringify(safe, null, 2);
 }
 
 /**

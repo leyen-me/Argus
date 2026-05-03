@@ -40,12 +40,11 @@ const TV_TO_OKX_CHANNEL = {
 /** OKX K 线（candle*）须走 business，/public 不再提供该频道，否则会报 60018 */
 const OKX_WS_BUSINESS = "wss://ws.okx.com:8443/ws/v5/business";
 
-let ws = null;
-let reconnectTimer = null;
-let healthCheckTimer = null;
+let ws: import("ws").WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 let intentionalClose = false;
-/** @type {{ tvSymbol: string, intervalTv: string } | null} */
-let session = null;
+let session: { tvSymbol: string; intervalTv: string } | null = null;
 let reconnectAttempt = 0;
 let lastSocketActivityAt = 0;
 
@@ -96,7 +95,7 @@ function okxSwapInstIdFromTv(tv) {
 
 function okxChannelFromInterval(intervalTv) {
   const iv = String(intervalTv || "5").toUpperCase();
-  return TV_TO_OKX_CHANNEL[iv] || "candle5m";
+  return TV_TO_OKX_CHANNEL[iv as keyof typeof TV_TO_OKX_CHANNEL] || "candle5m";
 }
 
 /** OKX push: data 为 [ts,o,h,l,c,vol,volCcy,volCcyQuote,confirm][] */
@@ -154,7 +153,9 @@ function onConfirmedBar(tvSymbol, intervalTv, candle) {
         candle,
       });
     } catch (e) {
-      send("market-status", { text: `收盘处理失败：${e.message || e}` });
+      send("market-status", {
+        text: `收盘处理失败：${e instanceof Error ? e.message : String(e)}`,
+      });
     }
   });
 }
@@ -247,7 +248,7 @@ function connectOkx() {
     return;
   }
 
-  // 必须用创建时的实例判断：模块级 `ws` 可能被重连/stop 换掉，旧连接的 `open` 晚到时会误对 null 或新套接字 send
+  if (!ws) return;
   const okxSocket = ws;
   startHealthCheck(okxSocket, tvSymbol);
   ws.on("open", () => {

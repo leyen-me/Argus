@@ -279,7 +279,7 @@ function normalizeConfig(raw) {
   if (raw.tradeNotifyEmailEnabled === true) tradeNotifyEmailEnabled = true;
   else if (raw.tradeNotifyEmailEnabled === false) tradeNotifyEmailEnabled = false;
 
-  let smtpHost =
+  const smtpHost =
     typeof raw.smtpHost === "string" && raw.smtpHost.trim() ? raw.smtpHost.trim() : base.smtpHost;
   let smtpPort = base.smtpPort;
   const sp = Number(raw.smtpPort);

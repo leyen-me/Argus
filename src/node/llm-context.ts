@@ -20,8 +20,10 @@ function storePath() {
   return path.join(userDataDir(), "argus-llm-conversations.json");
 }
 
-/** @type {Record<string, Array<{ role: 'user' | 'assistant', content: string }>> | null} */
-let cache = null;
+type ConversationMessage = { role: "user" | "assistant"; content: string };
+type ConversationStore = Record<string, ConversationMessage[]>;
+
+let cache: ConversationStore | null = null;
 
 function loadStore() {
   if (cache) return cache;
@@ -30,9 +32,9 @@ function loadStore() {
   if (!fs.existsSync(p)) return cache;
   try {
     const raw = fs.readFileSync(p, "utf8");
-    const data = JSON.parse(raw);
+    const data: unknown = JSON.parse(raw);
     if (data && typeof data === "object" && !Array.isArray(data)) {
-      cache = data;
+      cache = data as ConversationStore;
     }
   } catch {
     cache = {};

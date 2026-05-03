@@ -80,22 +80,6 @@ function fmtPct(ratio: number | null | undefined, digits = 1) {
   })}%`
 }
 
-function fmtSampleTime(t: string | undefined) {
-  if (!t) return null
-  try {
-    const d = new Date(t)
-    if (Number.isNaN(d.getTime())) return t
-    return d.toLocaleString(undefined, {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  } catch {
-    return t
-  }
-}
-
 function toneForSignedValue(v: number | null | undefined) {
   if (v == null || !Number.isFinite(v)) return "text-foreground"
   return v >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
@@ -265,7 +249,7 @@ function StrategyInfoCard({
 
 function AccountOverviewCard({
   snap,
-  strategyRunning,
+  strategyRunning: _strategyRunning,
 }: {
   snap: DashboardPayload | null
   strategyRunning: boolean
@@ -455,9 +439,12 @@ export function TradingDashboardCard({
 
   useEffect(() => {
     if (!active) return
-    void load()
+    const t0 = window.setTimeout(() => void load(), 0)
     const t = window.setInterval(() => void load(), 45_000)
-    return () => window.clearInterval(t)
+    return () => {
+      window.clearTimeout(t0)
+      window.clearInterval(t)
+    }
   }, [active, load])
 
   const startStrategyRange = useCallback(async () => {

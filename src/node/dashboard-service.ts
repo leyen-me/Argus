@@ -160,7 +160,7 @@ async function getDashboardSnapshot(cfg) {
 
     const equitySeries = buildEquitySeriesForDashboard(dashboardAgentToolStatsSince);
 
-    let pnlVsBaseline = null;
+    let pnlVsBaseline: number | null = null;
     if (baselineEquityUsdt != null && equityUsdt != null) {
       pnlVsBaseline = equityUsdt - baselineEquityUsdt;
     }

@@ -2,6 +2,9 @@
  * Argus HTTP API + WebSocket 推送（替代 Electron IPC）。
  */
 
+import type { WebSocket as ClientWebSocket } from "ws";
+import type { Request, Response, NextFunction } from "express";
+
 const express = require("express");
 const http = require("http");
 const path = require("path");
@@ -39,11 +42,9 @@ const {
 
 const AGENT_DECISION_INTERVAL = "5";
 
-/** @type {import("ws").WebSocket[]} */
-const wsClients = [];
+const wsClients: ClientWebSocket[] = [];
 
-/** @type {NodeJS.Timeout | null} */
-let dashboardEquitySamplerTimer = null;
+let dashboardEquitySamplerTimer: ReturnType<typeof setInterval> | null = null;
 let dashboardEquitySamplerInFlight = false;
 
 async function runBackgroundEquitySample() {
@@ -149,7 +150,7 @@ const rpcHandlers = {
   "chart-capture:test": rpcChartCaptureTest,
 };
 
-function broadcastWs(envelope) {
+function broadcastWs(envelope: unknown) {
   const raw = JSON.stringify(envelope);
   for (const ws of wsClients) {
     if (ws.readyState === 1) {
@@ -162,7 +163,7 @@ function broadcastWs(envelope) {
   }
 }
 
-subscribe((env) => broadcastWs(env));
+subscribe((env: unknown) => broadcastWs(env));
 
 function safeRpcArgs(args) {
   if (args == null) return [];
@@ -178,20 +179,21 @@ async function shutdown(reason = "shutdown") {
   process.exit(0);
 }
 
-function createApp(distDir) {
+function createApp(distDir: string | undefined) {
   const app = express();
   app.use(express.json({ limit: "4mb" }));
 
-  app.post("/api/rpc", async (req, res) => {
+  app.post("/api/rpc", async (req: Request, res: Response) => {
     try {
       const rawMethod = req.body?.method;
       const method = typeof rawMethod === "string" ? rawMethod.trim() : "";
       const args = safeRpcArgs(req.body?.args);
-      if (!method || !rpcHandlers[method]) {
+      const handler = rpcHandlers[method as keyof typeof rpcHandlers];
+      if (!method || !handler) {
         res.status(400).json({ ok: false, error: `unknown method: ${rawMethod ?? ""}` });
         return;
       }
-      const result = await rpcHandlers[method](...args);
+      const result = await (handler as (...args: unknown[]) => unknown | Promise<unknown>)(...args);
       res.json({ ok: true, result });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -201,7 +203,7 @@ function createApp(distDir) {
 
   if (distDir && fs.existsSync(distDir)) {
     app.use(express.static(distDir));
-    app.get("*", (req, res, next) => {
+    app.get("*", (req: Request, res: Response, next: NextFunction) => {
       if (req.path.startsWith("/api")) return next();
       const htmlPath = path.join(distDir, "index.html");
       if (!fs.existsSync(htmlPath)) return next();
@@ -220,7 +222,7 @@ function main() {
   const server = http.createServer(app);
 
   const wss = new WebSocketServer({ server, path: "/ws" });
-  wss.on("connection", (ws) => {
+  wss.on("connection", (ws: ClientWebSocket) => {
     wsClients.push(ws);
     ws.on("message", (raw) => {
       try {

@@ -619,7 +619,7 @@ function estimateAgentOpenContracts(avail, marginFrac, lever, inst, px) {
   if (!Number.isFinite(marginFrac) || marginFrac <= 0 || !Number.isFinite(lever) || lever < 1) return 0;
   const margin = avail * marginFrac;
   const notional = margin * lever;
-  let sz = notional / (inst.ctVal * px);
+  const sz = notional / (inst.ctVal * px);
   return floorToLot(sz, inst.lotSz);
 }
 
@@ -1398,7 +1398,7 @@ function describeOkxExchangeContextGateFailure(exchangeCtx) {
  * @param {object} cfg
  * @param {string} tvSymbol
  */
-async function getOkxExchangeContextForBar(cfg, tvSymbol, interval = "") {
+async function getOkxExchangeContextForBar(cfg, tvSymbol, _interval = "") {
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
     return { ok: true, enabled: false, reason: "okx_swap_disabled" };
   }
@@ -1545,7 +1545,7 @@ function buildAttachAlgoOrdsForAgentOpen(o) {
  * @param {{ tvSymbol: string, side: "long"|"short", orderType: "market"|"limit", limitPrice?: number, barCloseId: string, tpTriggerPx?: number, slTriggerPx?: number, tpSlTriggerPxType?: "last"|"mark"|"index", leverage?: unknown, marginFraction?: unknown, margin_fraction?: unknown, marginMode?: unknown, margin_mode?: unknown, td_mode?: unknown }} args
  */
 async function executeAgentPerpOpen(cfg, args) {
-  const { tvSymbol, side, orderType, limitPrice, barCloseId, tpTriggerPx, slTriggerPx, tpSlTriggerPxType } =
+  const { tvSymbol, side, orderType, limitPrice, barCloseId: _barCloseId, tpTriggerPx, slTriggerPx, tpSlTriggerPxType } =
     args;
   const isLong = side === "long";
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {

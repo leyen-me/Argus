@@ -61,11 +61,11 @@ function extractAssistantDecision(content) {
 function messageToRow(m, seq) {
   const msg = m && typeof m === "object" ? m : {};
   const role = String(/** @type {{ role?: string }} */ (msg).role || "");
-  let contentJson = null;
+  let contentJson: string | null = null;
   if ("content" in msg && msg.content !== undefined && msg.content !== null) {
     contentJson = JSON.stringify(redactContentForStorage(/** @type {unknown} */ (msg.content)));
   }
-  let toolCallsJson = null;
+  let toolCallsJson: string | null = null;
   const tcs = /** @type {{ tool_calls?: unknown[] }} */ (msg).tool_calls;
   if (Array.isArray(tcs) && tcs.length > 0) {
     toolCallsJson = JSON.stringify(tcs);
@@ -113,7 +113,7 @@ function persistAgentBarTurn(row) {
   const encBefore = row.exchangeContext != null ? JSON.stringify(row.exchangeContext) : null;
   const encAfter = row.exchangeAfter != null ? JSON.stringify(row.exchangeAfter) : null;
   const encToolTrace = Array.isArray(row.toolTrace) ? JSON.stringify(row.toolTrace) : null;
-  let pngBuf = null;
+  let pngBuf: Buffer | null = null;
   if (row.chartBase64 && typeof row.chartBase64 === "string" && row.chartBase64.length > 0) {
     try {
       pngBuf = Buffer.from(row.chartBase64, "base64");
@@ -263,7 +263,7 @@ function listAgentBarTurnsPage(args: Record<string, unknown> = {}) {
 
   const raw = db.prepare(sql).all(...params);
   const rows = raw.map((r) => {
-    let toolTrace = null;
+    let toolTrace: unknown[] | null = null;
     if (typeof r.tool_trace_json === "string" && r.tool_trace_json.trim()) {
       try {
         const parsed = JSON.parse(r.tool_trace_json);
@@ -346,8 +346,8 @@ function getAgentSessionMessages(barCloseId) {
   const reasoningRow = db
     .prepare(`SELECT assistant_reasoning_text, assistant_decision FROM agent_sessions WHERE bar_close_id = ?`)
     .get(id);
-  let assistantReasoningText = null;
-  let assistantDecision = null;
+  let assistantReasoningText: string | null = null;
+  let assistantDecision: string | null = null;
   if (
     reasoningRow &&
     reasoningRow.assistant_reasoning_text != null &&
@@ -365,7 +365,7 @@ function getAgentSessionMessages(barCloseId) {
     )
     .all(id);
   const messages = raw.map((r) => {
-    let content = null;
+    let content: unknown = null;
     if (typeof r.content_json === "string" && r.content_json.length > 0) {
       try {
         content = JSON.parse(r.content_json);
@@ -373,7 +373,7 @@ function getAgentSessionMessages(barCloseId) {
         content = r.content_json;
       }
     }
-    let toolCalls = null;
+    let toolCalls: unknown[] | null = null;
     if (typeof r.tool_calls_json === "string" && r.tool_calls_json.trim()) {
       try {
         const p = JSON.parse(r.tool_calls_json);
@@ -418,7 +418,7 @@ function holdingStateFromExchangeAfter(exchangeAfter) {
 
 function summarizeToolTrace(toolTrace) {
   if (!Array.isArray(toolTrace) || toolTrace.length === 0) return "无工具动作";
-  const names = [];
+  const names: string[] = [];
   for (const item of toolTrace) {
     if (!item || typeof item !== "object") continue;
     const name = typeof item.name === "string" ? item.name.trim() : "";

@@ -1,15 +1,33 @@
-/// <reference path="./vite-env.d.ts" />
-
 /** Web 模式：HTTP RPC + WebSocket，对齐 Electron preload 的 `window.argus` API */
+
+/** 与 vite-env.d.ts 全局 `ArgusBarCloseLlmState` / `window.argusLastBarClose.llm` 对齐 */
+interface MarketBarCloseLlmPayload {
+  analysisText?: string | null;
+  cardSummary?: string | null;
+  toolTrace?: unknown[];
+  reasoningText?: string;
+  streaming?: boolean;
+  error?: string | null;
+  skippedReason?: string | null;
+  enabled?: boolean;
+}
+
+/** `market-bar-close` 与服务端、全局 `ArgusLastBarClose`（见 vite-env.d.ts）对齐 */
+export interface MarketBarClosePayload {
+  llm?: MarketBarCloseLlmPayload;
+  exchangeContext?: unknown;
+  barCloseId?: string;
+  conversationKey?: string;
+  chartImage?: { dataUrl?: string | null };
+  chartCaptureError?: unknown;
+  [key: string]: unknown;
+}
 
 /** `request-chart-capture` WebSocket 推送 */
 export type ChartCaptureRequestPayload = {
   requestId?: string;
   tvSymbol?: string;
 };
-
-/** `market-bar-close` 与服务端、`window.argusLastBarClose` 对齐 */
-export type MarketBarClosePayload = ArgusLastBarClose;
 
 /** `market-status` 推送 */
 export type MarketStatusPayload = {

@@ -13,7 +13,7 @@ declare global {
     enabled?: boolean;
   }
 
-  /** 与 `onMarketBarClose` 推送结构对齐的缓存（仅用于 UI 增量更新） */
+  /** 与 `onMarketBarClose` 推送结构对齐的缓存（与 `argus-bridge` 的 MarketBarClosePayload 保持同源） */
   interface ArgusLastBarClose {
     llm?: ArgusBarCloseLlmState;
     exchangeContext?: unknown;

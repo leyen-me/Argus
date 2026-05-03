@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
@@ -10,7 +11,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "allowJs": true,
+    "allowJs": false,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/renderer/src/*"]

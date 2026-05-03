@@ -1,4 +1,4 @@
-import { BookOpen, LayoutDashboard, Settings, Terminal } from "lucide-react"
+import { BookOpen, LayoutDashboard, Settings } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { PromptStrategySelect } from "@/components/prompt-strategy-select"

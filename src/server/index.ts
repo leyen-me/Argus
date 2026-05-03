@@ -9,33 +9,33 @@ const fs = require("fs");
 const { WebSocketServer } = require("ws");
 
 const nodeRoot = path.join(__dirname, "..", "node");
-const cryptoSched = require(path.join(nodeRoot, "crypto-scheduler.js"));
-const { inferFeed } = require(path.join(nodeRoot, "market.js"));
+const cryptoSched = require(path.join(nodeRoot, "crypto-scheduler"));
+const { inferFeed } = require(path.join(nodeRoot, "market"));
 const {
   loadAppConfig,
   databasePath,
   resetAppConfig,
   saveMergedConfigPayload,
-} = require(path.join(nodeRoot, "app-config.js"));
-const promptStrategiesStore = require(path.join(nodeRoot, "prompt-strategies-store.js"));
-const { closeDatabase } = require(path.join(nodeRoot, "local-db", "index.js"));
-const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context.js"));
-const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp.js"));
+} = require(path.join(nodeRoot, "app-config"));
+const promptStrategiesStore = require(path.join(nodeRoot, "prompt-strategies-store"));
+const { closeDatabase } = require(path.join(nodeRoot, "local-db", "index"));
+const { wipeConversationStore } = require(path.join(nodeRoot, "llm-context"));
+const { getOkxSwapPositionSnapshot } = require(path.join(nodeRoot, "okx-perp"));
 const {
   BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS,
   getDashboardSnapshot,
   sampleDashboardEquityOnce,
-} = require(path.join(nodeRoot, "dashboard-service.js"));
+} = require(path.join(nodeRoot, "dashboard-service"));
 const {
   listAgentBarTurnsPage,
   getAgentBarTurnChart,
   getAgentSessionMessages,
-} = require(path.join(nodeRoot, "agent-bar-turns-store.js"));
-const { publish, subscribe } = require(path.join(nodeRoot, "runtime-bus.js"));
+} = require(path.join(nodeRoot, "agent-bar-turns-store"));
+const { publish, subscribe } = require(path.join(nodeRoot, "runtime-bus"));
 const {
   ingestChartCaptureResult,
   requestChartCaptureFromBrowser,
-} = require(path.join(nodeRoot, "chart-capture-browser-bridge.js"));
+} = require(path.join(nodeRoot, "chart-capture-browser-bridge"));
 
 const AGENT_DECISION_INTERVAL = "5";
 

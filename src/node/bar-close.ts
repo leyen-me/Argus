@@ -431,13 +431,13 @@ async function emitBarClose(ctx) {
     };
     chartImages = Array.isArray(capturePack.charts) ? capturePack.charts : [];
   } catch (e) {
-    chartCaptureError = e.message || String(e);
+    chartCaptureError = e instanceof Error ? e.message : String(e);
   }
 
   const cfg = loadAppConfig();
   const barCloseId = crypto.randomUUID();
 
-  /** @type {{ enabled: boolean, streaming?: boolean, reasoningEnabled?: boolean, reasoningText?: string | null, analysisText: string | null, cardSummary?: string | null, skippedReason: string | null, error: string | null }} */
+  /** @type {{ enabled: boolean, streaming: boolean, reasoningEnabled?: boolean, reasoningText?: string | null, analysisText: string | null, cardSummary?: string | null, skippedReason: string | null, error: string | null, toolTrace: unknown[] }} */
   const llm = {
     enabled: isLlmEnabled(cfg),
     reasoningEnabled: cfg.llmReasoningEnabled === true,
@@ -446,6 +446,8 @@ async function emitBarClose(ctx) {
     cardSummary: null,
     skippedReason: null,
     error: null,
+    streaming: false,
+    toolTrace: [],
   };
 
   const convKey = conversationKey(ctx.tvSymbol, ctx.interval);
@@ -486,7 +488,6 @@ async function emitBarClose(ctx) {
     fullUserPromptForDisplay: llmUserText,
     llm,
   };
-  llm.toolTrace = [];
 
   const finishSkipped = (reason) => {
     llm.skippedReason = reason;

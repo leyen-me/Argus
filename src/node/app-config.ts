@@ -1,3 +1,4 @@
+// @ts-nocheck — 自 JS 迁移：normalizeConfig 与冻结种子字面量较宽，后续可提炼 AppConfig 接口。
 const localDb = require("./local-db");
 const promptStrategiesStore = require("./prompt-strategies-store");
 

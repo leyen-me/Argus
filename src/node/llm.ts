@@ -1,3 +1,4 @@
+// @ts-nocheck — 自 JS 迁移：OpenAI 流式与 reasoning 字段依供应商而异，后续再收紧类型。
 /**
  * OpenAI 兼容 Chat Completions（官方 `openai` Node SDK + 任意兼容端点），供 OKX WS K 线收盘分析共用。
  * 启用条件：在配置中填写 openaiApiKey，或设置环境变量 OPENAI_API_KEY（配置优先）。

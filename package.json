@@ -2,30 +2,46 @@
   "name": "argus",
   "version": "0.1.0",
   "description": "Multimodal fusion analysis — TradingView + LLM",
-  "main": "src/server/index.js",
+  "main": "src/server/index.ts",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "better-sqlite3"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "better-sqlite3"
+    ]
   },
   "scripts": {
-    "postinstall": "node scripts/rebuild-sqlite.js",
-    "rebuild:native": "node scripts/rebuild-sqlite.js",
-    "start": "node src/server/index.js",
-    "server": "node src/server/index.js",
-    "server:dev": "node src/server/index.js",
+    "postinstall": "tsx scripts/rebuild-sqlite.ts",
+    "rebuild:native": "tsx scripts/rebuild-sqlite.ts",
+    "start": "tsx src/server/index.ts",
+    "server": "tsx src/server/index.ts",
+    "server:dev": "tsx src/server/index.ts",
     "client:dev": "vite",
     "build": "vite build",
     "dev": "concurrently -n srv,vite -c blue,green \"npm run server:dev\" \"npm run client:dev\"",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.2",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
+    "@types/nodemailer": "^8.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.7.0",
     "concurrently": "^9.2.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
     "tailwindcss": "^4.2.2",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.1",
     "vite": "^6.4.2"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 /* global TradingView */
+// @ts-nocheck — 遗留巨型脚本由 JS 迁入；后续可拆模块并逐步收紧类型。
 
 /** TradingView 内置：MAExp = EMA，周期由 length 指定 */
 const DEFAULT_EMA_LENGTH = 20;

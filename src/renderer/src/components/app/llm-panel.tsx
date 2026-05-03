@@ -12,8 +12,10 @@ export function LlmPanel() {
     void (async () => {
       try {
         const cfg = await window.argus?.getConfig?.()
-        if (cancelled || !cfg) return
-        setBarCloseAgentAuto(cfg.barCloseAgentAutoEnabled !== false)
+        if (cancelled || !cfg || typeof cfg !== "object") return
+        setBarCloseAgentAuto(
+          (cfg as { barCloseAgentAutoEnabled?: boolean }).barCloseAgentAutoEnabled !== false,
+        )
       } catch {
         /* ignore */
       }

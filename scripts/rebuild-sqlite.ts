@@ -7,7 +7,7 @@ const path = require("path");
 
 const root = path.join(__dirname, "..");
 
-function tryRebuild(cmd, args) {
+function tryRebuild(cmd: string, args: readonly string[]) {
   const r = spawnSync(cmd, args, {
     cwd: root,
     stdio: "inherit",

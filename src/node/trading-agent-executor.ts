@@ -1,3 +1,4 @@
+// @ts-nocheck — 自 JS 迁移：与 okx-perp 补丁对象共用 loosely typed 载荷。
 /**
  * 交易 Agent 工具：仅执行 OKX 永续 REST，无本地模拟仓。
  */

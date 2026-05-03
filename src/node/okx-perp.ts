@@ -1,3 +1,4 @@
+// @ts-nocheck — 自 JS 迁移：动态 REST/SDK 载荷形状复杂，后续再收紧类型。
 /**
  * OKX USDT 永续（SWAP）REST：Agent 工具与快照，仅处理 OKX: 前缀品种。
  * 开仓张数：保证金 = 可用 USDT × margin_fraction，名义 ≈ 保证金 × 杠杆；fraction / 杠杆 / 逐仓|全仓

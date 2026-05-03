@@ -216,19 +216,27 @@ function persistAgentBarTurn(row) {
  * @param {{ capturedAt: string, barCloseId: string } | null} [args.cursor] 上一页最后一条，用于加载更早的记录
  * @returns {{ rows: object[], nextCursor: { capturedAt: string, barCloseId: string } | null, hasMore: boolean }}
  */
-function listAgentBarTurnsPage(args = {}) {
+function listAgentBarTurnsPage(args: Record<string, unknown> = {}) {
   const tvSymbol = String(args.tvSymbol || "").trim();
   const interval = String(args.interval || "").trim();
   const limit = Math.min(100, Math.max(1, Math.floor(Number(args.limit) || 20)));
-  const cursor = args.cursor && typeof args.cursor === "object" ? args.cursor : null;
+  const cursorRaw =
+    args.cursor && typeof args.cursor === "object" && !Array.isArray(args.cursor)
+      ? (args.cursor as Record<string, unknown>)
+      : null;
 
   if (!tvSymbol || !interval) {
     return { rows: [], nextCursor: null, hasMore: false };
   }
 
   const cap =
-    cursor && typeof cursor.capturedAt === "string" && typeof cursor.barCloseId === "string"
-      ? { capturedAt: cursor.capturedAt.trim(), barCloseId: cursor.barCloseId.trim() }
+    cursorRaw &&
+    typeof cursorRaw.capturedAt === "string" &&
+    typeof cursorRaw.barCloseId === "string"
+      ? {
+          capturedAt: cursorRaw.capturedAt.trim(),
+          barCloseId: cursorRaw.barCloseId.trim(),
+        }
       : null;
 
   const db = getDatabase();
@@ -243,8 +251,7 @@ function listAgentBarTurnsPage(args = {}) {
     FROM agent_sessions
     WHERE tv_symbol = ? AND interval = ?
   `;
-  /** @type {(string | number)[]} */
-  const params = [tvSymbol, interval];
+  const params: Array<string | number> = [tvSymbol, interval];
 
   if (cap && cap.capturedAt && cap.barCloseId) {
     sql += ` AND (captured_at < ? OR (captured_at = ? AND bar_close_id < ?))`;
@@ -429,7 +436,7 @@ function summarizeToolTrace(toolTrace) {
  * @param {string} args.interval
  * @param {number} [args.limit=6]
  */
-function listRecentAgentMemories(args = {}) {
+function listRecentAgentMemories(args: Record<string, unknown> = {}) {
   const tvSymbol = String(args.tvSymbol || "").trim();
   const interval = String(args.interval || "").trim();
   const limit = Math.min(20, Math.max(1, Math.floor(Number(args.limit) || 6)));

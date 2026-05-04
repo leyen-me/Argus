@@ -1,5 +1,6 @@
 /* global TradingView */
 import { canonTradingViewInterval, sortMultiTimeframeSpecsSmallestFirst } from "@shared/strategy-fields";
+import { formatPromptStrategyDisplayLabel } from "@shared/prompt-strategy-display-label";
 
 /** TradingView 内置：MAExp = EMA，周期由 length 指定 */
 const DEFAULT_EMA_LENGTH = 20;
@@ -286,6 +287,7 @@ const FALLBACK_APP_CONFIG = {
   defaultSymbol: "OKX:BTCUSDT",
   promptStrategy: "",
   promptStrategies: [],
+  promptStrategySelectOptions: [],
   interval: "5",
   openaiBaseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   openaiModel: "qwen3.5-plus",
@@ -2038,12 +2040,29 @@ function applyChartIntervalSelect(intervalRaw) {
 
 /**
  * 同步顶栏当前策略下拉；仍沿用隐藏原生 select 供 imperative 逻辑读写。
- * @param {{ promptStrategies?: string[], promptStrategy?: string }} cfg
+ * @param {{ promptStrategies?: string[], promptStrategy?: string, promptStrategySelectOptions?: Array<{ value: string, label: string }> }} cfg
  */
 function applyPromptStrategySelect(cfg) {
   const sel = document.getElementById("config-prompt-strategy");
-  const list =
-    Array.isArray(cfg?.promptStrategies) && cfg.promptStrategies.length > 0 ? cfg.promptStrategies : [];
+  const list: string[] =
+    Array.isArray(cfg?.promptStrategies) && cfg.promptStrategies.length > 0
+      ? cfg.promptStrategies.map((x) => String(x))
+      : [];
+
+  const rawOpts = Array.isArray(cfg?.promptStrategySelectOptions) ? cfg.promptStrategySelectOptions : [];
+  const labelEntries: [string, string][] = rawOpts
+    .filter((o) => o && typeof o === "object" && typeof (o as { value?: unknown }).value === "string")
+    .map((o) => {
+      const r = o as { value: string; label?: unknown };
+      return [String(r.value).trim(), typeof r.label === "string" ? r.label : ""] as [string, string];
+    });
+  const labelById = new Map<string, string>(labelEntries);
+
+  const syncOptions = list.map((id) => ({
+    value: id,
+    label: formatPromptStrategyDisplayLabel(id, labelById.get(id) ?? ""),
+  }));
+
   const cur =
     cfg?.promptStrategy && typeof cfg.promptStrategy === "string" && list.includes(cfg.promptStrategy)
       ? cfg.promptStrategy
@@ -2060,10 +2079,10 @@ function applyPromptStrategySelect(cfg) {
       sel.appendChild(opt);
       sel.value = "";
     } else {
-      for (const name of list) {
+      for (const row of syncOptions) {
         const opt = document.createElement("option");
-        opt.value = name;
-        opt.textContent = name;
+        opt.value = row.value;
+        opt.textContent = row.label;
         sel.appendChild(opt);
       }
       sel.value = cur || list[0] || "";
@@ -2072,7 +2091,7 @@ function applyPromptStrategySelect(cfg) {
   window.dispatchEvent(
     new CustomEvent("argus:prompt-strategy-sync", {
       detail: {
-        options: list.map((name) => ({ value: name, label: name })),
+        options: syncOptions,
         value: cur,
       },
     }),
@@ -2089,6 +2108,9 @@ async function persistPromptStrategyPreference(promptStrategy) {
     applyPromptStrategySelect({
       promptStrategies: next ? [next] : [],
       promptStrategy: next,
+      promptStrategySelectOptions: next
+        ? [{ value: next, label: formatPromptStrategyDisplayLabel(next, next) }]
+        : [],
     });
     return;
   }

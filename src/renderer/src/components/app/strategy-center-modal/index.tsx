@@ -29,6 +29,7 @@ import {
   type StrategyExtrasV1,
   type StrategyIndicatorId,
 } from "@shared/strategy-fields";
+import { formatPromptStrategyDisplayLabel } from "@shared/prompt-strategy-display-label";
 
 type StrategyMeta = { id: string; label: string; sort_order: number };
 
@@ -347,17 +348,14 @@ export function StrategyCenterModal() {
                         <button
                           type="button"
                           className={cn(
-                            "flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors",
+                            "flex w-full min-w-0 items-center rounded-md px-2.5 py-2 text-left text-[13px] transition-colors",
                             selectedId === row.id
                               ? "bg-muted font-medium text-foreground"
                               : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                           )}
                           onClick={() => onSelectRow(row.id)}
                         >
-                          <span className="truncate font-mono text-[13px] text-foreground">{row.id}</span>
-                          {row.label && row.label !== row.id ? (
-                            <span className="truncate text-[11px] text-muted-foreground">{row.label}</span>
-                          ) : null}
+                          <span className="truncate">{formatPromptStrategyDisplayLabel(row.id, row.label)}</span>
                         </button>
                       </li>
                     ))}

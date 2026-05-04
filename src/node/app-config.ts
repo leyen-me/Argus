@@ -1,6 +1,7 @@
 import * as localDb from "./local-db/index.js";
 import * as promptStrategiesStore from "./prompt-strategies-store.js";
 import { listOkxStrategySymbolOptions } from "../shared/strategy-fields.js";
+import { formatPromptStrategyDisplayLabel } from "../shared/prompt-strategy-display-label.js";
 
 /**
  * 应用可序列化设置保存在仓库根目录 `argus.sqlite`（`local-db`）的 kv `app/settings` 中。
@@ -22,6 +23,8 @@ export type AppConfig = {
   openaiApiKey: string;
   promptStrategy: string;
   promptStrategies: string[];
+  /** 顶栏策略下拉：value=id，label=展示名（与 {@link promptStrategies} 顺序一致；不落库，由 DB 推导） */
+  promptStrategySelectOptions: { value: string; label: string }[];
   systemPromptCrypto: string;
   llmRequestTimeoutMs: number;
   llmReasoningEnabled: boolean;
@@ -45,7 +48,13 @@ export type AppConfig = {
   promptStrategyDecisionIntervalTv: import("../shared/strategy-fields.js").StrategyDecisionIntervalTv;
 };
 
-type AppSettingsSeed = Omit<AppConfig, "promptStrategies" | "systemPromptCrypto" | "promptStrategyDecisionIntervalTv">;
+type AppSettingsSeed = Omit<
+  AppConfig,
+  | "promptStrategies"
+  | "promptStrategySelectOptions"
+  | "systemPromptCrypto"
+  | "promptStrategyDecisionIntervalTv"
+>;
 
 /**
  * 首次安装 /「恢复默认」时使用的持久化字段种子（仅存在于代码）。
@@ -103,6 +112,15 @@ function listPromptStrategies() {
   return promptStrategiesStore.listStrategyIds();
 }
 
+function listPromptStrategySelectOptions(): { value: string; label: string }[] {
+  promptStrategiesStore.seedFromDiskIfEmpty();
+  const rows = promptStrategiesStore.listStrategiesMeta() as { id: string; label: string }[];
+  return rows.map((row) => ({
+    value: row.id,
+    label: formatPromptStrategyDisplayLabel(row.id, row.label),
+  }));
+}
+
 /**
  * @param {string | undefined} preferred 首选策略 id
  * @returns {string}
@@ -138,6 +156,7 @@ function defaultConfigFallback(): AppConfig {
     ...APP_SETTINGS_SEED,
     promptStrategy,
     promptStrategies: listPromptStrategies(),
+    promptStrategySelectOptions: listPromptStrategySelectOptions(),
     promptStrategyDecisionIntervalTv: promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy),
     ...loadSystemPromptsFromDisk(promptStrategy),
   };
@@ -152,6 +171,7 @@ function stripSystemPromptsForPersistence(cfg) {
   const {
     systemPromptCrypto: _c,
     promptStrategyDecisionIntervalTv: _p,
+    promptStrategySelectOptions: _pso,
     symbols: _s,
     defaultSymbol: _d,
     ...rest
@@ -388,6 +408,7 @@ function normalizeConfig(raw: unknown): AppConfig {
     openaiApiKey,
     promptStrategy,
     promptStrategies: listPromptStrategies(),
+    promptStrategySelectOptions: listPromptStrategySelectOptions(),
     promptStrategyDecisionIntervalTv,
     systemPromptCrypto,
     llmRequestTimeoutMs,

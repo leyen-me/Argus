@@ -16,7 +16,8 @@ export const MULTI_TIMEFRAME_CAPTURE_SPECS = [
 
 export type StrategyIndicatorId = "EM20" | "BB" | "ATR" | "MACD";
 
-/** 策略绑定的单选标的（与 UI 一致，大写 persisted） */
+/** K 线表追加列顺序（与策略中心勾选顺序无关，固定此序输出） */
+export const STRATEGY_INDICATOR_ORDER: readonly StrategyIndicatorId[] = ["EM20", "BB", "ATR", "MACD"];
 export const STRATEGY_TOKEN_SYMBOL_OPTIONS = ["BTC", "ETH", "SOL", "DOGE"] as const;
 export type StrategyTokenSymbol = (typeof STRATEGY_TOKEN_SYMBOL_OPTIONS)[number];
 
@@ -52,7 +53,7 @@ export type StrategyExtrasV1 = {
   tokenSymbols: string[];
   /** 多选：投喂模型的 K 线多周期（与 `## 多周期上下文` 及附图子集一致） */
   marketTimeframes: StrategyDecisionIntervalTv[];
-  /** 占位：技术指标勾选 */
+  /** 多选：技术指标列（EMA / 布林 / ATR / MACD），拼入各周期「最近 K 线」表 */
   indicators: StrategyIndicatorId[];
 };
 
@@ -99,7 +100,7 @@ export function decisionIntervalExplain(tv: StrategyDecisionIntervalTv): string 
   }
 }
 
-const INDICATORS: StrategyIndicatorId[] = ["EM20", "BB", "ATR", "MACD"];
+const INDICATORS: StrategyIndicatorId[] = [...STRATEGY_INDICATOR_ORDER];
 
 function isIndicator(id: unknown): id is StrategyIndicatorId {
   return typeof id === "string" && INDICATORS.includes(id as StrategyIndicatorId);
@@ -109,6 +110,13 @@ export function normalizeStrategyIndicators(raw: unknown): StrategyIndicatorId[]
   if (!Array.isArray(raw)) return [];
   const out = raw.filter(isIndicator);
   return out.length ? [...new Set(out)] : [];
+}
+
+/** 按 {@link STRATEGY_INDICATOR_ORDER} 排列策略勾选（用于 LLM 表头列序） */
+export function orderStrategyIndicatorsForPrompt(ids: readonly StrategyIndicatorId[] | undefined): StrategyIndicatorId[] {
+  if (!ids?.length) return [];
+  const set = new Set(ids);
+  return STRATEGY_INDICATOR_ORDER.filter((id) => set.has(id));
 }
 
 export function normalizeStrategyMarketTimeframes(raw: unknown): StrategyDecisionIntervalTv[] {

@@ -434,6 +434,7 @@ async function requestChartCapture(
 async function emitBarClose(ctx) {
   const cfg = loadAppConfig();
   const marketTfs = promptStrategiesStore.getMarketTimeframesForStrategyId(cfg.promptStrategy);
+  const strategyIndicators = promptStrategiesStore.getIndicatorsForStrategyId(cfg.promptStrategy);
   const multiCaptureSpecs = filterMultiTimeframeSpecsByMarketSelection(
     MULTI_TIMEFRAME_CAPTURE_SPECS,
     marketTfs,
@@ -498,6 +499,7 @@ async function emitBarClose(ctx) {
     ctx.candle,
     recentCandles,
     marketTfs,
+    strategyIndicators,
   );
   const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx, positionsHistory, recentAgentMemories);
 

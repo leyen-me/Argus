@@ -506,7 +506,7 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">技术指标</Label>
                     <ConfigHelpTooltip className="size-6">
-                      提供给模型的技术指标
+                      勾选后写入各周期「最近 K 线」表列：EMA 基于收盘；布林带 20/2σ；ATR14（Wilder）；MACD 12/26/9
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">

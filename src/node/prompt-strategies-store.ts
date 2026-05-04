@@ -1,6 +1,7 @@
 import * as localDb from "./local-db/index.js";
 import {
   STRATEGY_DECISION_INTERVAL_TV,
+  STRATEGY_INDICATOR_ORDER,
   defaultStrategyExtras,
   normalizeStrategyDecisionIntervalTv,
   normalizeStrategyTokenSymbol,
@@ -9,6 +10,7 @@ import {
   stringifyStrategyExtras,
   type StrategyDecisionIntervalTv,
   type StrategyExtrasV1,
+  type StrategyIndicatorId,
 } from "../shared/strategy-fields.js";
 
 const DEFAULT_PROMPT_STRATEGY = "default";
@@ -153,6 +155,21 @@ function getMarketTimeframesForStrategyId(strategyId: unknown): StrategyDecision
   return row ? [...row.extras.marketTimeframes] : [...STRATEGY_DECISION_INTERVAL_TV];
 }
 
+/**
+ * 策略在「技术指标」中的勾选（与最近 K 线表列一致；无策略 id 或未入库时默认 EMA20）。
+ * @param {unknown} strategyId
+ * @returns {StrategyIndicatorId[]}
+ */
+function getIndicatorsForStrategyId(strategyId: unknown): StrategyIndicatorId[] {
+  seedFromDiskIfEmpty();
+  if (typeof strategyId !== "string" || !strategyId.trim()) {
+    return ["EM20"];
+  }
+  const row = getStrategy(strategyId.trim());
+  const raw = row ? [...row.extras.indicators] : ["EM20"];
+  return STRATEGY_INDICATOR_ORDER.filter((id) => raw.includes(id));
+}
+
 /** @param {Partial<StrategyExtrasV1>} patch */
 function applyExtrasPatch(base: StrategyExtrasV1, patch: Partial<StrategyExtrasV1>): StrategyExtrasV1 {
   return {
@@ -254,6 +271,7 @@ export {
   getDecisionIntervalTvForStrategyId,
   getOkxTvSymbolForStrategyId,
   getMarketTimeframesForStrategyId,
+  getIndicatorsForStrategyId,
   saveStrategy,
   deleteStrategy,
   validateStrategyId,

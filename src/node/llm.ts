@@ -10,7 +10,9 @@ import type {
 import { loadSystemPromptsFromDisk } from "./app-config.js";
 import {
   filterMultiTimeframeSpecsByMarketSelection,
+  orderStrategyIndicatorsForPrompt,
   type StrategyDecisionIntervalTv,
+  type StrategyIndicatorId,
 } from "../shared/strategy-fields.js";
 
 /** 交易 Agent：`resolveTradingAgentSystemPrompt` 在策略正文后附加；与用户策略库解耦。 */
@@ -889,6 +891,12 @@ async function summarizeAgentAnalysisForCard(
 const RECENT_CANDLES_FETCH_LIMIT = 100;
 const RECENT_CANDLES_DISPLAY_COUNT = 30;
 const EMA20_PERIOD = 20;
+const BB_PERIOD = 20;
+const BB_STD_MULT = 2;
+const ATR_PERIOD = 14;
+const MACD_FAST = 12;
+const MACD_SLOW = 26;
+const MACD_SIGNAL = 9;
 
 /**
  * 收盘价 EMA：第 `period` 根起有效，首值为前 `period` 根收盘 SMA，之后标准 EMA（α=2/(period+1)）。
@@ -918,7 +926,157 @@ function computeEmaSeries(closes, period) {
   return out;
 }
 
-/** @param {string | number} raw */
+/** 布林通道：中轨为收盘 SMA(period)，上下轨 ± mult × 总体标准差 */
+function computeBollingerSeries(closes, period, mult) {
+  const n = closes.length;
+  const mid = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  const upper = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  const lower = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  if (!Number.isFinite(period) || period < 1) return { mid, upper, lower };
+  for (let i = period - 1; i < n; i++) {
+    let sum = 0;
+    let sumsq = 0;
+    let ok = true;
+    for (let j = i - period + 1; j <= i; j++) {
+      const c = closes[j];
+      if (!Number.isFinite(c)) {
+        ok = false;
+        break;
+      }
+      sum += c;
+      sumsq += c * c;
+    }
+    if (!ok) continue;
+    const mean = sum / period;
+    const varPop = Math.max(0, sumsq / period - mean * mean);
+    const std = Math.sqrt(varPop);
+    mid[i] = mean;
+    upper[i] = mean + mult * std;
+    lower[i] = mean - mult * std;
+  }
+  return { mid, upper, lower };
+}
+
+/**
+ * @param {number[]} highs
+ * @param {number[]} lows
+ * @param {number[]} closes
+ */
+function computeTrueRangeSeries(highs, lows, closes) {
+  const n = highs.length;
+  const tr = Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    const h = highs[i];
+    const l = lows[i];
+    if (!Number.isFinite(h) || !Number.isFinite(l)) continue;
+    if (i === 0) tr[i] = h - l;
+    else {
+      const pc = closes[i - 1];
+      if (!Number.isFinite(pc)) tr[i] = h - l;
+      else tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc));
+    }
+  }
+  return tr;
+}
+
+/** Wilder ATR：首值为 TR 的 SMA，其后递推 */
+function computeAtrWilderSeries(tr, period) {
+  const n = tr.length;
+  const out = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  if (n < period || !Number.isFinite(period) || period < 1) return out;
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += tr[i];
+  let atr = sum / period;
+  out[period - 1] = atr;
+  for (let i = period; i < n; i++) {
+    atr = (atr * (period - 1) + tr[i]) / period;
+    out[i] = atr;
+  }
+  return out;
+}
+
+/** MACD 线 / Signal / 柱：与常见平台一致（DIF=EMA12−EMA26，Signal=EMA9(DIF)，Hist=DIF−Signal） */
+function computeMacdTriple(closes) {
+  const ema12 = computeEmaSeries(closes, MACD_FAST);
+  const ema26 = computeEmaSeries(closes, MACD_SLOW);
+  const n = closes.length;
+  const macd = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  const signal = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  const hist = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  const firstMacd = MACD_SLOW - 1;
+  for (let i = firstMacd; i < n; i++) {
+    if (ema12[i] != null && ema26[i] != null) macd[i] = ema12[i] - ema26[i];
+  }
+  const tailLen = n - firstMacd;
+  const macdTail = /** @type {number[]} */ (Array(tailLen));
+  for (let j = 0; j < tailLen; j++) macdTail[j] = /** @type {number} */ (macd[firstMacd + j]);
+  const sigTail = computeEmaSeries(macdTail, MACD_SIGNAL);
+  for (let j = 0; j < sigTail.length; j++) {
+    if (sigTail[j] != null) signal[firstMacd + j] = sigTail[j];
+  }
+  for (let i = 0; i < n; i++) {
+    if (macd[i] != null && signal[i] != null) hist[i] = macd[i] - signal[i];
+  }
+  return { macd, signal, hist };
+}
+
+/**
+ * @param {Array<{ open: string, high: string, low: string, close: string }>} rows
+ */
+function rowsToHlC(rows) {
+  const highs = rows.map((r) => closeToNumber(r.high));
+  const lows = rows.map((r) => closeToNumber(r.low));
+  const closes = rows.map((r) => closeToNumber(r.close));
+  return { highs, lows, closes };
+}
+
+/**
+ * @param {readonly StrategyIndicatorId[]} orderedIds
+ */
+function indicatorColumnHeaders(orderedIds: readonly StrategyIndicatorId[]): string[] {
+  const headers: string[] = [];
+  for (const id of orderedIds) {
+    if (id === "EM20") headers.push("EMA20");
+    if (id === "BB") headers.push("BB Mid", "BB Upper", "BB Lower");
+    if (id === "ATR") headers.push("ATR14");
+    if (id === "MACD") headers.push("MACD", "Signal", "Hist");
+  }
+  return headers;
+}
+
+/**
+ * @param {readonly StrategyIndicatorId[]} orderedIds
+ */
+function indicatorCellsForRow(
+  orderedIds: readonly StrategyIndicatorId[],
+  j: number,
+  i: number,
+  sliceEma: (number | null)[],
+  bb: { mid: (number | null)[]; upper: (number | null)[]; lower: (number | null)[] },
+  atrSeries: (number | null)[],
+  macdTriple: { macd: (number | null)[]; signal: (number | null)[]; hist: (number | null)[] },
+): string[] {
+  const cells: string[] = [];
+  for (const id of orderedIds) {
+    if (id === "EM20") cells.push(formatPromptNumber(sliceEma[j]));
+    if (id === "BB") {
+      cells.push(
+        formatPromptNumber(bb.mid[i]),
+        formatPromptNumber(bb.upper[i]),
+        formatPromptNumber(bb.lower[i]),
+      );
+    }
+    if (id === "ATR") cells.push(formatPromptNumber(atrSeries[i]));
+    if (id === "MACD") {
+      cells.push(
+        formatPromptNumber(macdTriple.macd[i]),
+        formatPromptNumber(macdTriple.signal[i]),
+        formatPromptNumber(macdTriple.hist[i]),
+      );
+    }
+  }
+  return cells;
+}
 function closeToNumber(raw) {
   const x = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/,/g, ""));
   return Number.isFinite(x) ? x : NaN;
@@ -948,8 +1106,10 @@ function mdTable(headers, rows) {
 
 /**
  * @param {{ ok: boolean, error?: string, rows?: Array<{ timeIso: string, open: string, high: string, low: string, close: string, volume: string, turnover: string | null }>, instId?: string | null, bar?: string } | null | undefined} recent
+ * @param {string} [heading]
+ * @param {readonly StrategyIndicatorId[] | undefined} [strategyIndicators] 未传时默认仅 EMA20（兼容旧单周期 user）
  */
-function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线（OKX REST）") {
+function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线（OKX REST）", strategyIndicators) {
   if (!recent) return "";
   const title = heading;
   if (!recent.ok) {
@@ -964,38 +1124,85 @@ function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线�
   if (!rows.length) {
     return ["", `${title}${meta}`, "", "（无数据行）"].join("\n");
   }
-  const closes = rows.map((r) => closeToNumber(r.close));
-  const ema20 = computeEmaSeries(closes, EMA20_PERIOD);
+
+  const orderedIds = orderStrategyIndicatorsForPrompt(
+    strategyIndicators === undefined ? ["EM20"] : strategyIndicators,
+  );
+
+  const { highs, lows, closes } = rowsToHlC(rows);
   const show = Math.min(RECENT_CANDLES_DISPLAY_COUNT, rows.length);
   const sliceStart = rows.length - show;
   const sliceRows = rows.slice(sliceStart);
-  const sliceEma = ema20.slice(sliceStart);
-  const tableRows = sliceRows.map((r, j) => [
-    r.timeIso.replace("T", " ").slice(0, 19),
-    r.open,
-    r.high,
-    r.low,
-    r.close,
-    r.volume,
-    r.turnover != null && r.turnover !== "" ? r.turnover : "—",
-    formatPromptNumber(sliceEma[j]),
-  ]);
+
+  let sliceEma: (number | null)[] = [];
+  if (orderedIds.includes("EM20")) {
+    const ema20 = computeEmaSeries(closes, EMA20_PERIOD);
+    sliceEma = ema20.slice(sliceStart);
+  }
+
+  let bb: ReturnType<typeof computeBollingerSeries> | null = null;
+  if (orderedIds.includes("BB")) {
+    bb = computeBollingerSeries(closes, BB_PERIOD, BB_STD_MULT);
+  }
+
+  let atrSeries: (number | null)[] = [];
+  if (orderedIds.includes("ATR")) {
+    const tr = computeTrueRangeSeries(highs, lows, closes);
+    atrSeries = computeAtrWilderSeries(tr, ATR_PERIOD);
+  }
+
+  let macdTriple: { macd: (number | null)[]; signal: (number | null)[]; hist: (number | null)[] } = {
+    macd: [] as (number | null)[],
+    signal: [] as (number | null)[],
+    hist: [] as (number | null)[],
+  };
+  if (orderedIds.includes("MACD")) {
+    macdTriple = computeMacdTriple(closes);
+  }
+
+  const baseHeaders = ["Time (UTC)", "Open", "High", "Low", "Close", "Volume", "QuoteVol"];
+  const indHeaders = indicatorColumnHeaders(orderedIds);
+  const headers = [...baseHeaders, ...indHeaders];
+
+  const bbSafe: {
+    mid: (number | null)[];
+    upper: (number | null)[];
+    lower: (number | null)[];
+  } = bb ?? { mid: [], upper: [], lower: [] };
+
+  const tableRows = sliceRows.map((r, j) => {
+    const i = sliceStart + j;
+    const base = [
+      r.timeIso.replace("T", " ").slice(0, 19),
+      r.open,
+      r.high,
+      r.low,
+      r.close,
+      r.volume,
+      r.turnover != null && r.turnover !== "" ? r.turnover : "—",
+    ];
+    const extra = indicatorCellsForRow(orderedIds, j, i, sliceEma, bbSafe, atrSeries, macdTriple);
+    return [...base, ...extra];
+  });
+
+  const metaShow = recent.instId && recent.bar ? `共 ${show} 根` : meta;
+
   return [
     "",
-    `${title}${meta}`,
+    `${title}${metaShow}`,
     "",
-    mdTable(
-      ["Time (UTC)", "Open", "High", "Low", "Close", "Volume", "QuoteVol", "EMA20"],
-      tableRows,
-    ),
+    mdTable(headers, tableRows),
   ].join("\n");
 }
 
 /**
+ * @param {string} symbol
+ * @param {string} periodKey
  * @param {object} candle
  * @param {Parameters<typeof buildRecentCandlesMarkdownSection>[0]} [recentCandles] OKX 最近 N 根（与 WS 同源 instId）
+ * @param {readonly StrategyIndicatorId[] | undefined} [strategyIndicators] 未传时表中默认带 EMA20
  */
-function buildUserPrompt(symbol, periodKey, candle, recentCandles) {
+function buildUserPrompt(symbol, periodKey, candle, recentCandles, strategyIndicators) {
   const row = [
     symbol,
     `${periodKey}（已收盘）`,
@@ -1015,7 +1222,7 @@ function buildUserPrompt(symbol, periodKey, candle, recentCandles) {
       [row],
     ),
   ].join("\n");
-  return head + buildRecentCandlesMarkdownSection(recentCandles);
+  return head + buildRecentCandlesMarkdownSection(recentCandles, "### 最近 K 线（OKX REST）", strategyIndicators);
 }
 
 /** 与 shared 一致：小周期在上、大周期在下（filter 后也会再 sort） */
@@ -1032,8 +1239,9 @@ const MULTI_TIMEFRAME_PROMPT_SPECS = [
  * @param {object} candle
  * @param {Record<string, Parameters<typeof buildRecentCandlesMarkdownSection>[0]>} recentCandlesByInterval
  * @param {readonly StrategyDecisionIntervalTv[]} [marketTimeframes] 策略「市场数据」勾选；空或未传则四周期全开（与 shared 容错一致）
+ * @param {readonly StrategyIndicatorId[]} [strategyIndicators] 策略「技术指标」勾选；空数组则仅 OHLCV+成交额列
  */
-function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesByInterval, marketTimeframes) {
+function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesByInterval, marketTimeframes, strategyIndicators) {
   const triggerRow = [
     symbol,
     `${periodKey}`,
@@ -1052,6 +1260,7 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
       buildRecentCandlesMarkdownSection(
         recentCandlesByInterval?.[spec.interval],
         `### ${spec.label} `,
+        strategyIndicators,
       ),
     )
     .filter(Boolean);

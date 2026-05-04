@@ -79,7 +79,7 @@ function createNewStrategyExtras(): StrategyExtrasV1 {
   return {
     tokenSymbols: ["BTC"],
     marketTimeframes: ["5", "60"],
-    indicators: ["EM20"],
+    indicators: ["VOL", "EM20"],
   };
 }
 
@@ -198,7 +198,7 @@ export function StrategyCenterModal() {
       return;
     }
     if (!body) {
-      setStatus("策略文本不能为空");
+      setStatus("策略逻辑不能为空");
       return;
     }
     setBusy(true);
@@ -540,7 +540,7 @@ export function StrategyCenterModal() {
 
             <div className="flex min-h-0 min-w-0 flex-col gap-2 p-4 pl-5">
               <Label htmlFor="strategy-body" className="text-muted-foreground">
-                策略文本（系统提示词）
+                策略逻辑
               </Label>
               <Textarea
                 id="strategy-body"

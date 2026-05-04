@@ -433,14 +433,11 @@ export function StrategyCenterModal() {
                 <Separator />
 
                 <section>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">市场数据</Label>
                     <ConfigHelpTooltip className="size-6">
                       选择拟提供给模型的多周期数据（已持久化，尚未接入行情筛选逻辑）。
                     </ConfigHelpTooltip>
-                    <Badge variant="secondary" className="text-[10px] font-normal">
-                      占位
-                    </Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {MARKET_TF_META.map((m) => {
@@ -470,14 +467,11 @@ export function StrategyCenterModal() {
                 <Separator />
 
                 <section>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">技术指标</Label>
                     <ConfigHelpTooltip className="size-6">
                       勾选会写入策略配置，图表与提示词尚未自动应用。
                     </ConfigHelpTooltip>
-                    <Badge variant="secondary" className="text-[10px] font-normal">
-                      占位
-                    </Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {INDICATORS.map((ind) => {

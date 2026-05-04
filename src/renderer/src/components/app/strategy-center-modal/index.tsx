@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { BookOpen, PencilLine, XIcon } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +23,8 @@ import {
 } from "@/lib/argus-strategy-modal-events";
 import {
   STRATEGY_DECISION_INTERVAL_TV,
+  STRATEGY_TOKEN_SYMBOL_OPTIONS,
+  normalizeStrategyTokenSymbol,
   type StrategyDecisionIntervalTv,
   type StrategyExtrasV1,
   type StrategyIndicatorId,
@@ -71,6 +72,15 @@ function toggleInList<T>(list: T[], item: T): T[] {
   return has ? list.filter((x) => x !== item) : [...list, item];
 }
 
+/** 新建策略 / 清空表单时的扩展字段默认值 */
+function createNewStrategyExtras(): StrategyExtrasV1 {
+  return {
+    tokenSymbols: ["BTC"],
+    marketTimeframes: ["5", "60"],
+    indicators: ["EM20"],
+  };
+}
+
 export function StrategyCenterModal() {
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<StrategyMeta[]>([]);
@@ -79,11 +89,7 @@ export function StrategyCenterModal() {
   const [draftLabel, setDraftLabel] = useState("");
   const [draftBody, setDraftBody] = useState("");
   const [draftDecisionTv, setDraftDecisionTv] = useState<StrategyDecisionIntervalTv>("5");
-  const [draftExtras, setDraftExtras] = useState<StrategyExtrasV1>({
-    tokenSymbols: [],
-    marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
-    indicators: [],
-  });
+  const [draftExtras, setDraftExtras] = useState<StrategyExtrasV1>(() => createNewStrategyExtras());
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [titleEditing, setTitleEditing] = useState(false);
@@ -96,7 +102,7 @@ export function StrategyCenterModal() {
     setDraftBody(row.body || "");
     setDraftDecisionTv(row.decisionIntervalTv);
     setDraftExtras({
-      tokenSymbols: [...(row.extras?.tokenSymbols ?? [])],
+      tokenSymbols: [normalizeStrategyTokenSymbol(row.extras?.tokenSymbols)],
       marketTimeframes: [...(row.extras?.marketTimeframes ?? [...STRATEGY_DECISION_INTERVAL_TV])],
       indicators: [...(row.extras?.indicators ?? [])],
     });
@@ -127,11 +133,7 @@ export function StrategyCenterModal() {
         setDraftLabel("");
         setDraftBody("");
         setDraftDecisionTv("5");
-        setDraftExtras({
-          tokenSymbols: [],
-          marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
-          indicators: [],
-        });
+        setDraftExtras(createNewStrategyExtras());
       }
     } catch (e) {
       console.error(e);
@@ -175,11 +177,7 @@ export function StrategyCenterModal() {
     setDraftLabel("");
     setDraftBody("");
     setDraftDecisionTv("5");
-    setDraftExtras({
-      tokenSymbols: [],
-      marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
-      indicators: [],
-    });
+    setDraftExtras(createNewStrategyExtras());
     setStatus(null);
     setTitleEditing(true);
   };
@@ -393,14 +391,36 @@ export function StrategyCenterModal() {
                   </div>
                 ) : null}
 
-                <section className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label className="text-foreground">代币范围</Label>
-                    <Badge variant="secondary" className="text-[10px] font-normal">
-                      即将推出
-                    </Badge>
+                <section>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-foreground">代币</Label>
+                    <ConfigHelpTooltip className="size-6">
+                      每条策略绑定单一标的
+                    </ConfigHelpTooltip>
                   </div>
-                  <Input disabled placeholder="占位：不同策略可绑定不同交易对（未实现）" className="bg-muted/40 text-muted-foreground" />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {STRATEGY_TOKEN_SYMBOL_OPTIONS.map((sym) => {
+                      const selected = normalizeStrategyTokenSymbol(draftExtras.tokenSymbols) === sym;
+                      return (
+                        <Button
+                          key={sym}
+                          type="button"
+                          size="sm"
+                          variant={selected ? "default" : "outline"}
+                          className="h-8 min-w-[52px] px-2 text-xs"
+                          onClick={() =>
+                            setDraftExtras((prev) => ({
+                              ...prev,
+                              tokenSymbols: [sym],
+                            }))
+                          }
+                          disabled={busy}
+                        >
+                          {sym}
+                        </Button>
+                      );
+                    })}
+                  </div>
                 </section>
 
                 <Separator />
@@ -409,7 +429,7 @@ export function StrategyCenterModal() {
                   <div className="flex items-center gap-1.5">
                     <Label className="text-foreground">决策时间</Label>
                     <ConfigHelpTooltip className="size-6">
-                      K 线收盘触发 Agent 的周期；与当前策略绑定。
+                      K 线收盘触发 Agent 的周期
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -435,7 +455,7 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">市场数据</Label>
                     <ConfigHelpTooltip className="size-6">
-                      选择拟提供给模型的多周期数据（已持久化，尚未接入行情筛选逻辑）。
+                      提供给模型的多周期数据
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -446,7 +466,7 @@ export function StrategyCenterModal() {
                           key={m.id}
                           type="button"
                           size="sm"
-                          variant={on ? "secondary" : "outline"}
+                          variant={on ? "default" : "outline"}
                           className="h-8 min-w-[52px] px-2 text-xs"
                           onClick={() =>
                             setDraftExtras((prev) => ({
@@ -469,7 +489,7 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">技术指标</Label>
                     <ConfigHelpTooltip className="size-6">
-                      勾选会写入策略配置，图表与提示词尚未自动应用。
+                      提供给模型的技术指标
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -480,8 +500,8 @@ export function StrategyCenterModal() {
                           key={ind.id}
                           type="button"
                           size="sm"
-                          variant={on ? "secondary" : "outline"}
-                          className="h-8 px-2.5 text-xs"
+                          variant={on ? "default" : "outline"}
+                          className="h-8 min-w-[52px] px-2 text-xs"
                           onClick={() =>
                             setDraftExtras((prev) => ({
                               ...prev,

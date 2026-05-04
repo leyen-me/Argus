@@ -16,8 +16,27 @@ export const MULTI_TIMEFRAME_CAPTURE_SPECS = [
 
 export type StrategyIndicatorId = "EM20" | "BB" | "ATR" | "MACD";
 
+/** 策略绑定的单选标的（与 UI 一致，大写 persisted） */
+export const STRATEGY_TOKEN_SYMBOL_OPTIONS = ["BTC", "ETH", "SOL", "DOGE"] as const;
+export type StrategyTokenSymbol = (typeof STRATEGY_TOKEN_SYMBOL_OPTIONS)[number];
+
+const TOKEN_SYMBOL_SET = new Set<string>(STRATEGY_TOKEN_SYMBOL_OPTIONS);
+
+export function normalizeStrategyTokenSymbol(raw: unknown): StrategyTokenSymbol {
+  if (Array.isArray(raw)) {
+    for (const t of raw) {
+      const u = String(t).trim().toUpperCase();
+      if (TOKEN_SYMBOL_SET.has(u)) return u as StrategyTokenSymbol;
+    }
+  } else if (raw != null && raw !== "") {
+    const u = String(raw).trim().toUpperCase();
+    if (TOKEN_SYMBOL_SET.has(u)) return u as StrategyTokenSymbol;
+  }
+  return "BTC";
+}
+
 export type StrategyExtrasV1 = {
-  /** 占位：代币 / 合约范围 */
+  /** 单选：代币 / 合约范围，持久化为 length-1 数组 */
   tokenSymbols: string[];
   /** 占位：拟投喂模型的多周期（多选），尚未接入数据管线 */
   marketTimeframes: StrategyDecisionIntervalTv[];
@@ -27,7 +46,7 @@ export type StrategyExtrasV1 = {
 
 export function defaultStrategyExtras(): StrategyExtrasV1 {
   return {
-    tokenSymbols: [],
+    tokenSymbols: ["BTC"],
     marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
     indicators: [],
   };
@@ -99,15 +118,12 @@ export function parseStrategyExtrasJson(raw: unknown): StrategyExtrasV1 {
     }
   }
   const def = defaultStrategyExtras();
-  const tokenRaw = o.tokenSymbols;
-  const symbols = Array.isArray(tokenRaw)
-    ? tokenRaw.map((t) => String(t).trim()).filter(Boolean)
-    : def.tokenSymbols;
+  const tokenSymbols = [normalizeStrategyTokenSymbol(o.tokenSymbols !== undefined ? o.tokenSymbols : def.tokenSymbols)];
   const marketTf = normalizeStrategyMarketTimeframes(o.marketTimeframes);
   let indicators = normalizeStrategyIndicators(o.indicators);
   if (!indicators.length && Array.isArray(o.indicators)) indicators = def.indicators;
   return {
-    tokenSymbols: symbols,
+    tokenSymbols,
     marketTimeframes: marketTf.length ? marketTf : def.marketTimeframes,
     indicators,
   };

@@ -44,8 +44,8 @@ type PromptStrategyRow = {
 type ArgusApi = {
   listPromptStrategiesMeta?: () => Promise<StrategyMeta[]>;
   getPromptStrategy?: (id: string) => Promise<PromptStrategyRow | null>;
-  savePromptStrategy?: (payload: Record<string, unknown>) => Promise<void>;
-  deletePromptStrategy?: (id: string) => Promise<void>;
+  savePromptStrategy?: (payload: Record<string, unknown>) => Promise<unknown>;
+  deletePromptStrategy?: (id: string) => Promise<unknown>;
 };
 
 const MARKET_TF_META: { id: StrategyDecisionIntervalTv; label: string }[] = [
@@ -202,7 +202,7 @@ export function StrategyCenterModal() {
     setBusy(true);
     setStatus(null);
     try {
-      await api.savePromptStrategy({
+      const nextConfig = await api.savePromptStrategy({
         id,
         label,
         body,
@@ -213,8 +213,20 @@ export function StrategyCenterModal() {
           indicators: draftExtras.indicators,
         },
       });
-      window.dispatchEvent(new CustomEvent(ARGUS_PROMPT_STRATEGIES_CHANGED));
-      setStatus("已保存");
+      window.dispatchEvent(
+        new CustomEvent(ARGUS_PROMPT_STRATEGIES_CHANGED, { detail: nextConfig }),
+      );
+      const ps =
+        nextConfig &&
+        typeof nextConfig === "object" &&
+        typeof (nextConfig as { promptStrategy?: unknown }).promptStrategy === "string"
+          ? (nextConfig as { promptStrategy: string }).promptStrategy.trim()
+          : "";
+      setStatus(
+        ps && ps !== id
+          ? `已保存。顶栏当前策略为「${ps}」，图表标的跟随顶栏；要看本条代币请先切换顶栏策略。`
+          : "已保存",
+      );
       setTitleEditing(false);
       await refreshList(id);
     } catch (e) {
@@ -234,8 +246,10 @@ export function StrategyCenterModal() {
     setBusy(true);
     setStatus(null);
     try {
-      await api.deletePromptStrategy(selectedId);
-      window.dispatchEvent(new CustomEvent(ARGUS_PROMPT_STRATEGIES_CHANGED));
+      const nextConfig = await api.deletePromptStrategy(selectedId);
+      window.dispatchEvent(
+        new CustomEvent(ARGUS_PROMPT_STRATEGIES_CHANGED, { detail: nextConfig }),
+      );
       setStatus("已删除");
       setSelectedId(null);
       setDraftId("");

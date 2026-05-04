@@ -7,6 +7,18 @@ type SymbolOption = { label: string; value: string };
 
 type SyncDetail = { symbols: SymbolOption[]; value: string };
 
+function readSymbolSelectFromDom(): SyncDetail | null {
+  const sel = document.getElementById("symbol-select");
+  if (!(sel instanceof HTMLSelectElement)) return null;
+  const symbols: SymbolOption[] = [...sel.options].map((o) => ({
+    label: (o.textContent ?? o.value).trim(),
+    value: o.value,
+  }));
+  if (!symbols.length) return null;
+  const v = (sel.value || symbols[0]?.value || "").trim();
+  return { symbols, value: v };
+}
+
 /**
  * 交易标的由当前策略在「策略中心」绑定的代币决定；此处仅展示，不可切换。
  * 仍保留隐藏 `#symbol-select` 供 argus-renderer 命令式读写。
@@ -24,6 +36,11 @@ export function ChartSymbolSelect() {
       setValue(String(d.value ?? d.symbols[0]?.value ?? ""));
     };
     window.addEventListener(ARGUS_SYMBOL_SELECT_SYNC, onSync);
+    const dom = readSymbolSelectFromDom();
+    if (dom) {
+      setOptions(dom.symbols);
+      setValue(dom.value);
+    }
     return () => window.removeEventListener(ARGUS_SYMBOL_SELECT_SYNC, onSync);
   }, []);
 

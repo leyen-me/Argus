@@ -1954,8 +1954,12 @@ async function loadAppConfig(): Promise<RendererAppConfig> {
   if (window.argus && typeof window.argus.getConfig === "function") {
     try {
       return asRendererAppConfig(await window.argus.getConfig());
-    } catch {
-      /* ignore */
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(
+        "[Argus] 拉取应用配置失败，界面将暂时使用内置默认（标的常为 BTC）。请确认服务端已启动且可访问 /api/rpc。",
+        msg,
+      );
     }
   }
   return FALLBACK_APP_CONFIG;
@@ -2144,6 +2148,77 @@ const ARGUS_STRATEGY_MODAL_OPEN = "argus:strategy-modal-open";
 const ARGUS_DASHBOARD_MODAL_OPEN = "argus:dashboard-modal-open";
 const ARGUS_PROMPT_STRATEGIES_CHANGED = "argus:prompt-strategies-changed";
 
+/** @param cfg `normalizeConfig` 返回的配置；用于配置 Dialog 表单与顶栏下拉同步。 */
+function fillConfigModalFields(cfg) {
+  const openaiUrlEl = document.getElementById("config-openai-base-url");
+  const openaiModelEl = document.getElementById("config-openai-model");
+  if (openaiUrlEl) openaiUrlEl.value = cfg.openaiBaseUrl || FALLBACK_APP_CONFIG.openaiBaseUrl;
+  if (openaiModelEl) openaiModelEl.value = cfg.openaiModel || FALLBACK_APP_CONFIG.openaiModel;
+  const openaiKeyEl = document.getElementById("config-openai-api-key");
+  if (openaiKeyEl) openaiKeyEl.value = cfg.openaiApiKey ?? FALLBACK_APP_CONFIG.openaiApiKey;
+  const reasoningEl = document.getElementById("config-llm-reasoning");
+  if (reasoningEl) reasoningEl.checked = cfg.llmReasoningEnabled === true;
+  const tradeNotifyEl = document.getElementById("config-trade-notify-email");
+  if (tradeNotifyEl) tradeNotifyEl.checked = cfg.tradeNotifyEmailEnabled === true;
+  const smtpUserEl = document.getElementById("config-smtp-user");
+  const smtpPassEl = document.getElementById("config-smtp-pass");
+  const notifyToEl = document.getElementById("config-notify-email-to");
+  if (smtpUserEl) smtpUserEl.value = cfg.smtpUser ?? FALLBACK_APP_CONFIG.smtpUser;
+  if (smtpPassEl) smtpPassEl.value = cfg.smtpPass ?? FALLBACK_APP_CONFIG.smtpPass;
+  if (notifyToEl) notifyToEl.value = cfg.notifyEmailTo ?? FALLBACK_APP_CONFIG.notifyEmailTo;
+  const okxEn = document.getElementById("config-okx-swap-enabled");
+  const okxSim = document.getElementById("config-okx-simulated");
+  if (okxEn) okxEn.checked = cfg.okxSwapTradingEnabled === true;
+  if (okxSim) okxSim.checked = cfg.okxSimulated !== false;
+  const okxAk = document.getElementById("config-okx-api-key");
+  const okxSk = document.getElementById("config-okx-secret-key");
+  const okxPh = document.getElementById("config-okx-passphrase");
+  if (okxAk) okxAk.value = cfg.okxApiKey ?? FALLBACK_APP_CONFIG.okxApiKey;
+  if (okxSk) okxSk.value = cfg.okxSecretKey ?? FALLBACK_APP_CONFIG.okxSecretKey;
+  if (okxPh) okxPh.value = cfg.okxPassphrase ?? FALLBACK_APP_CONFIG.okxPassphrase;
+  applyPromptStrategySelect(cfg);
+  applyChartIntervalSelect(cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
+}
+
+async function applyMarketUiFromLoadedConfig(prefetched?: unknown) {
+  try {
+    const hasValid =
+      prefetched &&
+      typeof prefetched === "object" &&
+      prefetched !== null &&
+      typeof (prefetched as { defaultSymbol?: unknown }).defaultSymbol === "string" &&
+      String((prefetched as { defaultSymbol: string }).defaultSymbol).trim().length > 0;
+
+    const cfg = hasValid ? asRendererAppConfig(prefetched) : await loadAppConfig();
+
+    fillConfigModalFields(cfg);
+    applySymbolSelect(cfg);
+    applyPromptStrategySelect(cfg);
+    applyChartIntervalSelect(cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
+    const sym = cfg.defaultSymbol || FALLBACK_APP_CONFIG.defaultSymbol;
+    createTradingViewWidget(sym, chartInterval);
+    if (window.argus && typeof window.argus.setMarketContext === "function") {
+      window.argus.setMarketContext(sym);
+    }
+    await reloadLlmHistoryFromStore();
+    refreshExchangeContextBarFromCache();
+    void refreshOkxPositionBar();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+/** 独立于配置弹窗 DOM；策略中心保存后通过事件（可带 `detail`）刷新图表。 */
+let __promptStrategiesListenerBound = false;
+function initPromptStrategiesChangedListener() {
+  if (__promptStrategiesListenerBound) return;
+  __promptStrategiesListenerBound = true;
+  window.addEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, (ev: Event) => {
+    const detail = (ev as CustomEvent<unknown>).detail as unknown;
+    void applyMarketUiFromLoadedConfig(detail);
+  });
+}
+
 /**
  * 配置弹窗按钮用 document 委托绑定：Dialog 关闭会卸载 Portal，若只对节点 addEventListener 一次，
  * 第二次打开会是新 DOM，旧监听全丢。
@@ -2153,56 +2228,6 @@ let __argusConfigModalDocClickBound = false;
 function initConfigCenter() {
   const btnOpen = document.getElementById("btn-open-config");
   if (!btnOpen) return;
-
-  const fillConfigModalFields = (cfg) => {
-    const openaiUrlEl = document.getElementById("config-openai-base-url");
-    const openaiModelEl = document.getElementById("config-openai-model");
-    if (openaiUrlEl) openaiUrlEl.value = cfg.openaiBaseUrl || FALLBACK_APP_CONFIG.openaiBaseUrl;
-    if (openaiModelEl) openaiModelEl.value = cfg.openaiModel || FALLBACK_APP_CONFIG.openaiModel;
-    const openaiKeyEl = document.getElementById("config-openai-api-key");
-    if (openaiKeyEl) openaiKeyEl.value = cfg.openaiApiKey ?? FALLBACK_APP_CONFIG.openaiApiKey;
-    const reasoningEl = document.getElementById("config-llm-reasoning");
-    if (reasoningEl) reasoningEl.checked = cfg.llmReasoningEnabled === true;
-    const tradeNotifyEl = document.getElementById("config-trade-notify-email");
-    if (tradeNotifyEl) tradeNotifyEl.checked = cfg.tradeNotifyEmailEnabled === true;
-    const smtpUserEl = document.getElementById("config-smtp-user");
-    const smtpPassEl = document.getElementById("config-smtp-pass");
-    const notifyToEl = document.getElementById("config-notify-email-to");
-    if (smtpUserEl) smtpUserEl.value = cfg.smtpUser ?? FALLBACK_APP_CONFIG.smtpUser;
-    if (smtpPassEl) smtpPassEl.value = cfg.smtpPass ?? FALLBACK_APP_CONFIG.smtpPass;
-    if (notifyToEl) notifyToEl.value = cfg.notifyEmailTo ?? FALLBACK_APP_CONFIG.notifyEmailTo;
-    const okxEn = document.getElementById("config-okx-swap-enabled");
-    const okxSim = document.getElementById("config-okx-simulated");
-    if (okxEn) okxEn.checked = cfg.okxSwapTradingEnabled === true;
-    if (okxSim) okxSim.checked = cfg.okxSimulated !== false;
-    const okxAk = document.getElementById("config-okx-api-key");
-    const okxSk = document.getElementById("config-okx-secret-key");
-    const okxPh = document.getElementById("config-okx-passphrase");
-    if (okxAk) okxAk.value = cfg.okxApiKey ?? FALLBACK_APP_CONFIG.okxApiKey;
-    if (okxSk) okxSk.value = cfg.okxSecretKey ?? FALLBACK_APP_CONFIG.okxSecretKey;
-    if (okxPh) okxPh.value = cfg.okxPassphrase ?? FALLBACK_APP_CONFIG.okxPassphrase;
-    applyPromptStrategySelect(cfg);
-    applyChartIntervalSelect(cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
-  };
-
-  window.addEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, () => {
-    void (async () => {
-      try {
-        const cfg = await loadAppConfig();
-        fillConfigModalFields(cfg);
-        applySymbolSelect(cfg);
-        applyPromptStrategySelect(cfg);
-        applyChartIntervalSelect(cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
-        const sym = cfg.defaultSymbol || FALLBACK_APP_CONFIG.defaultSymbol;
-        createTradingViewWidget(sym, chartInterval);
-        if (window.argus && typeof window.argus.setMarketContext === "function") {
-          window.argus.setMarketContext(sym);
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    })();
-  });
 
   const closeModal = () => {
     window.dispatchEvent(new CustomEvent(ARGUS_CONFIG_MODAL_CLOSE));
@@ -2958,9 +2983,16 @@ let __argusRendererInitPromise = null;
 export function initArgusApp() {
   if (__argusRendererInitPromise) return __argusRendererInitPromise;
   __argusRendererInitPromise = (async () => {
+    initPromptStrategiesChangedListener();
     const cfg = await loadAppConfig();
     initTradingViewAutoLayout();
     applySymbolSelect(cfg);
+    /* `#symbol-select` 由 React 挂载；若首帧时尚未进 DOM，补跑一次以派发 symbol-select-sync */
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        applySymbolSelect(cfg);
+      });
+    });
     applyChartIntervalSelect(
       cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv,
     );

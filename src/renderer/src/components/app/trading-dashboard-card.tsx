@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { AlertCircle, PencilLine, Pause, Play } from "lucide-react"
+import { AlertCircle, Check, PencilLine, Pause, Play } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -230,7 +230,7 @@ function StrategyInfoCard({
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="size-10 shrink-0 text-muted-foreground hover:text-foreground"
+                className="size-10 shrink-0 rounded-xl border border-transparent text-muted-foreground transition-colors hover:border-border/50 hover:bg-muted/40 hover:text-foreground disabled:opacity-40"
                 aria-label="切换策略"
                 title={strategyEditTitle}
                 disabled={strategyEditDisabled || strategyEditBusy}
@@ -648,58 +648,99 @@ export function TradingDashboardCard({
       </div>
 
       <Dialog open={strategyPickerOpen} onOpenChange={setStrategyPickerOpen}>
-        <DialogContent showCloseButton className="gap-4 sm:max-w-md">
-          <DialogHeader className="text-left">
-            <DialogTitle className="text-base font-semibold">切换策略</DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              在列表中点选目标策略，再点击「确认切换」。主题色背景与边框表示当前正在使用的策略；光圈表示你当前选中项。
+        <DialogContent
+          showCloseButton
+          className="gap-0 overflow-hidden p-0 sm:max-w-[min(420px,calc(100%-2rem))] sm:rounded-2xl"
+        >
+          <DialogHeader className="space-y-3 border-b border-border/60 bg-muted/20 px-6 py-5 text-left">
+            <DialogTitle className="text-[1.05rem] font-semibold tracking-tight text-foreground">
+              切换策略
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2.5 text-[13px] leading-relaxed text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground/90">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block size-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.22)] dark:shadow-[0_0_0_3px_hsl(var(--primary)/0.35)]" />
+                    正在使用
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-md border border-dashed border-muted-foreground/35" />
+                    选中待确认
+                  </span>
+                </div>
+              </div>
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="max-h-[min(320px,calc(100vh-12rem))] pr-4">
-            <div className="flex flex-col gap-2 pb-1">
-              {strategyRowsForSelect.length === 0 ? (
-                <p className="m-0 text-sm text-muted-foreground">暂无策略条目，请先在策略中心创建。</p>
-              ) : (
-                strategyRowsForSelect.map((row) => {
-                  const isCurrent = row.id === currentPromptId
-                  const isPicked = pickerChoiceId !== null && row.id === pickerChoiceId
-                  return (
-                    <button
-                      key={row.id}
-                      type="button"
-                      className={cn(
-                        "flex w-full min-h-11 rounded-lg border border-transparent px-3 py-3 text-left text-sm shadow-none transition-colors",
-                        "outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                        "hover:bg-accent/80",
-                        "disabled:pointer-events-none disabled:opacity-50",
-                        isCurrent &&
-                          "border-primary/35 border-l-[3px] border-l-primary bg-primary/12 hover:bg-primary/16 dark:bg-primary/18 dark:hover:bg-primary/22",
-                        !isCurrent && "bg-muted/30 hover:bg-muted/55",
-                        isPicked && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background",
-                      )}
-                      disabled={strategySwitchBusy}
-                      onClick={() => setPickerChoiceId(row.id)}
-                    >
-                      <span className="wrap-break-word font-semibold text-foreground">
-                        {formatPromptStrategyDisplayLabel(row.id, row.label)}
-                      </span>
-                    </button>
-                  )
-                })
-              )}
-            </div>
-          </ScrollArea>
+          <div className="px-4 pb-1 pt-4 sm:px-5">
+            <ScrollArea className="max-h-[min(288px,42vh)]">
+              <div className="flex flex-col gap-2 pr-3 pb-2">
+                {strategyRowsForSelect.length === 0 ? (
+                  <p className="m-0 rounded-xl border border-dashed border-border/80 bg-muted/15 px-4 py-8 text-center text-[13px] text-muted-foreground">
+                    暂无策略，请先到策略中心创建
+                  </p>
+                ) : (
+                  strategyRowsForSelect.map((row) => {
+                    const isCurrent = row.id === currentPromptId
+                    const isPicked = pickerChoiceId !== null && row.id === pickerChoiceId
+                    return (
+                      <button
+                        key={row.id}
+                        type="button"
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-[background-color,border-color,box-shadow] duration-200",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                          "disabled:pointer-events-none disabled:opacity-45",
+                          "border-border/70 bg-card/40 shadow-sm hover:border-border hover:bg-card/90 hover:shadow-md",
+                          isCurrent &&
+                            "border-primary/25 bg-linear-to-br from-primary/6 via-card/80 to-card/40 dark:from-primary/10 dark:via-card/50",
+                          isPicked &&
+                            "border-primary/40 bg-card ring-1 ring-primary/20 ring-offset-0 dark:ring-primary/30",
+                          isPicked && isCurrent && "ring-primary/25 dark:ring-primary/35",
+                        )}
+                        disabled={strategySwitchBusy}
+                        onClick={() => setPickerChoiceId(row.id)}
+                      >
+                        <span
+                          className={cn(
+                            "flex size-2 shrink-0 rounded-full transition-[background-color,box-shadow] duration-200",
+                            isCurrent
+                              ? "bg-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.2)] dark:shadow-[0_0_0_3px_hsl(var(--primary)/0.32)]"
+                              : "bg-muted-foreground/25",
+                          )}
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1 wrap-break-word text-[13px] font-medium leading-snug tracking-tight text-foreground">
+                          {formatPromptStrategyDisplayLabel(row.id, row.label)}
+                        </span>
+                        {isPicked ? (
+                          <span
+                            className="flex size-6 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary"
+                            aria-hidden
+                          >
+                            <Check className="size-3.5 stroke-[2.5]" aria-hidden />
+                          </span>
+                        ) : (
+                          <span className="size-6 shrink-0" aria-hidden />
+                        )}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </ScrollArea>
+          </div>
 
-          <DialogFooter className="-mx-4 -mb-4 flex-col gap-2 border-border/80 sm:flex-row sm:justify-end">
+          <DialogFooter className="mx-0 mb-0 mt-1 flex-row items-center justify-end gap-2 border-t border-border/60 bg-muted/15 px-5 py-4 sm:flex-row">
             <DialogClose asChild>
-              <Button type="button" variant="outline" size="sm">
+              <Button type="button" variant="outline" size="sm" className="min-w-22 shadow-none">
                 取消
               </Button>
             </DialogClose>
             <Button
               type="button"
               size="sm"
+              className="min-w-22 shadow-sm"
               disabled={pickerConfirmDisabled}
               onClick={() => void confirmStrategyPick()}
             >

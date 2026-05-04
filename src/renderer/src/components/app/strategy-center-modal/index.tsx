@@ -56,10 +56,11 @@ const MARKET_TF_META: { id: StrategyDecisionIntervalTv; label: string }[] = [
 ];
 
 const INDICATORS: { id: StrategyIndicatorId; label: string }[] = [
-  { id: "EM20", label: "EMA 20" },
-  { id: "BB", label: "布林带 BB" },
-  { id: "ATR", label: "ATR" },
-  { id: "MACD", label: "MACD" },
+  { id: "EM20", label: "EMA(20)" },
+  { id: "BB", label: "BB(20,2)" },
+  { id: "ATR", label: "ATR(14)" },
+  { id: "RSI14", label: "RSI(14)" },
+  { id: "MACD", label: "MACD(12,26,9)" },
 ];
 
 function getArgus(): ArgusApi | undefined {
@@ -506,7 +507,7 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">技术指标</Label>
                     <ConfigHelpTooltip className="size-6">
-                      勾选后写入各周期「最近 K 线」表列：EMA 基于收盘；布林带 20/2σ；ATR14（Wilder）；MACD 12/26/9
+                      勾选后写入各周期「最近 K 线」表列：EMA(20) 收盘；BB(20,2σ)；ATR(14) Wilder；RSI(14) Wilder；MACD(12,26,9)
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">

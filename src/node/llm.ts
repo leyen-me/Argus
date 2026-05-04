@@ -894,6 +894,7 @@ const EMA20_PERIOD = 20;
 const BB_PERIOD = 20;
 const BB_STD_MULT = 2;
 const ATR_PERIOD = 14;
+const RSI_PERIOD = 14;
 const MACD_FAST = 12;
 const MACD_SLOW = 26;
 const MACD_SIGNAL = 9;
@@ -995,6 +996,46 @@ function computeAtrWilderSeries(tr, period) {
   return out;
 }
 
+/** RSI(Wilder)：首期为涨跌均值简单平均，其后递推平滑；输出 0–100 */
+function computeRsiWilderSeries(closes, period) {
+  const n = closes.length;
+  const out = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  if (!Number.isFinite(period) || period < 1 || n < period + 1) return out;
+
+  const gains: number[] = [];
+  const losses: number[] = [];
+  for (let i = 1; i < n; i++) {
+    const ch = closes[i] - closes[i - 1];
+    gains.push(ch > 0 ? ch : 0);
+    losses.push(ch < 0 ? -ch : 0);
+  }
+
+  let sumGain = 0;
+  let sumLoss = 0;
+  for (let j = 0; j < period; j++) {
+    sumGain += gains[j];
+    sumLoss += losses[j];
+  }
+  let avgGain = sumGain / period;
+  let avgLoss = sumLoss / period;
+
+  const rsiValue = (avgG, avgL) => {
+    if (avgL === 0 && avgG === 0) return 50;
+    if (avgL === 0) return 100;
+    const rs = avgG / avgL;
+    return 100 - 100 / (1 + rs);
+  };
+
+  out[period] = rsiValue(avgGain, avgLoss);
+
+  for (let j = period; j < n - 1; j++) {
+    avgGain = (avgGain * (period - 1) + gains[j]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[j]) / period;
+    out[j + 1] = rsiValue(avgGain, avgLoss);
+  }
+  return out;
+}
+
 /** MACD 线 / Signal / 柱：与常见平台一致（DIF=EMA12−EMA26，Signal=EMA9(DIF)，Hist=DIF−Signal） */
 function computeMacdTriple(closes) {
   const ema12 = computeEmaSeries(closes, MACD_FAST);
@@ -1039,6 +1080,7 @@ function indicatorColumnHeaders(orderedIds: readonly StrategyIndicatorId[]): str
     if (id === "EM20") headers.push("EMA20");
     if (id === "BB") headers.push("BB Mid", "BB Upper", "BB Lower");
     if (id === "ATR") headers.push("ATR14");
+    if (id === "RSI14") headers.push("RSI14");
     if (id === "MACD") headers.push("MACD", "Signal", "Hist");
   }
   return headers;
@@ -1054,6 +1096,7 @@ function indicatorCellsForRow(
   sliceEma: (number | null)[],
   bb: { mid: (number | null)[]; upper: (number | null)[]; lower: (number | null)[] },
   atrSeries: (number | null)[],
+  rsiSeries: (number | null)[],
   macdTriple: { macd: (number | null)[]; signal: (number | null)[]; hist: (number | null)[] },
 ): string[] {
   const cells: string[] = [];
@@ -1067,6 +1110,7 @@ function indicatorCellsForRow(
       );
     }
     if (id === "ATR") cells.push(formatPromptNumber(atrSeries[i]));
+    if (id === "RSI14") cells.push(formatPromptNumber(rsiSeries[i]));
     if (id === "MACD") {
       cells.push(
         formatPromptNumber(macdTriple.macd[i]),
@@ -1151,6 +1195,11 @@ function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线�
     atrSeries = computeAtrWilderSeries(tr, ATR_PERIOD);
   }
 
+  let rsiSeries: (number | null)[] = [];
+  if (orderedIds.includes("RSI14")) {
+    rsiSeries = computeRsiWilderSeries(closes, RSI_PERIOD);
+  }
+
   let macdTriple: { macd: (number | null)[]; signal: (number | null)[]; hist: (number | null)[] } = {
     macd: [] as (number | null)[],
     signal: [] as (number | null)[],
@@ -1181,7 +1230,7 @@ function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线�
       r.volume,
       r.turnover != null && r.turnover !== "" ? r.turnover : "—",
     ];
-    const extra = indicatorCellsForRow(orderedIds, j, i, sliceEma, bbSafe, atrSeries, macdTriple);
+    const extra = indicatorCellsForRow(orderedIds, j, i, sliceEma, bbSafe, atrSeries, rsiSeries, macdTriple);
     return [...base, ...extra];
   });
 

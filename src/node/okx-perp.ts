@@ -1925,11 +1925,16 @@ function swapPositionHistoryEffectiveTimeMs(row) {
  * 统计对象是 `positions-history` 的完整历史仓位，而不是零散平仓成交。
  *
  * @param {{ request: Function }} client {@link createOkxClient}
- * @param {{ beginMs?: number | null, tvSymbol?: string | null, maxPages?: number }} [opts]
+ * @param {{ beginMs?: number | null, timeRanges?: Array<{ startMs: number, endMs?: number | null }>, tvSymbol?: string | null, maxPages?: number }} [opts]
  */
 async function aggregateSwapClosePositionStats(
   client,
-  opts: { beginMs?: number | null; tvSymbol?: string | null; maxPages?: number } = {},
+  opts: {
+    beginMs?: number | null;
+    timeRanges?: Array<{ startMs: number; endMs?: number | null }>;
+    tvSymbol?: string | null;
+    maxPages?: number;
+  } = {},
 ) {
   const instId = tvSymbolToSwapInstId(opts?.tvSymbol);
   if (!instId) {
@@ -1954,6 +1959,22 @@ async function aggregateSwapClosePositionStats(
     opts.beginMs != null && Number.isFinite(Number(opts.beginMs)) && Number(opts.beginMs) > 0
       ? Math.floor(Number(opts.beginMs))
       : null;
+  const timeRanges = Array.isArray(opts.timeRanges)
+    ? opts.timeRanges
+        .map((range) => {
+          const startMs = Number(range?.startMs);
+          const endMs =
+            range?.endMs != null && Number.isFinite(Number(range.endMs)) ? Math.floor(Number(range.endMs)) : null;
+          return Number.isFinite(startMs) && startMs > 0 ? { startMs: Math.floor(startMs), endMs } : null;
+        })
+        .filter((range): range is { startMs: number; endMs: number | null } => Boolean(range))
+    : [];
+
+  const isInTimeRanges = (ms) => {
+    if (!Number.isFinite(ms)) return false;
+    if (!timeRanges.length) return true;
+    return timeRanges.some((range) => ms >= range.startMs && ms <= (range.endMs ?? Number.POSITIVE_INFINITY));
+  };
 
   let wins = 0;
   let losses = 0;
@@ -1983,6 +2004,7 @@ async function aggregateSwapClosePositionStats(
       const effectiveMs = swapPositionHistoryEffectiveTimeMs(r);
       if (Number.isFinite(effectiveMs)) oldestMs = Math.min(oldestMs, effectiveMs);
       if (beginMs != null && Number.isFinite(effectiveMs) && effectiveMs < beginMs) continue;
+      if (!isInTimeRanges(effectiveMs)) continue;
       const pnl = parseSwapPositionHistoryRealizedPnl(r);
       if (pnl == null) continue;
       realizedPnlSum += pnl;

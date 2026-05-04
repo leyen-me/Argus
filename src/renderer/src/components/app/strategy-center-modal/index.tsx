@@ -169,11 +169,9 @@ export function StrategyCenterModal() {
 
   const isNew = selectedId === null;
 
-  const statsActiveSelected =
-    Boolean(selectedId) && isDashboardStrategyRunningEntry(dashboardStrategyRanges[selectedId!.trim()]);
   const executionBlockingSelected =
     Boolean(selectedId) && isStrategyExecutionBlocking(strategyRuntimeById[selectedId!.trim()]);
-  const cannotDeleteSelected = statsActiveSelected || executionBlockingSelected;
+  const cannotDeleteSelected = executionBlockingSelected;
 
   const refreshDashboardSlicesFromServer = useCallback(async () => {
     const api = getArgus();
@@ -364,10 +362,6 @@ export function StrategyCenterModal() {
       );
       return;
     }
-    if (statsActiveSelected) {
-      setStatus("无法删除：该策略仍有未结束的统计区间，请先在仪表盘「结束统计」后再删除。");
-      return;
-    }
     const api = getArgus();
     if (!api?.deletePromptStrategy) return;
     const ok = window.confirm(`确定删除策略「${selectedId}」？`);
@@ -505,9 +499,7 @@ export function StrategyCenterModal() {
                   title={
                     executionBlockingSelected
                       ? "请先停止该策略的执行态再删除"
-                      : statsActiveSelected
-                        ? "请先结束该策略的仪表盘统计再删除"
-                        : undefined
+                      : undefined
                   }
                 >
                   <Trash2 className="size-3.5 shrink-0" aria-hidden />

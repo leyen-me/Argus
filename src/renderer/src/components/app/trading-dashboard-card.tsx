@@ -67,6 +67,11 @@ type StrategyRuntimeEntry = {
   lastSkipReason?: string | null
 }
 
+type DashboardStatsSegment = {
+  startedAt?: string | null
+  endedAt?: string | null
+}
+
 type DashboardConfig = {
   promptStrategy?: string
   defaultSymbol?: string
@@ -76,6 +81,7 @@ type DashboardConfig = {
     {
       baselineEquityUsdt?: number | null
       statsSince?: string | null
+      segments?: DashboardStatsSegment[]
     }
   >
   strategyRuntimeById?: Record<string, StrategyRuntimeEntry>
@@ -173,6 +179,32 @@ function resolveExecutionStatus(config: DashboardConfig | null): StrategyRuntime
   return "idle"
 }
 
+function normalizeStatsSegments(segments: DashboardStatsSegment[] | null | undefined): Array<{ startedAt: string; endedAt: string | null }> {
+  if (!Array.isArray(segments)) return []
+  return segments
+    .map((seg) => {
+      const startedAt =
+        seg && typeof seg.startedAt === "string" && seg.startedAt.trim() && Number.isFinite(Date.parse(seg.startedAt.trim()))
+          ? seg.startedAt.trim()
+          : ""
+      if (!startedAt) return null
+      const endedAt =
+        seg && typeof seg.endedAt === "string" && seg.endedAt.trim() && Number.isFinite(Date.parse(seg.endedAt.trim()))
+          ? seg.endedAt.trim()
+          : null
+      return { startedAt, endedAt }
+    })
+    .filter((seg): seg is { startedAt: string; endedAt: string | null } => Boolean(seg))
+    .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))
+}
+
+function resolveCurrentDashboardRange(config: DashboardConfig | null) {
+  const id = resolveStrategyId(config)
+  if (!id || !config?.dashboardStrategyRanges || typeof config.dashboardStrategyRanges !== "object") return null
+  const row = config.dashboardStrategyRanges[id]
+  return row && typeof row === "object" ? row : null
+}
+
 function buildNextStrategyRanges(
   config: DashboardConfig | null,
   updater: (
@@ -181,6 +213,7 @@ function buildNextStrategyRanges(
       {
         baselineEquityUsdt?: number | null
         statsSince?: string | null
+        segments?: DashboardStatsSegment[]
       }
     >,
     strategyId: string,
@@ -189,6 +222,7 @@ function buildNextStrategyRanges(
     {
       baselineEquityUsdt?: number | null
       statsSince?: string | null
+      segments?: DashboardStatsSegment[]
     }
   >,
 ) {
@@ -197,6 +231,26 @@ function buildNextStrategyRanges(
     ? { ...config.dashboardStrategyRanges }
     : {}
   return updater(current, strategyId)
+}
+
+function emptyDashboardRangeEntry() {
+  return {
+    baselineEquityUsdt: null,
+    statsSince: null,
+    segments: [] as DashboardStatsSegment[],
+  }
+}
+
+function closeOpenStatsSegments(segments: Array<{ startedAt: string; endedAt: string | null }>, endedAt: string) {
+  let closed = false
+  return segments.map((seg, idx) => {
+    const isLast = idx === segments.length - 1
+    if (!closed && isLast && !seg.endedAt) {
+      closed = true
+      return { ...seg, endedAt }
+    }
+    return seg
+  })
 }
 
 function buildSmoothLinePath(points: Array<{ x: number; y: number }>) {
@@ -250,7 +304,7 @@ function StrategyInfoCard({
   symbolLabel,
   simulated,
   executionStatusLabel,
-  statsTrackingActive,
+  statsStatusLabel,
   loading,
   statusText,
   strategyEditDisabled,
@@ -265,16 +319,12 @@ function StrategyInfoCard({
   canPauseExecution,
   canResumeExecution,
   canStopExecution,
-  onStartStats,
-  onEndStats,
-  canStartStats,
-  canEndStats,
 }: {
   strategyName: string
   symbolLabel: string
   simulated: boolean
   executionStatusLabel: string
-  statsTrackingActive: boolean
+  statsStatusLabel: string
   loading: boolean
   statusText: string
   strategyEditDisabled: boolean
@@ -289,10 +339,6 @@ function StrategyInfoCard({
   canPauseExecution: boolean
   canResumeExecution: boolean
   canStopExecution: boolean
-  onStartStats: () => void
-  onEndStats: () => void
-  canStartStats: boolean
-  canEndStats: boolean
 }) {
   const busy = loading
   return (
@@ -337,12 +383,11 @@ function StrategyInfoCard({
                 |
               </span>
               <span className="font-medium text-foreground/80">统计</span>
-              <span>{statsTrackingActive ? "统计中" : "未开始"}</span>
+              <span>{statsStatusLabel}</span>
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-col gap-3 lg:items-end">
-            <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex shrink-0 flex-wrap justify-end gap-2 lg:max-w-md">
               <Button
                 type="button"
                 size="sm"
@@ -390,31 +435,6 @@ function StrategyInfoCard({
                 <Square className="size-3.5" aria-hidden />
                 停止
               </Button>
-            </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-9 min-w-18 gap-1.5 px-3 shadow-none"
-                disabled={busy || !canStartStats}
-                title="以当前权益为基线，开始统计胜率与净值曲线"
-                onClick={onStartStats}
-              >
-                开始统计
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-9 min-w-18 gap-1.5 px-3 shadow-none"
-                disabled={busy || !canEndStats}
-                title="结束当前统计区间并清空基线"
-                onClick={onEndStats}
-              >
-                结束统计
-              </Button>
-            </div>
           </div>
         </div>
 
@@ -502,7 +522,23 @@ function AccountOverviewCard({
   )
 }
 
-function EquityCurveChart({ series, statsTrackingActive }: { series: EquityPoint[]; statsTrackingActive: boolean }) {
+function pointInSegment(t: string, seg: { startedAt: string; endedAt: string | null }) {
+  const ms = Date.parse(t)
+  if (!Number.isFinite(ms)) return false
+  const startMs = Date.parse(seg.startedAt)
+  const endMs = seg.endedAt ? Date.parse(seg.endedAt) : Number.POSITIVE_INFINITY
+  return Number.isFinite(startMs) && ms >= startMs && ms <= endMs
+}
+
+function EquityCurveChart({
+  series,
+  hasStatsSession,
+  statsSegments,
+}: {
+  series: EquityPoint[]
+  hasStatsSession: boolean
+  statsSegments: Array<{ startedAt: string; endedAt: string | null }>
+}) {
   const w = 1000
   const h = 300
   const padX = 24
@@ -511,7 +547,7 @@ function EquityCurveChart({ series, statsTrackingActive }: { series: EquityPoint
   if (!series.length) {
     return (
       <div className="flex h-full w-full min-h-[220px] flex-1 items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 text-center text-sm text-muted-foreground">
-        {statsTrackingActive ? "当前策略暂无净值采样数据" : "开始统计后绘制净值曲线"}
+        {hasStatsSession ? "当前统计会话暂无净值采样数据" : "启动策略后会自动开始绘制净值曲线"}
       </div>
     )
   }
@@ -525,9 +561,12 @@ function EquityCurveChart({ series, statsTrackingActive }: { series: EquityPoint
   const points = series.map((p, idx) => {
     const x = padX + (innerW * idx) / Math.max(1, series.length - 1)
     const y = padY + innerH - (innerH * (p.equity - min)) / span
-    return { x, y }
+    return { x, y, t: p.t }
   })
-  const lineD = buildSmoothLinePath(points)
+  const normalizedSegments = statsSegments.length ? statsSegments : [{ startedAt: series[0]?.t ?? "", endedAt: series[series.length - 1]?.t ?? null }]
+  const linePaths = normalizedSegments
+    .map((seg) => buildSmoothLinePath(points.filter((point) => pointInSegment(point.t, seg)).map(({ x, y }) => ({ x, y }))))
+    .filter(Boolean)
   const ticks = [max, min + span / 2, min]
 
   return (
@@ -550,26 +589,37 @@ function EquityCurveChart({ series, statsTrackingActive }: { series: EquityPoint
           )
         })}
 
-        <path
-          d={lineD}
-          fill="none"
-          stroke="var(--chart-2)"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-          opacity="0.98"
-        />
+        {linePaths.map((lineD, idx) => (
+          <path
+            key={`seg-${idx}`}
+            d={lineD}
+            fill="none"
+            stroke="var(--chart-2)"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+            opacity="0.98"
+          />
+        ))}
       </svg>
     </div>
   )
 }
 
-function EquityCurveCard({ series, statsTrackingActive }: { series: EquityPoint[]; statsTrackingActive: boolean }) {
+function EquityCurveCard({
+  series,
+  hasStatsSession,
+  statsSegments,
+}: {
+  series: EquityPoint[]
+  hasStatsSession: boolean
+  statsSegments: Array<{ startedAt: string; endedAt: string | null }>
+}) {
   return (
     <Card className="min-h-0 gap-0 bg-transparent py-0 shadow-none ring-border/60">
       <CardContent className="flex min-h-0 flex-1 flex-col px-5 py-5">
-        <EquityCurveChart series={series} statsTrackingActive={statsTrackingActive} />
+        <EquityCurveChart series={series} hasStatsSession={hasStatsSession} statsSegments={statsSegments} />
       </CardContent>
     </Card>
   )
@@ -629,48 +679,28 @@ export function TradingDashboardCard({
     }
   }, [active, load])
 
-  const startStatsSession = useCallback(async () => {
-    const eq = snap?.equityUsdt
-    if (eq == null || !Number.isFinite(eq)) {
-      setErr("需要当前权益以设为初始资金，请确认已连接 OKX 并刷新。")
-      return
-    }
-    try {
-      setErr(null)
-      const statsSince = new Date().toISOString()
-      const dashboardStrategyRanges = buildNextStrategyRanges(config, (current, strategyId) => ({
-        ...current,
-        [strategyId]: {
-          baselineEquityUsdt: eq,
-          statsSince,
-        },
-      }))
-      await window.argus?.saveConfig?.({ dashboardStrategyRanges })
-      window.dispatchEvent(new CustomEvent(ARGUS_APP_CONFIG_CHANGED))
-      void load()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    }
-  }, [config, load, snap?.equityUsdt])
-
-  const endStatsSession = useCallback(async () => {
-    try {
-      setErr(null)
-      const dashboardStrategyRanges = buildNextStrategyRanges(config, (current, strategyId) => {
-        const next = { ...current }
-        delete next[strategyId]
-        return next
-      })
-      await window.argus?.saveConfig?.({ dashboardStrategyRanges })
-      window.dispatchEvent(new CustomEvent(ARGUS_APP_CONFIG_CHANGED))
-      void load()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
-    }
-  }, [config, load])
-
-  const persistStrategyRuntime = useCallback(
-    async (nextEntry: StrategyRuntimeEntry) => {
+  const persistExecutionAndStats = useCallback(
+    async (
+      nextEntry: StrategyRuntimeEntry,
+      rangeUpdater: (
+        current: Record<
+          string,
+          {
+            baselineEquityUsdt?: number | null
+            statsSince?: string | null
+            segments?: DashboardStatsSegment[]
+          }
+        >,
+        strategyId: string,
+      ) => Record<
+        string,
+        {
+          baselineEquityUsdt?: number | null
+          statsSince?: string | null
+          segments?: DashboardStatsSegment[]
+        }
+      >,
+    ) => {
       const strategyId = resolveStrategyId(config)
       if (!strategyId || !window.argus?.saveConfig) {
         setErr("无法保存执行态：请先选用策略。")
@@ -678,12 +708,13 @@ export function TradingDashboardCard({
       }
       try {
         setErr(null)
-        const baseMap =
+        const baseRuntimeMap =
           config?.strategyRuntimeById && typeof config.strategyRuntimeById === "object"
             ? { ...config.strategyRuntimeById }
             : {}
-        const strategyRuntimeById = { ...baseMap, [strategyId]: nextEntry }
-        const saved = await window.argus.saveConfig({ strategyRuntimeById })
+        const strategyRuntimeById = { ...baseRuntimeMap, [strategyId]: nextEntry }
+        const dashboardStrategyRanges = buildNextStrategyRanges(config, rangeUpdater)
+        const saved = await window.argus.saveConfig({ strategyRuntimeById, dashboardStrategyRanges })
         window.dispatchEvent(new CustomEvent(ARGUS_APP_CONFIG_CHANGED))
         setConfig(saved as DashboardConfig)
         void load()
@@ -701,8 +732,14 @@ export function TradingDashboardCard({
       return
     }
     const prev = resolveStrategyRuntime(config)
+    const eq = snap?.equityUsdt
+    if (eq == null || !Number.isFinite(eq)) {
+      setErr("需要当前权益以设为初始资金，请确认已连接 OKX 并刷新。")
+      return
+    }
     const now = new Date().toISOString()
-    await persistStrategyRuntime({
+    await persistExecutionAndStats(
+      {
       ...emptyStrategyRuntimeEntry(),
       status: "running",
       sessionId: newSessionId(),
@@ -712,38 +749,99 @@ export function TradingDashboardCard({
       lastDecisionAt: prev.lastDecisionAt ?? null,
       lastOrderAt: prev.lastOrderAt ?? null,
       lastSkipReason: null,
-    })
-  }, [config, persistStrategyRuntime])
+      },
+      (current, sid) => ({
+        ...current,
+        [sid]: {
+          ...emptyDashboardRangeEntry(),
+          baselineEquityUsdt: eq,
+          statsSince: now,
+          segments: [{ startedAt: now, endedAt: null }],
+        },
+      }),
+    )
+  }, [config, persistExecutionAndStats, snap?.equityUsdt])
 
   const pauseExecution = useCallback(async () => {
     const prev = resolveStrategyRuntime(config)
     const now = new Date().toISOString()
-    await persistStrategyRuntime({
-      ...prev,
-      status: "paused",
-      pausedAt: now,
-    })
-  }, [config, persistStrategyRuntime])
+    await persistExecutionAndStats(
+      {
+        ...prev,
+        status: "paused",
+        pausedAt: now,
+      },
+      (current, sid) => {
+        const prevRange = current[sid] ?? emptyDashboardRangeEntry()
+        const segments = closeOpenStatsSegments(normalizeStatsSegments(prevRange.segments), now)
+        return {
+          ...current,
+          [sid]: {
+            ...prevRange,
+            statsSince: segments[0]?.startedAt ?? prevRange.statsSince ?? null,
+            segments,
+          },
+        }
+      },
+    )
+  }, [config, persistExecutionAndStats])
 
   const resumeExecution = useCallback(async () => {
     const prev = resolveStrategyRuntime(config)
-    await persistStrategyRuntime({
-      ...prev,
-      status: "running",
-      pausedAt: null,
-    })
-  }, [config, persistStrategyRuntime])
+    const prevRange = resolveCurrentDashboardRange(config)
+    if (!prevRange?.baselineEquityUsdt || !Number.isFinite(Number(prevRange.baselineEquityUsdt))) {
+      setErr("当前统计会话缺少初始资金，请重新点击「启动策略」。")
+      return
+    }
+    const now = new Date().toISOString()
+    await persistExecutionAndStats(
+      {
+        ...prev,
+        status: "running",
+        pausedAt: null,
+      },
+      (current, sid) => {
+        const currentRange = current[sid] ?? emptyDashboardRangeEntry()
+        const segments = normalizeStatsSegments(currentRange.segments)
+        const nextSegments = segments.length && !segments[segments.length - 1]?.endedAt
+          ? segments
+          : [...segments, { startedAt: now, endedAt: null }]
+        return {
+          ...current,
+          [sid]: {
+            ...currentRange,
+            statsSince: nextSegments[0]?.startedAt ?? currentRange.statsSince ?? now,
+            segments: nextSegments,
+          },
+        }
+      },
+    )
+  }, [config, persistExecutionAndStats])
 
   const stopExecution = useCallback(async () => {
     const prev = resolveStrategyRuntime(config)
     const now = new Date().toISOString()
-    await persistStrategyRuntime({
-      ...prev,
-      status: "stopped",
-      stoppedAt: now,
-      pausedAt: null,
-    })
-  }, [config, persistStrategyRuntime])
+    await persistExecutionAndStats(
+      {
+        ...prev,
+        status: "stopped",
+        stoppedAt: now,
+        pausedAt: null,
+      },
+      (current, sid) => {
+        const prevRange = current[sid] ?? emptyDashboardRangeEntry()
+        const segments = closeOpenStatsSegments(normalizeStatsSegments(prevRange.segments), now)
+        return {
+          ...current,
+          [sid]: {
+            ...prevRange,
+            statsSince: segments[0]?.startedAt ?? prevRange.statsSince ?? null,
+            segments,
+          },
+        }
+      },
+    )
+  }, [config, persistExecutionAndStats])
 
   const onPromptStrategyChange = useCallback(
     async (nextId: string): Promise<boolean> => {
@@ -776,22 +874,35 @@ export function TradingDashboardCard({
     () => (Array.isArray(snap?.equitySeries) ? snap?.equitySeries.filter((item) => Number.isFinite(item?.equity)) : []),
     [snap?.equitySeries],
   )
-  const baselinePresent =
-    snap?.baselineEquityUsdt != null && Number.isFinite(Number(snap.baselineEquityUsdt))
-  const sincePresent =
-    typeof snap?.dashboardAgentToolStatsSince === "string" && snap.dashboardAgentToolStatsSince.trim().length > 0
-  const statsTrackingActive = baselinePresent && sincePresent
+  const currentRange = resolveCurrentDashboardRange(config)
+  const statsSegments = normalizeStatsSegments(currentRange?.segments)
+  const baselinePresent = currentRange?.baselineEquityUsdt != null && Number.isFinite(Number(currentRange.baselineEquityUsdt))
+  const hasStatsSession = baselinePresent && statsSegments.length > 0
   const executionStatus = resolveExecutionStatus(config)
-  const canStartStats = snap?.equityUsdt != null && Number.isFinite(Number(snap.equityUsdt))
 
   const executionStatusLabel =
     executionStatus === "running"
-      ? "运行中（收盘可自动跑 Agent）"
+      ? "运行中"
       : executionStatus === "paused"
         ? "已暂停"
         : executionStatus === "stopped"
           ? "已停止"
           : "未启动"
+
+  const statsStatusLabel =
+    executionStatus === "running"
+      ? hasStatsSession
+        ? "统计中"
+        : "准备中"
+      : executionStatus === "paused"
+        ? hasStatsSession
+          ? "已暂停"
+          : "未开始"
+        : executionStatus === "stopped"
+          ? hasStatsSession
+            ? "已结束"
+            : "未开始"
+          : "未开始"
 
   const hasPromptStrategy = Boolean(resolveStrategyId(config))
 
@@ -809,7 +920,13 @@ export function TradingDashboardCard({
       ? "未启用 OKX 永续，当前账户数据将显示为空。"
       : loading
         ? "正在同步最新账户数据。"
-        : `${executionStatusLabel}；${statsTrackingActive ? "胜率与净值按当前统计区间。" : "统计未开始时可点「开始统计」。"}`
+        : executionStatus === "running"
+          ? "策略正在运行，本轮统计会自动持续累积。"
+          : executionStatus === "paused"
+            ? "策略已暂停，统计结果已冻结；恢复后会继续接着当前会话统计。"
+            : executionStatus === "stopped"
+              ? "策略已停止，本轮统计已结束；下次启动会从新的基线重新统计。"
+              : "策略尚未启动；启动后会自动开始本轮统计。"
 
   const currentPromptId = resolveStrategyId(config)
   const strategyRowsForSelect = useMemo(() => {
@@ -865,7 +982,7 @@ export function TradingDashboardCard({
           symbolLabel={symbolLabel}
           simulated={snap?.simulated === true}
           executionStatusLabel={executionStatusLabel}
-          statsTrackingActive={statsTrackingActive}
+          statsStatusLabel={statsStatusLabel}
           loading={loading}
           statusText={statusText}
           strategyEditDisabled={!strategyEditAccessible}
@@ -880,15 +997,11 @@ export function TradingDashboardCard({
           canPauseExecution={canPauseExecution}
           canResumeExecution={canResumeExecution}
           canStopExecution={canStopExecution}
-          onStartStats={() => void startStatsSession()}
-          onEndStats={() => void endStatsSession()}
-          canStartStats={canStartStats && !statsTrackingActive}
-          canEndStats={statsTrackingActive}
         />
 
         <AccountOverviewCard snap={snap} />
 
-        <EquityCurveCard series={series} statsTrackingActive={statsTrackingActive} />
+        <EquityCurveCard series={series} hasStatsSession={hasStatsSession} statsSegments={statsSegments} />
       </div>
 
       <Dialog open={strategyPickerOpen} onOpenChange={setStrategyPickerOpen}>

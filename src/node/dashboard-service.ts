@@ -2,6 +2,7 @@ import * as okxPerp from "./okx-perp.js";
 import * as dashboardStore from "./dashboard-store.js";
 
 type OkxSwapCloseStats = Awaited<ReturnType<typeof okxPerp.aggregateSwapClosePositionStats>>;
+type DashboardStatsSegment = { startedAt: string; endedAt: string | null };
 
 const BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS = 60_000;
 
@@ -38,15 +39,19 @@ function pickMarginUsedUsdt(equityUsdt, avail, metrics) {
 const EQUITY_CHART_MAX_POINTS = 400;
 
 /**
- * 与 Agent 统计、平仓胜率共用同一时间戳：仅保留该时点及之后的权益采样。
+ * 仅保留落在策略有效运行区间内的权益采样。
  * @param {{ t: string, equity: number }[]} series
- * @param {string | null} sinceIso `dashboardAgentToolStatsSince`
+ * @param {DashboardStatsSegment[]} segments
  */
-function filterEquitySeriesFromStatsSince(series, sinceIso) {
-  if (!Array.isArray(series) || !sinceIso || typeof sinceIso !== "string") return series;
-  const t0 = Date.parse(sinceIso.trim());
-  if (!Number.isFinite(t0)) return series;
-  return series.filter((p) => typeof p.t === "string" && Date.parse(p.t) >= t0);
+function filterEquitySeriesBySegments(series, segments) {
+  if (!Array.isArray(series) || !Array.isArray(segments) || segments.length === 0) return [];
+  const normalized = normalizeStatsSegments(segments);
+  if (!normalized.length) return [];
+  return series.filter((p) => {
+    if (typeof p.t !== "string") return false;
+    const ms = Date.parse(p.t);
+    return isTimeInStatsSegments(ms, normalized);
+  });
 }
 
 /**
@@ -58,23 +63,58 @@ function capEquitySeriesTail(series, maxPoints = EQUITY_CHART_MAX_POINTS) {
 }
 
 /**
- * @param {string | null} sinceIso
+ * @param {DashboardStatsSegment[]} segments
  */
-function equitySamplePullLimit(sinceIso) {
-  if (!sinceIso || typeof sinceIso !== "string" || !Number.isFinite(Date.parse(sinceIso.trim()))) {
+function equitySamplePullLimit(segments) {
+  if (!Array.isArray(segments) || segments.length === 0) {
     return EQUITY_CHART_MAX_POINTS;
   }
   return 2000;
 }
 
 /**
- * @param {string | null} sinceIso
+ * @param {DashboardStatsSegment[]} segments
  */
-function buildEquitySeriesForDashboard(sinceIso) {
-  if (!sinceIso || typeof sinceIso !== "string" || !sinceIso.trim()) return [];
-  const raw = dashboardStore.listRecentEquitySamples(equitySamplePullLimit(sinceIso));
-  const filtered = filterEquitySeriesFromStatsSince(raw, sinceIso);
+function buildEquitySeriesForDashboard(segments) {
+  const normalized = normalizeStatsSegments(segments);
+  if (!normalized.length) return [];
+  const raw = dashboardStore.listRecentEquitySamples(equitySamplePullLimit(normalized));
+  const filtered = filterEquitySeriesBySegments(raw, normalized);
   return capEquitySeriesTail(filtered);
+}
+
+function normalizeStatsSegments(segments: DashboardStatsSegment[] | null | undefined): DashboardStatsSegment[] {
+  if (!Array.isArray(segments)) return [];
+  return segments
+    .map((seg) => {
+      const startedAt =
+        seg && typeof seg.startedAt === "string" && Number.isFinite(Date.parse(seg.startedAt.trim()))
+          ? seg.startedAt.trim()
+          : "";
+      if (!startedAt) return null;
+      const endedAt =
+        seg && typeof seg.endedAt === "string" && Number.isFinite(Date.parse(seg.endedAt.trim()))
+          ? seg.endedAt.trim()
+          : null;
+      return { startedAt, endedAt };
+    })
+    .filter((seg): seg is DashboardStatsSegment => Boolean(seg))
+    .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+}
+
+function isTimeInStatsSegments(ms: number, segments: DashboardStatsSegment[]) {
+  if (!Number.isFinite(ms)) return false;
+  return segments.some((seg) => {
+    const startMs = Date.parse(seg.startedAt);
+    if (!Number.isFinite(startMs)) return false;
+    const endMs = seg.endedAt ? Date.parse(seg.endedAt) : Number.POSITIVE_INFINITY;
+    return ms >= startMs && ms <= endMs;
+  });
+}
+
+function minStatsSegmentStartMs(segments: DashboardStatsSegment[]) {
+  if (!segments.length) return NaN;
+  return Math.min(...segments.map((seg) => Date.parse(seg.startedAt)).filter((n) => Number.isFinite(n)));
 }
 
 /**
@@ -107,13 +147,24 @@ async function sampleDashboardEquityOnce(cfg) {
  * @param {object} cfg loadAppConfig()
  */
 async function getDashboardSnapshot(cfg) {
-  const baselineRaw = cfg?.dashboardBaselineEquityUsdt;
+  const strategyId = typeof cfg?.promptStrategy === "string" ? cfg.promptStrategy.trim() : "";
+  const activeRange =
+    strategyId &&
+    cfg?.dashboardStrategyRanges &&
+    typeof cfg.dashboardStrategyRanges === "object" &&
+    cfg.dashboardStrategyRanges[strategyId] &&
+    typeof cfg.dashboardStrategyRanges[strategyId] === "object"
+      ? cfg.dashboardStrategyRanges[strategyId]
+      : null;
+
+  const baselineRaw = activeRange?.baselineEquityUsdt ?? cfg?.dashboardBaselineEquityUsdt;
   const baselineEquityUsdt =
     typeof baselineRaw === "number" && Number.isFinite(baselineRaw) && baselineRaw >= 0
       ? baselineRaw
       : null;
 
-  const statsSinceRaw = cfg?.dashboardAgentToolStatsSince;
+  const statsSegments = normalizeStatsSegments(activeRange?.segments ?? null);
+  const statsSinceRaw = statsSegments[0]?.startedAt ?? activeRange?.statsSince ?? cfg?.dashboardAgentToolStatsSince;
   const dashboardAgentToolStatsSince =
     typeof statsSinceRaw === "string" && statsSinceRaw.trim() && Number.isFinite(Date.parse(statsSinceRaw.trim()))
       ? statsSinceRaw.trim()
@@ -121,7 +172,7 @@ async function getDashboardSnapshot(cfg) {
 
   const metaPack = { dashboardAgentToolStatsSince };
 
-  const emptySeries = buildEquitySeriesForDashboard(dashboardAgentToolStatsSince);
+  const emptySeries = buildEquitySeriesForDashboard(statsSegments);
 
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
     return {
@@ -160,22 +211,26 @@ async function getDashboardSnapshot(cfg) {
     const availEq = metrics?.usdtAvailEq ?? null;
     const marginUsedUsdt = pickMarginUsedUsdt(equityUsdt, availEq, metrics);
 
-    const equitySeries = buildEquitySeriesForDashboard(dashboardAgentToolStatsSince);
+    const equitySeries = buildEquitySeriesForDashboard(statsSegments);
 
     let pnlVsBaseline: number | null = null;
-    if (baselineEquityUsdt != null && equityUsdt != null) {
-      pnlVsBaseline = equityUsdt - baselineEquityUsdt;
+    const statsEquityTail = equitySeries.length ? equitySeries[equitySeries.length - 1]?.equity : null;
+    const pnlEquityUsdt =
+      statsSegments.length > 0 && statsSegments[statsSegments.length - 1]?.endedAt ? statsEquityTail : equityUsdt;
+    if (baselineEquityUsdt != null && pnlEquityUsdt != null) {
+      pnlVsBaseline = pnlEquityUsdt - baselineEquityUsdt;
     }
 
-    const sinceMs =
-      dashboardAgentToolStatsSince && Number.isFinite(Date.parse(dashboardAgentToolStatsSince.trim()))
-        ? Date.parse(dashboardAgentToolStatsSince.trim())
-        : NaN;
+    const sinceMs = minStatsSegmentStartMs(statsSegments);
     let swapClosePositionStats: OkxSwapCloseStats | null = null;
-    if (Number.isFinite(sinceMs)) {
+    if (Number.isFinite(sinceMs) && statsSegments.length > 0) {
       try {
         swapClosePositionStats = await okxPerp.aggregateSwapClosePositionStats(client, {
           beginMs: sinceMs,
+          timeRanges: statsSegments.map((seg) => ({
+            startMs: Date.parse(seg.startedAt),
+            endMs: seg.endedAt ? Date.parse(seg.endedAt) : null,
+          })),
           tvSymbol: cfg?.defaultSymbol,
           maxPages: 25,
         });
@@ -204,7 +259,7 @@ async function getDashboardSnapshot(cfg) {
       ok: false,
       message: msg,
       baselineEquityUsdt,
-      equitySeries: buildEquitySeriesForDashboard(dashboardAgentToolStatsSince),
+      equitySeries: buildEquitySeriesForDashboard(statsSegments),
       ...metaPack,
     };
   }
@@ -214,7 +269,7 @@ export {
   BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS,
   buildEquitySeriesForDashboard,
   equitySamplePullLimit,
-  filterEquitySeriesFromStatsSince,
+  filterEquitySeriesBySegments,
   getDashboardSnapshot,
   sampleDashboardEquityOnce,
 };

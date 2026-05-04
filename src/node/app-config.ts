@@ -29,6 +29,11 @@ export type StrategyRuntimeEntry = {
   lastSkipReason: string | null;
 };
 
+export type DashboardStatsSegment = {
+  startedAt: string;
+  endedAt: string | null;
+};
+
 /** `normalizeConfig` / `loadAppConfig` 的规范化形状（布尔与数字为宽类型，避免字面量收窄导致分支不可达）。 */
 export type AppConfig = {
   symbols: { label: string; value: string }[];
@@ -59,7 +64,14 @@ export type AppConfig = {
   okxPassphrase: string;
   dashboardBaselineEquityUsdt: number | null;
   dashboardAgentToolStatsSince: string | null;
-  dashboardStrategyRanges: Record<string, { baselineEquityUsdt: number | null; statsSince: string | null }>;
+  dashboardStrategyRanges: Record<
+    string,
+    {
+      baselineEquityUsdt: number | null;
+      statsSince: string | null;
+      segments: DashboardStatsSegment[];
+    }
+  >;
   /** 按策略 id：`running` / `paused` / `stopped` / `idle` 控制收盘 Agent 授权；统计区间见 dashboardStrategyRanges。 */
   strategyRuntimeById: Record<string, StrategyRuntimeEntry>;
   /** 取自当前 `prompt_strategy` 行，非 kv 字段；normalizeConfig 时注入。 */
@@ -264,6 +276,21 @@ function normalizeOpenAiModel(raw) {
   return raw.trim();
 }
 
+function normalizeDashboardStatsSegments(raw: unknown): DashboardStatsSegment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: DashboardStatsSegment[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const row = item as { startedAt?: unknown; endedAt?: unknown };
+    const startedAt = normalizeIsoOrNull(row.startedAt);
+    if (!startedAt) continue;
+    const endedAt = normalizeIsoOrNull(row.endedAt);
+    out.push({ startedAt, endedAt });
+  }
+  out.sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+  return out;
+}
+
 function normalizeDashboardStrategyRanges(raw: unknown): AppConfig["dashboardStrategyRanges"] {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out: AppConfig["dashboardStrategyRanges"] = {};
@@ -289,8 +316,13 @@ function normalizeDashboardStrategyRanges(raw: unknown): AppConfig["dashboardStr
       }
     }
 
-    if (baselineEquityUsdt != null || statsSince != null) {
-      out[strategyId] = { baselineEquityUsdt, statsSince };
+    let segments = normalizeDashboardStatsSegments((value as { segments?: unknown }).segments);
+    if (segments.length === 0 && statsSince) {
+      segments = [{ startedAt: statsSince, endedAt: null }];
+    }
+
+    if (baselineEquityUsdt != null || statsSince != null || segments.length > 0) {
+      out[strategyId] = { baselineEquityUsdt, statsSince, segments };
     }
   }
   return out;
@@ -400,12 +432,16 @@ function isPromptStrategyExecutionRunning(cfg: Pick<AppConfig, "promptStrategy" 
  * 仪表盘统计区间是否与 bar-close 旧版门闩一致（有基线且有统计起点）。
  * @param {import("./app-config.js").AppConfig["dashboardStrategyRanges"][string] | undefined} entry
  */
-function isDashboardStatsSessionActive(entry: { baselineEquityUsdt: number | null; statsSince: string | null } | undefined): boolean {
+function isDashboardStatsSessionActive(
+  entry: { baselineEquityUsdt: number | null; statsSince: string | null; segments: DashboardStatsSegment[] } | undefined,
+): boolean {
   if (!entry || typeof entry !== "object") return false;
   const b = entry.baselineEquityUsdt;
   const baselineOk = b != null && Number.isFinite(Number(b));
+  const segments = Array.isArray(entry.segments) ? entry.segments : [];
+  const hasSegments = segments.length > 0;
   const since = typeof entry.statsSince === "string" ? entry.statsSince.trim() : "";
-  return baselineOk && since.length > 0 && Number.isFinite(Date.parse(since));
+  return baselineOk && (hasSegments || (since.length > 0 && Number.isFinite(Date.parse(since))));
 }
 
 function migrateStrategyRuntimeFromLegacyDashboard(
@@ -540,6 +576,10 @@ function normalizeConfig(raw: unknown): AppConfig {
     dashboardStrategyRanges[promptStrategy] = {
       baselineEquityUsdt: dashboardBaselineEquityUsdt,
       statsSince: dashboardAgentToolStatsSince,
+      segments:
+        typeof dashboardAgentToolStatsSince === "string" && dashboardAgentToolStatsSince.trim()
+          ? [{ startedAt: dashboardAgentToolStatsSince.trim(), endedAt: null }]
+          : [],
     };
   }
 
@@ -549,7 +589,8 @@ function normalizeConfig(raw: unknown): AppConfig {
       : null;
   if (activeDashboardRange) {
     dashboardBaselineEquityUsdt = activeDashboardRange.baselineEquityUsdt ?? null;
-    dashboardAgentToolStatsSince = activeDashboardRange.statsSince ?? null;
+    dashboardAgentToolStatsSince =
+      activeDashboardRange.segments[0]?.startedAt ?? activeDashboardRange.statsSince ?? null;
   } else {
     dashboardBaselineEquityUsdt = null;
     dashboardAgentToolStatsSince = null;

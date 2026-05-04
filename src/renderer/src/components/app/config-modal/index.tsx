@@ -17,7 +17,6 @@ import { ConfigModalEmailSection } from "./email-section";
 import { ConfigModalFooter } from "./config-modal-footer";
 import { ConfigModalLlmSection } from "./llm-section";
 import { ConfigModalOkxSection } from "./okx-section";
-import { ConfigModalSymbolsAndInterval } from "./symbols-and-interval";
 
 /**
  * 配置中心：shadcn Dialog；表单 id 与 `argus-renderer.js` 中 getElementById 一致。
@@ -64,16 +63,12 @@ export function ConfigModal() {
               </Button>
             </DialogClose>
           </div>
-          <DialogDescription className="sr-only">编辑行情、LLM、邮件与 OKX 等配置</DialogDescription>
+          <DialogDescription className="sr-only">编辑 LLM、邮件与 OKX 等配置</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
           <div className="space-y-1">
             <div className="flex flex-col gap-6">
-              <section className="space-y-0">
-                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">交易标的</h3>
-                <ConfigModalSymbolsAndInterval />
-              </section>
               <section className="space-y-0">
                 <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">LLM 接口</h3>
                 <ConfigModalLlmSection />

@@ -1,5 +1,6 @@
 import * as localDb from "./local-db/index.js";
 import * as promptStrategiesStore from "./prompt-strategies-store.js";
+import { listOkxStrategySymbolOptions } from "../shared/strategy-fields.js";
 
 /**
  * 应用可序列化设置保存在仓库根目录 `argus.sqlite`（`local-db`）的 kv `app/settings` 中。
@@ -50,10 +51,7 @@ type AppSettingsSeed = Omit<AppConfig, "promptStrategies" | "systemPromptCrypto"
  * 首次安装 /「恢复默认」时使用的持久化字段种子（仅存在于代码）。
  */
 const APP_SETTINGS_SEED: AppSettingsSeed = Object.freeze({
-  symbols: [
-    { label: "BTC/USDT", value: "OKX:BTCUSDT" },
-    { label: "ETH/USDT", value: "OKX:ETHUSDT" },
-  ],
+  symbols: listOkxStrategySymbolOptions(),
   defaultSymbol: "OKX:BTCUSDT",
   /** 占位；无 `prompt_strategies` 行时解析为空，不调用 Agent */
   promptStrategy: "",
@@ -151,7 +149,13 @@ function defaultConfigFallback(): AppConfig {
  */
 function stripSystemPromptsForPersistence(cfg) {
   if (!cfg || typeof cfg !== "object") return cfg;
-  const { systemPromptCrypto: _c, promptStrategyDecisionIntervalTv: _p, ...rest } = cfg;
+  const {
+    systemPromptCrypto: _c,
+    promptStrategyDecisionIntervalTv: _p,
+    symbols: _s,
+    defaultSymbol: _d,
+    ...rest
+  } = cfg;
   return rest;
 }
 
@@ -256,27 +260,7 @@ function normalizeConfig(raw: unknown): AppConfig {
   const base = defaultConfigFallback();
   if (!raw || typeof raw !== "object") return base;
   const r = raw as Record<string, unknown>;
-  let symbols = Array.isArray(r.symbols) ? r.symbols : base.symbols;
-  symbols = symbols
-    .filter((s) => s && typeof s.label === "string" && typeof s.value === "string")
-    .map((s) => ({
-      label: s.label.trim(),
-      value: s.value.trim(),
-    }))
-    .filter((s) => s.label && s.value);
-  const seen = new Set();
-  symbols = symbols.filter((s) => {
-    if (seen.has(s.value)) return false;
-    seen.add(s.value);
-    return true;
-  });
-  if (symbols.length === 0) symbols = base.symbols;
-
-  let defaultSymbol =
-    typeof r.defaultSymbol === "string" ? r.defaultSymbol.trim() : "";
-  if (!symbols.some((s) => s.value === defaultSymbol)) {
-    defaultSymbol = symbols[0].value;
-  }
+  let symbols = listOkxStrategySymbolOptions();
 
   let interval = typeof r.interval === "string" ? r.interval.trim() : base.interval;
   if (!ALLOWED_INTERVAL.has(interval)) interval = base.interval;
@@ -295,6 +279,10 @@ function normalizeConfig(raw: unknown): AppConfig {
       ? r.promptStrategy.trim()
       : base.promptStrategy,
   );
+
+  let defaultSymbol = promptStrategiesStore.getOkxTvSymbolForStrategyId(promptStrategy);
+  if (!symbols.some((s) => s.value === defaultSymbol)) defaultSymbol = symbols[0]?.value ?? "OKX:BTCUSDT";
+
   const { systemPromptCrypto } = loadSystemPromptsFromDisk(promptStrategy);
 
   let llmRequestTimeoutMs = base.llmRequestTimeoutMs;

@@ -35,6 +35,18 @@ export function normalizeStrategyTokenSymbol(raw: unknown): StrategyTokenSymbol 
   return "BTC";
 }
 
+/** TradingView / 行情订阅用 OKX 永续 U 本位代码 */
+export function okxTvSymbolFromStrategyToken(token: StrategyTokenSymbol): string {
+  return `OKX:${token}USDT`;
+}
+
+export function listOkxStrategySymbolOptions(): { label: string; value: string }[] {
+  return STRATEGY_TOKEN_SYMBOL_OPTIONS.map((s) => ({
+    label: `${s}/USDT`,
+    value: okxTvSymbolFromStrategyToken(s),
+  }));
+}
+
 export type StrategyExtrasV1 = {
   /** 单选：代币 / 合约范围，持久化为 length-1 数组 */
   tokenSymbols: string[];

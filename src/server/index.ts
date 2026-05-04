@@ -87,7 +87,7 @@ async function routeMarket(cfg, tvSymbol) {
 
   cryptoSched.stop();
   publish("market-status", {
-    text: `当前品种需为 OKX: 前缀（如 OKX:BTCUSDT），无法为 ${sym} 订阅行情。请在配置中修改代码或切换到 OKX 品种。`,
+    text: `当前品种需为 OKX: 前缀（如 OKX:BTCUSDT），无法为 ${sym} 订阅行情。请在策略中心为该策略绑定支持的代币（BTC / ETH / SOL / DOGE）。`,
   });
 }
 

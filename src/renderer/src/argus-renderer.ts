@@ -255,8 +255,10 @@ const FALLBACK_SYSTEM_PROMPT_CRYPTO =
 /** 与主进程 `APP_SETTINGS_SEED` + 兜底系统提示词语义一致，供非 Electron 打开页面时兜底 */
 const FALLBACK_APP_CONFIG = {
   symbols: [
-    { label: "BTC/USDT (OKX)", value: "OKX:BTCUSDT" },
-    { label: "ETH/USDT (OKX)", value: "OKX:ETHUSDT" },
+    { label: "BTC/USDT", value: "OKX:BTCUSDT" },
+    { label: "ETH/USDT", value: "OKX:ETHUSDT" },
+    { label: "SOL/USDT", value: "OKX:SOLUSDT" },
+    { label: "DOGE/USDT", value: "OKX:DOGEUSDT" },
   ],
   defaultSymbol: "OKX:BTCUSDT",
   promptStrategy: "",
@@ -2051,25 +2053,6 @@ function applyPromptStrategySelect(cfg) {
 }
 
 /**
- * 将快捷栏选的标的 / 周期写入本地设置（合并保存），并刷新主进程行情路由。
- * @param {{ defaultSymbol?: string, interval?: string }} partial
- */
-async function persistChartPreferences(partial) {
-  if (!partial || typeof partial !== "object") return;
-  if (!window.argus || typeof window.argus.saveConfig !== "function") {
-    return;
-  }
-  try {
-    const saved = asRendererAppConfig(await window.argus.saveConfig(partial));
-    applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
-    applySymbolSelect(saved);
-  } catch (err) {
-    console.error(err);
-    setLlmStatus("保存行情设置失败");
-  }
-}
-
-/**
  * 将顶栏当前策略写入本地设置；切换即生效。
  * @param {string} promptStrategy
  */
@@ -2086,6 +2069,14 @@ async function persistPromptStrategyPreference(promptStrategy) {
     const saved = asRendererAppConfig(await window.argus.saveConfig({ promptStrategy: next }));
     applyPromptStrategySelect(saved);
     applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
+    applySymbolSelect(saved);
+    createTradingViewWidget(saved.defaultSymbol, chartInterval);
+    if (typeof window.argus.setMarketContext === "function") {
+      window.argus.setMarketContext(saved.defaultSymbol);
+    }
+    void reloadLlmHistoryFromStore();
+    refreshExchangeContextBarFromCache();
+    void refreshOkxPositionBar();
     setLlmStatus(next ? `已切换策略：${saved.promptStrategy || next}` : "已清空当前策略选择");
   } catch (err) {
     console.error(err);
@@ -2093,47 +2084,7 @@ async function persistPromptStrategyPreference(promptStrategy) {
   }
 }
 
-function collectSymbolsFromConfigRows() {
-  const rows = document.querySelectorAll("#config-rows .config-row");
-  const symbols = [];
-  rows.forEach((row) => {
-    const label = row.querySelector(".config-in-label")?.value.trim() ?? "";
-    const value = row.querySelector(".config-in-value")?.value.trim() ?? "";
-    if (label && value) symbols.push({ label, value });
-  });
-  return symbols;
-}
 
-function renderConfigRows(symbols) {
-  const container = document.getElementById("config-rows");
-  if (!container) return;
-  container.replaceChildren();
-  const list = symbols.length > 0 ? symbols : [{ label: "", value: "" }];
-  list.forEach((sym) => {
-    const row = document.createElement("div");
-    row.className = "config-row";
-
-    const inLabel = document.createElement("input");
-    inLabel.type = "text";
-    inLabel.className = "config-in config-in-label";
-    inLabel.value = sym.label;
-    inLabel.placeholder = "展示名称";
-
-    const inValue = document.createElement("input");
-    inValue.type = "text";
-    inValue.className = "config-in config-in-value";
-    inValue.value = sym.value;
-    inValue.placeholder = "OKX:BTCUSDT";
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn-row-remove";
-    btn.textContent = "删除";
-
-    row.append(inLabel, inValue, btn);
-    container.appendChild(row);
-  });
-}
 
 function initDevToolsButton() {
   const btn = document.getElementById("btn-open-devtools");
@@ -2204,7 +2155,6 @@ function initConfigCenter() {
   if (!btnOpen) return;
 
   const fillConfigModalFields = (cfg) => {
-    renderConfigRows(cfg.symbols);
     const openaiUrlEl = document.getElementById("config-openai-base-url");
     const openaiModelEl = document.getElementById("config-openai-model");
     if (openaiUrlEl) openaiUrlEl.value = cfg.openaiBaseUrl || FALLBACK_APP_CONFIG.openaiBaseUrl;
@@ -2240,9 +2190,14 @@ function initConfigCenter() {
       try {
         const cfg = await loadAppConfig();
         fillConfigModalFields(cfg);
-        const symEl = document.getElementById("symbol-select");
-        const sym = symEl?.value?.trim() || cfg.defaultSymbol || FALLBACK_APP_CONFIG.defaultSymbol;
+        applySymbolSelect(cfg);
+        applyPromptStrategySelect(cfg);
+        applyChartIntervalSelect(cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
+        const sym = cfg.defaultSymbol || FALLBACK_APP_CONFIG.defaultSymbol;
         createTradingViewWidget(sym, chartInterval);
+        if (window.argus && typeof window.argus.setMarketContext === "function") {
+          window.argus.setMarketContext(sym);
+        }
       } catch (e) {
         console.error(e);
       }
@@ -2277,39 +2232,11 @@ function initConfigCenter() {
     if (!dlg) return;
 
     const el = raw.closest(
-      "#btn-config-save, #btn-config-reset, #btn-config-close, #btn-config-cancel, #btn-config-add, .btn-row-remove",
+      "#btn-config-save, #btn-config-reset, #btn-config-close, #btn-config-cancel",
     );
     if (!el) return;
 
-    if (el.classList.contains("btn-row-remove")) {
-      ev.preventDefault();
-      el.closest(".config-row")?.remove();
-      return;
-    }
-
     const id = el.id;
-    if (id === "btn-config-add") {
-      ev.preventDefault();
-      const container = document.getElementById("config-rows");
-      if (!container) return;
-      const row = document.createElement("div");
-      row.className = "config-row";
-      const inLabel = document.createElement("input");
-      inLabel.type = "text";
-      inLabel.className = "config-in config-in-label";
-      inLabel.placeholder = "展示名称";
-      const inValue = document.createElement("input");
-      inValue.type = "text";
-      inValue.className = "config-in config-in-value";
-      inValue.placeholder = "OKX:BTCUSDT";
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "btn-row-remove";
-      btn.textContent = "删除";
-      row.append(inLabel, inValue, btn);
-      container.appendChild(row);
-      return;
-    }
 
     if (id === "btn-config-close" || id === "btn-config-cancel") {
       closeModal();
@@ -2331,6 +2258,9 @@ function initConfigCenter() {
             FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv ?? "5",
           );
           createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol, chartInterval);
+          if (typeof window.argus.setMarketContext === "function") {
+            window.argus.setMarketContext(FALLBACK_APP_CONFIG.defaultSymbol);
+          }
           setLlmStatus("已恢复界面为内置默认（非 Electron 环境不会写入磁盘）");
           refreshExchangeContextBarFromCache();
           return;
@@ -2341,6 +2271,9 @@ function initConfigCenter() {
           applySymbolSelect(saved);
           applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
           createTradingViewWidget(saved.defaultSymbol, chartInterval);
+          if (typeof window.argus.setMarketContext === "function") {
+            window.argus.setMarketContext(saved.defaultSymbol);
+          }
           setLlmStatus("配置已恢复默认");
           refreshExchangeContextBarFromCache();
         } catch (err) {
@@ -2354,11 +2287,6 @@ function initConfigCenter() {
     if (id === "btn-config-save") {
       ev.preventDefault();
       void (async () => {
-        const symbols = collectSymbolsFromConfigRows();
-        if (symbols.length === 0) {
-          setLlmStatus("请至少填写一行品种");
-          return;
-        }
         const openaiUrlEl = document.getElementById("config-openai-base-url");
         const openaiModelEl = document.getElementById("config-openai-model");
         const openaiKeyEl = document.getElementById("config-openai-api-key");
@@ -2385,14 +2313,11 @@ function initConfigCenter() {
         const okxApiKey = okxAk?.value?.trim() ?? "";
         const okxSecretKey = okxSk?.value?.trim() ?? "";
         const okxPassphrase = okxPh?.value?.trim() ?? "";
-        const currentSymbolEl = document.getElementById("symbol-select");
-        const currentSymbol = currentSymbolEl?.value?.trim() ?? "";
-        const fallbackSymbol = symbols[0]?.value ?? "OKX:BTCUSDT";
-        const nextDefaultSymbol = symbols.some((s) => s.value === currentSymbol) ? currentSymbol : fallbackSymbol;
 
         if (!window.argus || typeof window.argus.saveConfig !== "function") {
-          applySymbolSelect({ symbols, defaultSymbol: nextDefaultSymbol });
-          createTradingViewWidget(nextDefaultSymbol, chartInterval);
+          const cfg = await loadAppConfig();
+          applySymbolSelect(cfg);
+          createTradingViewWidget(cfg.defaultSymbol, chartInterval);
           closeModal();
           refreshExchangeContextBarFromCache();
           void refreshOkxPositionBar();
@@ -2401,25 +2326,27 @@ function initConfigCenter() {
         try {
           const saved = asRendererAppConfig(
             await window.argus.saveConfig({
-            symbols,
-            openaiBaseUrl,
-            openaiModel,
-            openaiApiKey,
-            llmReasoningEnabled,
-            tradeNotifyEmailEnabled,
-            smtpUser,
-            smtpPass,
-            notifyEmailTo,
-            okxSwapTradingEnabled,
-            okxSimulated,
-            okxApiKey,
-            okxSecretKey,
-            okxPassphrase,
+              openaiBaseUrl,
+              openaiModel,
+              openaiApiKey,
+              llmReasoningEnabled,
+              tradeNotifyEmailEnabled,
+              smtpUser,
+              smtpPass,
+              notifyEmailTo,
+              okxSwapTradingEnabled,
+              okxSimulated,
+              okxApiKey,
+              okxSecretKey,
+              okxPassphrase,
             }),
           );
           applySymbolSelect(saved);
           applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
           createTradingViewWidget(saved.defaultSymbol, chartInterval);
+          if (typeof window.argus.setMarketContext === "function") {
+            window.argus.setMarketContext(saved.defaultSymbol);
+          }
           closeModal();
           refreshExchangeContextBarFromCache();
           void refreshOkxPositionBar();
@@ -2533,18 +2460,7 @@ function createTradingViewWidget(symbol, interval) {
 }
 
 function initSymbolSelect() {
-  const sel = document.getElementById("symbol-select");
-  if (!sel) return;
-  sel.addEventListener("change", () => {
-    const sym = sel.value;
-    createTradingViewWidget(sym, chartInterval);
-    void (async () => {
-      await persistChartPreferences({ defaultSymbol: sym });
-      await reloadLlmHistoryFromStore();
-      refreshExchangeContextBarFromCache();
-      void refreshOkxPositionBar();
-    })();
-  });
+  // 图表标的由当前策略在「策略中心」绑定的代币决定，不从顶栏另行切换或持久化。
 }
 
 function initChartIntervalSelect() {
@@ -2606,7 +2522,6 @@ function shortLlmStatusLabel(full: string | null | undefined): string {
     [(s) => s.includes("已恢复界面为内置默认"), "已恢复"],
     [(s) => s === "配置已恢复默认", "已恢复"],
     [(s) => s.includes("恢复默认配置失败"), "恢复失败"],
-    [(s) => s === "请至少填写一行品种", "缺品种"],
     [(s) => s === "保存配置失败", "保存失败"],
     [(s) => s === "就绪", "就绪"],
   ];
@@ -3050,12 +2965,7 @@ export function initArgusApp() {
       cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv,
     );
     applyPromptStrategySelect(cfg);
-    const params =
-      typeof window !== "undefined" && typeof URLSearchParams !== "undefined"
-        ? new URLSearchParams(window.location.search)
-        : null;
-    const urlTv = params?.get("tvSymbol")?.trim();
-    const sym = urlTv || cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
+    const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
     createTradingViewWidget(sym, chartInterval);
     if (window.argus && typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(sym);

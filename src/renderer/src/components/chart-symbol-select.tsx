@@ -1,11 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { useEffect, useState } from "react";
 
 /** 与 `argus-renderer.js` 中 `applySymbolSelect` 派发的名称一致 */
 export const ARGUS_SYMBOL_SELECT_SYNC = "argus:symbol-select-sync";
@@ -14,6 +7,10 @@ type SymbolOption = { label: string; value: string };
 
 type SyncDetail = { symbols: SymbolOption[]; value: string };
 
+/**
+ * 交易标的由当前策略在「策略中心」绑定的代币决定；此处仅展示，不可切换。
+ * 仍保留隐藏 `#symbol-select` 供 argus-renderer 命令式读写。
+ */
 export function ChartSymbolSelect() {
   const [options, setOptions] = useState<SymbolOption[]>([]);
   const [value, setValue] = useState("");
@@ -30,24 +27,16 @@ export function ChartSymbolSelect() {
     return () => window.removeEventListener(ARGUS_SYMBOL_SELECT_SYNC, onSync);
   }, []);
 
-  const onValueChange = useCallback((next: string) => {
-    setValue(next);
-    const sel = document.getElementById("symbol-select") as HTMLSelectElement | null;
-    if (!sel) return;
-    sel.value = next;
-    sel.dispatchEvent(new Event("change", { bubbles: true }));
-  }, []);
-
   const resolvedValue = options.some((o) => o.value === value)
     ? value
     : (options[0]?.value ?? "");
 
+  const currentLabel =
+    options.find((o) => o.value === resolvedValue)?.label?.trim() || resolvedValue || "—";
+
   return (
     <div className="chart-symbol-select flex min-w-0 shrink items-center justify-end">
-      {/*
-        保留原生 select 供 argus-renderer  imperative 逻辑（选项、.value、change 监听）
-      */}
-      <select id="symbol-select" className="sr-only" tabIndex={-1} title="交易对" />
+      <select id="symbol-select" className="sr-only" tabIndex={-1} title="交易对（随当前策略）" />
       {options.length === 0 ? (
         <div
           className="inline-flex h-7 max-w-[min(240px,42vw)] items-center rounded-lg border border-border bg-background px-2.5 text-sm text-muted-foreground"
@@ -56,22 +45,13 @@ export function ChartSymbolSelect() {
           加载品种…
         </div>
       ) : (
-        <Select value={resolvedValue} onValueChange={onValueChange}>
-          <SelectTrigger
-            size="sm"
-            className="h-7 w-auto max-w-[min(240px,42vw)] gap-1 border-border bg-background pr-1.5 shadow-none"
-            title="交易对"
-          >
-            <SelectValue className="max-w-48 truncate" placeholder="选择标的" />
-          </SelectTrigger>
-          <SelectContent position="popper" className="z-200">
-            {options.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div
+          className="inline-flex h-7 max-w-[min(240px,42vw)] items-center rounded-lg border border-border bg-muted/30 px-2.5 text-sm text-foreground"
+          title={`${currentLabel}（在策略中心修改）`}
+          aria-label={`当前标的 ${currentLabel}，请在策略中心切换策略或代币`}
+        >
+          <span className="max-w-48 truncate">{currentLabel}</span>
+        </div>
       )}
     </div>
   );

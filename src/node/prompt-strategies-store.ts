@@ -2,6 +2,8 @@ import * as localDb from "./local-db/index.js";
 import {
   defaultStrategyExtras,
   normalizeStrategyDecisionIntervalTv,
+  normalizeStrategyTokenSymbol,
+  okxTvSymbolFromStrategyToken,
   parseStrategyExtrasJson,
   stringifyStrategyExtras,
   type StrategyDecisionIntervalTv,
@@ -119,6 +121,23 @@ function getDecisionIntervalTvForStrategyId(strategyId: unknown): StrategyDecisi
   return row ? row.decisionIntervalTv : "5";
 }
 
+/**
+ * 当前策略在「策略中心」绑定的代币 → OKX 图表 / 行情代码（如 OKX:BTCUSDT）。
+ * @param {unknown} strategyId
+ * @returns {string}
+ */
+function getOkxTvSymbolForStrategyId(strategyId: unknown): string {
+  seedFromDiskIfEmpty();
+  if (typeof strategyId !== "string" || !strategyId.trim()) {
+    return okxTvSymbolFromStrategyToken(normalizeStrategyTokenSymbol(undefined));
+  }
+  const row = getStrategy(strategyId.trim());
+  const token = row
+    ? normalizeStrategyTokenSymbol(row.extras.tokenSymbols)
+    : normalizeStrategyTokenSymbol(undefined);
+  return okxTvSymbolFromStrategyToken(token);
+}
+
 /** @param {Partial<StrategyExtrasV1>} patch */
 function applyExtrasPatch(base: StrategyExtrasV1, patch: Partial<StrategyExtrasV1>): StrategyExtrasV1 {
   return {
@@ -218,6 +237,7 @@ export {
   listStrategiesMeta,
   getStrategy,
   getDecisionIntervalTvForStrategyId,
+  getOkxTvSymbolForStrategyId,
   saveStrategy,
   deleteStrategy,
   validateStrategyId,

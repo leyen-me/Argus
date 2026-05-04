@@ -16,6 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { ConfigHelpTooltip } from "@/components/app/config-modal/config-help-tooltip";
 import {
   ARGUS_PROMPT_STRATEGIES_CHANGED,
   ARGUS_STRATEGY_MODAL_CLOSE,
@@ -374,9 +375,14 @@ export function StrategyCenterModal() {
               <div className="space-y-5 p-4 pr-5">
                 {isNew ? (
                   <div className="space-y-2">
-                    <Label htmlFor="strategy-id-field" className="text-muted-foreground">
-                      策略 ID
-                    </Label>
+                    <div className="flex items-center gap-1.5">
+                      <Label htmlFor="strategy-id-field" className="text-muted-foreground">
+                        策略 ID
+                      </Label>
+                      <ConfigHelpTooltip className="size-6">
+                        保存后不可修改；用于内部引用与文件级标识。
+                      </ConfigHelpTooltip>
+                    </div>
                     <Input
                       id="strategy-id-field"
                       className="font-mono text-sm"
@@ -385,7 +391,6 @@ export function StrategyCenterModal() {
                       placeholder="如 swing_1h、scalp_5m"
                       disabled={busy}
                     />
-                    <p className="m-0 text-[11px] text-muted-foreground">保存后不可修改；用于内部引用与文件级标识。</p>
                   </div>
                 ) : null}
 
@@ -402,11 +407,11 @@ export function StrategyCenterModal() {
                 <Separator />
 
                 <section>
-                  <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
                     <Label className="text-foreground">决策时间</Label>
-                    <p className="m-0 text-[11px] leading-relaxed text-muted-foreground">
+                    <ConfigHelpTooltip className="size-6">
                       K 线收盘触发 Agent 的周期；与当前策略绑定。
-                    </p>
+                    </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     {STRATEGY_DECISION_INTERVAL_TV.map((tv) => (
@@ -428,16 +433,14 @@ export function StrategyCenterModal() {
                 <Separator />
 
                 <section>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Label className="text-foreground">市场数据</Label>
-                      <Badge variant="secondary" className="text-[10px] font-normal">
-                        占位
-                      </Badge>
-                    </div>
-                    <p className="m-0 text-[11px] leading-relaxed text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Label className="text-foreground">市场数据</Label>
+                    <ConfigHelpTooltip className="size-6">
                       选择拟提供给模型的多周期数据（已持久化，尚未接入行情筛选逻辑）。
-                    </p>
+                    </ConfigHelpTooltip>
+                    <Badge variant="secondary" className="text-[10px] font-normal">
+                      占位
+                    </Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {MARKET_TF_META.map((m) => {
@@ -467,16 +470,14 @@ export function StrategyCenterModal() {
                 <Separator />
 
                 <section>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <Label className="text-foreground">技术指标</Label>
-                      <Badge variant="secondary" className="text-[10px] font-normal">
-                        占位
-                      </Badge>
-                    </div>
-                    <p className="m-0 text-[11px] leading-relaxed text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Label className="text-foreground">技术指标</Label>
+                    <ConfigHelpTooltip className="size-6">
                       勾选会写入策略配置，图表与提示词尚未自动应用。
-                    </p>
+                    </ConfigHelpTooltip>
+                    <Badge variant="secondary" className="text-[10px] font-normal">
+                      占位
+                    </Badge>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {INDICATORS.map((ind) => {

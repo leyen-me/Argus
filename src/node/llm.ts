@@ -8,6 +8,10 @@ import type {
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
 import { loadSystemPromptsFromDisk } from "./app-config.js";
+import {
+  filterMultiTimeframeSpecsByMarketSelection,
+  type StrategyDecisionIntervalTv,
+} from "../shared/strategy-fields.js";
 
 /** 交易 Agent：`resolveTradingAgentSystemPrompt` 在策略正文后附加；与用户策略库解耦。 */
 const TRADING_AGENT_TOOLS_POLICY_BLOCK = `
@@ -229,7 +233,7 @@ function buildMultimodalUserContent(userText, imageBase64, mimeType) {
             `\n\n` +
             `### 附图` +
             `\n\n` +
-            `以下按顺序提供 ${orderedLabels} 图表截图。`,
+            `以下按周期从小到大顺序提供（先小周期、后大周期）：${orderedLabels} 图表截图。`,
         },
         ...images.map((item) => ({
           type: "image_url",
@@ -1014,11 +1018,12 @@ function buildUserPrompt(symbol, periodKey, candle, recentCandles) {
   return head + buildRecentCandlesMarkdownSection(recentCandles);
 }
 
+/** 与 shared 一致：小周期在上、大周期在下（filter 后也会再 sort） */
 const MULTI_TIMEFRAME_PROMPT_SPECS = [
-  { interval: "1D", label: "1D（日线）" },
-  { interval: "60", label: "1H（1 小时）" },
-  { interval: "15", label: "15m（15 分钟）" },
   { interval: "5", label: "5m（5 分钟，决策周期）" },
+  { interval: "15", label: "15m（15 分钟）" },
+  { interval: "60", label: "1H（1 小时）" },
+  { interval: "1D", label: "1D（日线）" },
 ];
 
 /**
@@ -1026,8 +1031,9 @@ const MULTI_TIMEFRAME_PROMPT_SPECS = [
  * @param {string} periodKey
  * @param {object} candle
  * @param {Record<string, Parameters<typeof buildRecentCandlesMarkdownSection>[0]>} recentCandlesByInterval
+ * @param {readonly StrategyDecisionIntervalTv[]} [marketTimeframes] 策略「市场数据」勾选；空或未传则四周期全开（与 shared 容错一致）
  */
-function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesByInterval) {
+function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesByInterval, marketTimeframes) {
   const triggerRow = [
     symbol,
     `${periodKey}`,
@@ -1039,24 +1045,28 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
     candle.volume,
     candle.turnover != null ? candle.turnover : "—",
   ];
-  const sections = MULTI_TIMEFRAME_PROMPT_SPECS.map((spec) =>
-    buildRecentCandlesMarkdownSection(
-      recentCandlesByInterval?.[spec.interval],
-      `### ${spec.label} `,
-    ),
-  ).filter(Boolean);
-  return [
+  const tfList = Array.isArray(marketTimeframes) ? marketTimeframes : [];
+  const specs = filterMultiTimeframeSpecsByMarketSelection(MULTI_TIMEFRAME_PROMPT_SPECS, tfList);
+  const sections = specs
+    .map((spec) =>
+      buildRecentCandlesMarkdownSection(
+        recentCandlesByInterval?.[spec.interval],
+        `### ${spec.label} `,
+      ),
+    )
+    .filter(Boolean);
+  const klineHead = [
     "## 最新推送的 K 线",
     "",
     mdTable(
       ["标的", "周期", "时间", "Open", "High", "Low", "Close", "Volume", "Turnover"],
       [triggerRow],
     ),
-    "",
-    "## 多周期上下文",
-    "",
-    ...sections,
-  ].join("\n");
+  ];
+  if (!sections.length) {
+    return klineHead.join("\n");
+  }
+  return [...klineHead, "", "## 多周期上下文", "", ...sections].join("\n");
 }
 
 /**

@@ -1,5 +1,6 @@
 import * as localDb from "./local-db/index.js";
 import {
+  STRATEGY_DECISION_INTERVAL_TV,
   defaultStrategyExtras,
   normalizeStrategyDecisionIntervalTv,
   normalizeStrategyTokenSymbol,
@@ -138,6 +139,20 @@ function getOkxTvSymbolForStrategyId(strategyId: unknown): string {
   return okxTvSymbolFromStrategyToken(token);
 }
 
+/**
+ * 策略在「市场数据」中勾选的多周期（与提示词 `## 多周期上下文` 一致）。
+ * @param {unknown} strategyId
+ * @returns {StrategyDecisionIntervalTv[]}
+ */
+function getMarketTimeframesForStrategyId(strategyId: unknown): StrategyDecisionIntervalTv[] {
+  seedFromDiskIfEmpty();
+  if (typeof strategyId !== "string" || !strategyId.trim()) {
+    return [...STRATEGY_DECISION_INTERVAL_TV];
+  }
+  const row = getStrategy(strategyId.trim());
+  return row ? [...row.extras.marketTimeframes] : [...STRATEGY_DECISION_INTERVAL_TV];
+}
+
 /** @param {Partial<StrategyExtrasV1>} patch */
 function applyExtrasPatch(base: StrategyExtrasV1, patch: Partial<StrategyExtrasV1>): StrategyExtrasV1 {
   return {
@@ -238,6 +253,7 @@ export {
   getStrategy,
   getDecisionIntervalTvForStrategyId,
   getOkxTvSymbolForStrategyId,
+  getMarketTimeframesForStrategyId,
   saveStrategy,
   deleteStrategy,
   validateStrategyId,

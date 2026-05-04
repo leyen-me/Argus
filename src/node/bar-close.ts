@@ -28,10 +28,12 @@ import {
 import { buildTradingAgentToolsForContext } from "./trading-agent-tools.js";
 import { createTradingToolExecutor } from "./trading-agent-executor.js";
 import { persistAgentBarTurn, listRecentAgentMemories } from "./agent-bar-turns-store.js";
+import * as promptStrategiesStore from "./prompt-strategies-store.js";
 import {
   MULTI_TIMEFRAME_CAPTURE_SPECS,
   canonTradingViewInterval,
   decisionIntervalExplain,
+  filterMultiTimeframeSpecsByMarketSelection,
 } from "../shared/strategy-fields.js";
 
 type MultiTimeframeChartImage = {
@@ -410,9 +412,14 @@ function formatToolCallPreview(toolCalls) {
 /**
  * @param {string} tvSymbol
  * @param {number} [timeoutMs]
+ * @param {string[] | undefined} [marketTimeframes]
  */
-async function requestChartCapture(tvSymbol: string, timeoutMs = 45000): Promise<BrowserChartCaptureOk> {
-  return requestChartCaptureFromBrowser(tvSymbol, timeoutMs);
+async function requestChartCapture(
+  tvSymbol: string,
+  timeoutMs = 45000,
+  marketTimeframes?: string[],
+): Promise<BrowserChartCaptureOk> {
+  return requestChartCaptureFromBrowser(tvSymbol, timeoutMs, marketTimeframes);
 }
 
 /**
@@ -425,11 +432,18 @@ async function requestChartCapture(tvSymbol: string, timeoutMs = 45000): Promise
  * }} ctx
  */
 async function emitBarClose(ctx) {
+  const cfg = loadAppConfig();
+  const marketTfs = promptStrategiesStore.getMarketTimeframesForStrategyId(cfg.promptStrategy);
+  const multiCaptureSpecs = filterMultiTimeframeSpecsByMarketSelection(
+    MULTI_TIMEFRAME_CAPTURE_SPECS,
+    marketTfs,
+  );
+
   let chartImage: PrimaryChartImage | null = null;
   let chartImages: MultiTimeframeChartImage[] = [];
   let chartCaptureError: string | null = null;
   try {
-    const capturePack = await requestChartCapture(ctx.tvSymbol);
+    const capturePack = await requestChartCapture(ctx.tvSymbol, 45000, marketTfs);
     chartImage = {
       mimeType: capturePack.mimeType,
       base64: capturePack.base64,
@@ -439,8 +453,6 @@ async function emitBarClose(ctx) {
   } catch (e) {
     chartCaptureError = e instanceof Error ? e.message : String(e);
   }
-
-  const cfg = loadAppConfig();
   const decisionIvCanon = canonTradingViewInterval(cfg.promptStrategyDecisionIntervalTv ?? "5");
   const ctxIvCanon = canonTradingViewInterval(ctx.interval);
   const barCloseId = crypto.randomUUID();
@@ -471,7 +483,7 @@ async function emitBarClose(ctx) {
   const [exchangeCtx, recentCandlesPack, positionsHistory, recentAgentMemories] = await Promise.all([
     getOkxExchangeContextForBar(cfg, ctx.tvSymbol, ctx.interval),
     Promise.all(
-      MULTI_TIMEFRAME_CAPTURE_SPECS.map(async (spec) => [
+      multiCaptureSpecs.map(async (spec) => [
         spec.interval,
         await fetchRecentCandlesForTv(ctx.tvSymbol, spec.interval, RECENT_CANDLES_FETCH_LIMIT),
       ]),
@@ -485,6 +497,7 @@ async function emitBarClose(ctx) {
     ctx.periodLabel,
     ctx.candle,
     recentCandles,
+    marketTfs,
   );
   const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx, positionsHistory, recentAgentMemories);
 
@@ -521,7 +534,7 @@ async function emitBarClose(ctx) {
     return;
   }
 
-  const orderedChartImages = MULTI_TIMEFRAME_CAPTURE_SPECS.map((spec) => {
+  const orderedChartImages = multiCaptureSpecs.map((spec) => {
     const found = chartImages.find((item) => String(item.interval) === spec.interval);
     if (!found?.base64) return null;
     return {
@@ -534,7 +547,7 @@ async function emitBarClose(ctx) {
     chartCaptureError ||
     !chartImage?.base64 ||
     ctxIvCanon !== decisionIvCanon ||
-    orderedChartImages.length !== MULTI_TIMEFRAME_CAPTURE_SPECS.length
+    orderedChartImages.length !== multiCaptureSpecs.length
   ) {
     finishSkipped(
       chartCaptureError

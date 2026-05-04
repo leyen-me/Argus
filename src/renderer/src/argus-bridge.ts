@@ -27,6 +27,8 @@ export interface MarketBarClosePayload {
 export type ChartCaptureRequestPayload = {
   requestId?: string;
   tvSymbol?: string;
+  /** 策略「市场数据」勾选周期；缺省则截取全部多周期图 */
+  marketTimeframes?: string[];
 };
 
 /** `market-status` 推送 */

@@ -30,8 +30,13 @@ const pending = new Map<string, PendingEntry>();
 /**
  * @param {string} tvSymbol
  * @param {number} [timeoutMs]
+ * @param {string[] | undefined} [marketTimeframes] 策略「市场数据」勾选的周期（如 `['5','60']`）；未传则截全部分时图
  */
-function requestChartCaptureFromBrowser(tvSymbol: string, timeoutMs = 22000): Promise<BrowserChartCaptureOk> {
+function requestChartCaptureFromBrowser(
+  tvSymbol: string,
+  timeoutMs = 22000,
+  marketTimeframes?: string[],
+): Promise<BrowserChartCaptureOk> {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -61,6 +66,7 @@ function requestChartCaptureFromBrowser(tvSymbol: string, timeoutMs = 22000): Pr
     publish("request-chart-capture", {
       requestId,
       tvSymbol: typeof tvSymbol === "string" ? tvSymbol : String(tvSymbol || ""),
+      marketTimeframes: Array.isArray(marketTimeframes) ? marketTimeframes : undefined,
     });
   });
 }

@@ -6,12 +6,12 @@
 export const STRATEGY_DECISION_INTERVAL_TV = ["5", "15", "60", "1D"] as const;
 export type StrategyDecisionIntervalTv = (typeof STRATEGY_DECISION_INTERVAL_TV)[number];
 
-/** 送入 LLM 的多周期图表与 K 线索引顺序（固定四宫格）；与前端 TradingView 容器一致。 */
+/** 送入 LLM 的附图 / K 线多周期（小周期在前、大周期在后，与提示词 `## 多周期上下文` 一致）。 */
 export const MULTI_TIMEFRAME_CAPTURE_SPECS = [
-  { interval: "1D", label: "1D" },
-  { interval: "60", label: "1H" },
-  { interval: "15", label: "15m" },
   { interval: "5", label: "5m" },
+  { interval: "15", label: "15m" },
+  { interval: "60", label: "1H" },
+  { interval: "1D", label: "1D" },
 ] as const;
 
 export type StrategyIndicatorId = "EM20" | "BB" | "ATR" | "MACD";
@@ -50,7 +50,7 @@ export function listOkxStrategySymbolOptions(): { label: string; value: string }
 export type StrategyExtrasV1 = {
   /** 单选：代币 / 合约范围，持久化为 length-1 数组 */
   tokenSymbols: string[];
-  /** 占位：拟投喂模型的多周期（多选），尚未接入数据管线 */
+  /** 多选：投喂模型的 K 线多周期（与 `## 多周期上下文` 及附图子集一致） */
   marketTimeframes: StrategyDecisionIntervalTv[];
   /** 占位：技术指标勾选 */
   indicators: StrategyIndicatorId[];
@@ -153,4 +153,42 @@ export function canonTradingViewInterval(tv: unknown): string {
   if (u === "D" || u === "1D") return "1D";
   if (/^[0-9]+$/.test(raw)) return raw;
   return raw;
+}
+
+/** TV 周期：从小到大（5m → … → 1D），用于「多周期上下文」与附图顺序。 */
+const TV_INTERVAL_RANK_SMALL_FIRST: Record<string, number> = {
+  "5": 0,
+  "15": 1,
+  "60": 2,
+  "1D": 3,
+};
+
+/**
+ * 将多周期 spec 排成「小周期在上、大周期在下」（与 `## 多周期上下文` 及附图顺序一致）。
+ */
+export function sortMultiTimeframeSpecsSmallestFirst<T extends { interval: string }>(specs: readonly T[]): T[] {
+  return [...specs].sort(
+    (a, b) =>
+      (TV_INTERVAL_RANK_SMALL_FIRST[canonTradingViewInterval(a.interval)] ?? 99) -
+      (TV_INTERVAL_RANK_SMALL_FIRST[canonTradingViewInterval(b.interval)] ?? 99),
+  );
+}
+
+/**
+ * 按策略勾选保留条目，并统一为**小周期在上、大周期在下**。
+ * `selected` 为空时返回完整 `specs`（容错），仍会做从小到大排序。
+ */
+export function filterMultiTimeframeSpecsByMarketSelection<T extends { interval: string }>(
+  specs: readonly T[],
+  selected: readonly StrategyDecisionIntervalTv[],
+): T[] {
+  let base: T[];
+  if (!selected.length) {
+    base = [...specs];
+  } else {
+    const want = new Set(selected.map((tv) => canonTradingViewInterval(tv)));
+    const out = specs.filter((s) => want.has(canonTradingViewInterval(s.interval)));
+    base = out.length ? out : [...specs];
+  }
+  return sortMultiTimeframeSpecsSmallestFirst(base);
 }

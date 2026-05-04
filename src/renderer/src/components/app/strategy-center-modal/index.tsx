@@ -472,7 +472,7 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">市场数据</Label>
                     <ConfigHelpTooltip className="size-6">
-                      提供给模型的多周期数据
+                      与「## 多周期上下文」及模型附图顺序一致，只投喂勾选的周期
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">

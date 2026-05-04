@@ -1,5 +1,5 @@
 /* global TradingView */
-import { canonTradingViewInterval } from "@shared/strategy-fields";
+import { canonTradingViewInterval, sortMultiTimeframeSpecsSmallestFirst } from "@shared/strategy-fields";
 
 /** TradingView 内置：MAExp = EMA，周期由 length 指定 */
 const DEFAULT_EMA_LENGTH = 20;
@@ -186,9 +186,29 @@ function loadImageElement(dataUrl: string): Promise<HTMLImageElement> {
   });
 }
 
-async function captureMultiTimeframeCharts() {
+/**
+ * @param {string[] | undefined} selectedIntervals TradingView interval，如 `5`/`1D`；空或未传截取全部
+ */
+function resolveMultiTimeframeSpecsForCapture(selectedIntervals: string[] | undefined) {
+  const all = MULTI_TIMEFRAME_SPECS;
+  if (!Array.isArray(selectedIntervals) || selectedIntervals.length === 0) {
+    return sortMultiTimeframeSpecsSmallestFirst(all);
+  }
+  const want = new Set(selectedIntervals.map((iv) => canonTradingViewInterval(iv)));
+  const filtered = all.filter((s) => want.has(canonTradingViewInterval(s.interval)));
+  const specs = filtered.length ? filtered : all;
+  return sortMultiTimeframeSpecsSmallestFirst(specs);
+}
+
+/**
+ * @param {string[] | undefined} selectedIntervals 策略勾选的多周期；未传则截四宫格全部
+ */
+async function captureMultiTimeframeCharts(selectedIntervals?: string[]) {
+  const specs = resolveMultiTimeframeSpecsForCapture(selectedIntervals);
+  if (!specs.length) throw new Error("无可截取的多周期图表");
+
   const charts = await Promise.all(
-    MULTI_TIMEFRAME_SPECS.map(async (spec) => {
+    specs.map(async (spec) => {
       const shot = await captureTradingViewPng(spec.interval);
       return {
         interval: spec.interval,
@@ -201,21 +221,24 @@ async function captureMultiTimeframeCharts() {
     }),
   );
   const images = await Promise.all(charts.map((chart) => loadImageElement(chart.dataUrl)));
+  const n = charts.length;
+  const cols = n <= 2 ? n : 2;
+  const rows = Math.ceil(n / cols);
   const cellWidth = Math.max(...images.map((img) => img.width));
   const cellHeight = Math.max(...images.map((img) => img.height));
   const gap = 12;
   const pad = 16;
   const titleHeight = 42;
   const canvas = document.createElement("canvas");
-  canvas.width = pad * 2 + cellWidth * 2 + gap;
-  canvas.height = pad * 2 + cellHeight * 2 + gap;
+  canvas.width = pad * 2 + cellWidth * cols + gap * Math.max(0, cols - 1);
+  canvas.height = pad * 2 + cellHeight * rows + gap * Math.max(0, rows - 1);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("无法创建截图画布");
   ctx.fillStyle = "#0d1117";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   charts.forEach((chart, index) => {
-    const row = Math.floor(index / 2);
-    const col = index % 2;
+    const row = Math.floor(index / cols);
+    const col = index % cols;
     const x = pad + col * (cellWidth + gap);
     const y = pad + row * (cellHeight + gap);
     ctx.fillStyle = "#111827";
@@ -2670,7 +2693,11 @@ function initChartCaptureBridge() {
           }
         }
       }
-      const shot = await captureMultiTimeframeCharts();
+      const mtRaw = payload?.marketTimeframes;
+      const selectedIntervals = Array.isArray(mtRaw)
+        ? mtRaw.map((x) => String(x ?? "").trim()).filter(Boolean)
+        : undefined;
+      const shot = await captureMultiTimeframeCharts(selectedIntervals);
       window.argus.submitChartCaptureResult({
         requestId,
         ok: true,

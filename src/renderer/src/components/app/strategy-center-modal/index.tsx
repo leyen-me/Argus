@@ -24,7 +24,6 @@ import {
 } from "@/lib/argus-strategy-modal-events";
 import {
   STRATEGY_DECISION_INTERVAL_TV,
-  decisionIntervalLabel,
   type StrategyDecisionIntervalTv,
   type StrategyExtrasV1,
   type StrategyIndicatorId,
@@ -413,18 +412,18 @@ export function StrategyCenterModal() {
                       K 线收盘触发 Agent 的周期；与当前策略绑定。
                     </ConfigHelpTooltip>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    {STRATEGY_DECISION_INTERVAL_TV.map((tv) => (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {MARKET_TF_META.map((m) => (
                       <Button
-                        key={tv}
+                        key={m.id}
                         type="button"
                         size="sm"
-                        variant={draftDecisionTv === tv ? "default" : "outline"}
-                        className="h-9 justify-center text-xs font-medium"
-                        onClick={() => setDraftDecisionTv(tv)}
+                        variant={draftDecisionTv === m.id ? "default" : "outline"}
+                        className="h-8 min-w-[52px] px-2 text-xs"
+                        onClick={() => setDraftDecisionTv(m.id)}
                         disabled={busy}
                       >
-                        {decisionIntervalLabel(tv)}
+                        {m.label}
                       </Button>
                     ))}
                   </div>

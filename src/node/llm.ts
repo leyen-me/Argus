@@ -1414,7 +1414,7 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
     )
     .filter(Boolean);
   const klineHead = [
-    "## 最新推送的 K 线",
+    "## 本次触发的决策 K 线",
     "",
     promptTriggerKlineColumnGlossary(orderedIds),
     "",
@@ -1423,7 +1423,7 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
   if (!sections.length) {
     return klineHead.join("\n");
   }
-  return [...klineHead, "", "## 多周期上下文", "", promptRecentKlineColumnGlossary(orderedIds), "", ...sections].join("\n");
+  return [...klineHead, "", "## 市场数据多周期上下文", "", promptRecentKlineColumnGlossary(orderedIds), "", ...sections].join("\n");
 }
 
 /**

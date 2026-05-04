@@ -30,6 +30,7 @@ import {
   type StrategyIndicatorId,
 } from "@shared/strategy-fields";
 import { formatPromptStrategyDisplayLabel } from "@shared/prompt-strategy-display-label";
+import { ARGUS_PROMPT_STRATEGY_SYNC } from "@/components/prompt-strategy-select";
 
 type StrategyMeta = { id: string; label: string; sort_order: number };
 
@@ -96,8 +97,18 @@ export function StrategyCenterModal() {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [titleEditing, setTitleEditing] = useState(false);
+  /** 顶栏当前选用的策略 id，与 `config-prompt-strategy` / PromptStrategySelect 同步 */
+  const [activePromptStrategyId, setActivePromptStrategyId] = useState("");
 
   const isNew = selectedId === null;
+
+  const isActiveStrategySelected =
+    Boolean(selectedId) &&
+    Boolean(activePromptStrategyId.trim()) &&
+    selectedId!.trim() === activePromptStrategyId.trim();
+
+  /** 多策略时禁止删顶栏当前项；仅存一条时可删（含正在使用），以便库表为空。 */
+  const blockDeleteActiveUnlessLast = isActiveStrategySelected && list.length > 1;
 
   const applyRowToForm = useCallback((row: PromptStrategyRow) => {
     setDraftId(row.id);
@@ -149,6 +160,10 @@ export function StrategyCenterModal() {
       setOpen(true);
       setStatus(null);
       setTitleEditing(false);
+      const sel = document.getElementById("config-prompt-strategy");
+      if (sel instanceof HTMLSelectElement) {
+        setActivePromptStrategyId(String(sel.value ?? "").trim());
+      }
       void refreshList();
     };
     const onClose = () => setOpen(false);
@@ -159,6 +174,20 @@ export function StrategyCenterModal() {
       window.removeEventListener(ARGUS_STRATEGY_MODAL_CLOSE, onClose);
     };
   }, [refreshList]);
+
+  useEffect(() => {
+    const onSync = (e: Event) => {
+      const detail = (e as CustomEvent<{ value?: unknown }>).detail;
+      const v = detail && typeof detail.value === "string" ? detail.value.trim() : "";
+      setActivePromptStrategyId(v);
+    };
+    window.addEventListener(ARGUS_PROMPT_STRATEGY_SYNC, onSync);
+    const sel = document.getElementById("config-prompt-strategy");
+    if (sel instanceof HTMLSelectElement) {
+      setActivePromptStrategyId(String(sel.value ?? "").trim());
+    }
+    return () => window.removeEventListener(ARGUS_PROMPT_STRATEGY_SYNC, onSync);
+  }, []);
 
   const loadOne = async (id: string) => {
     const api = getArgus();
@@ -238,9 +267,13 @@ export function StrategyCenterModal() {
 
   const onDelete = async () => {
     if (!selectedId) return;
+    if (blockDeleteActiveUnlessLast) {
+      setStatus("无法删除顶栏正在使用的策略，请先在顶栏切换到其他策略。");
+      return;
+    }
     const api = getArgus();
     if (!api?.deletePromptStrategy) return;
-    const ok = window.confirm(`确定删除策略「${selectedId}」？至少会保留一条策略。`);
+    const ok = window.confirm(`确定删除策略「${selectedId}」？`);
     if (!ok) return;
     setBusy(true);
     setStatus(null);
@@ -371,7 +404,12 @@ export function StrategyCenterModal() {
                   size="sm"
                   className="h-8 w-full justify-center gap-1.5 text-xs text-destructive hover:text-destructive"
                   onClick={() => void onDelete()}
-                  disabled={busy || list.length <= 1}
+                  disabled={busy || blockDeleteActiveUnlessLast}
+                  title={
+                    blockDeleteActiveUnlessLast
+                      ? "顶栏正在使用此策略，请先在顶栏切换到其他策略后再删除"
+                      : undefined
+                  }
                 >
                   <Trash2 className="size-3.5 shrink-0" aria-hidden />
                   删除当前策略

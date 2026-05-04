@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, PencilLine, XIcon } from "lucide-react";
+import { BookOpen, PencilLine, Plus, Save, Trash2, XIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -305,6 +305,7 @@ export function StrategyCenterModal() {
               </Button>
             </div>
             <Button type="button" size="sm" className="shrink-0" onClick={() => void onSave()} disabled={busy}>
+              <Save className="size-3.5" aria-hidden />
               保存策略
             </Button>
           </div>
@@ -315,6 +316,7 @@ export function StrategyCenterModal() {
           <aside className="flex w-[200px] shrink-0 flex-col border-r border-border">
             <div className="flex flex-wrap gap-2 border-b border-border/80 p-3">
               <Button type="button" variant="secondary" size="sm" className="h-8 text-xs" onClick={() => onNew()} disabled={busy}>
+                <Plus className="size-3.5" aria-hidden />
                 新建
               </Button>
             </div>
@@ -357,10 +359,11 @@ export function StrategyCenterModal() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-full text-xs text-destructive hover:text-destructive"
+                  className="h-8 w-full justify-center gap-1.5 text-xs text-destructive hover:text-destructive"
                   onClick={() => void onDelete()}
                   disabled={busy || list.length <= 1}
                 >
+                  <Trash2 className="size-3.5 shrink-0" aria-hidden />
                   删除当前策略
                 </Button>
               </div>

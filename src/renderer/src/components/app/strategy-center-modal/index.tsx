@@ -56,6 +56,7 @@ const MARKET_TF_META: { id: StrategyDecisionIntervalTv; label: string }[] = [
 ];
 
 const INDICATORS: { id: StrategyIndicatorId; label: string }[] = [
+  { id: "VOL", label: "Vol" },
   { id: "EM20", label: "EMA(20)" },
   { id: "BB", label: "BB(20,2)" },
   { id: "ATR", label: "ATR(14)" },
@@ -507,7 +508,7 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">技术指标</Label>
                     <ConfigHelpTooltip className="size-6">
-                      勾选后写入各周期「最近 K 线」表列：EMA(20) 收盘；BB(20,2σ)；ATR(14) Wilder；RSI(14) Wilder；MACD(12,26,9)
+                      勾选后写入各周期「最近 K 线」表列；未勾选不出现该列。Vol=合约成交量（K/M/B）；EMA(20)；BB(20,2σ)；ATR(14)；RSI(14)；MACD(12,26,9)。不含成交额 Turnover。
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">

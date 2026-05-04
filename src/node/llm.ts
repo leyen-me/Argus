@@ -1077,11 +1077,12 @@ function rowsToHlC(rows) {
 function indicatorColumnHeaders(orderedIds: readonly StrategyIndicatorId[]): string[] {
   const headers: string[] = [];
   for (const id of orderedIds) {
-    if (id === "EM20") headers.push("EMA20");
-    if (id === "BB") headers.push("BB Mid", "BB Upper", "BB Lower");
-    if (id === "ATR") headers.push("ATR14");
-    if (id === "RSI14") headers.push("RSI14");
-    if (id === "MACD") headers.push("MACD", "Signal", "Hist");
+    if (id === "VOL") headers.push("Vol");
+    if (id === "EM20") headers.push("E20");
+    if (id === "BB") headers.push("BBM", "BBU", "BBL");
+    if (id === "ATR") headers.push("ATR");
+    if (id === "RSI14") headers.push("RSI");
+    if (id === "MACD") headers.push("DIF", "SIG", "H");
   }
   return headers;
 }
@@ -1093,6 +1094,7 @@ function indicatorCellsForRow(
   orderedIds: readonly StrategyIndicatorId[],
   j: number,
   i: number,
+  volumeRaw: unknown,
   sliceEma: (number | null)[],
   bb: { mid: (number | null)[]; upper: (number | null)[]; lower: (number | null)[] },
   atrSeries: (number | null)[],
@@ -1101,21 +1103,22 @@ function indicatorCellsForRow(
 ): string[] {
   const cells: string[] = [];
   for (const id of orderedIds) {
-    if (id === "EM20") cells.push(formatPromptNumber(sliceEma[j]));
+    if (id === "VOL") cells.push(formatPromptQtyAbbrev(volumeRaw));
+    if (id === "EM20") cells.push(formatPromptPriceCell(sliceEma[j]));
     if (id === "BB") {
       cells.push(
-        formatPromptNumber(bb.mid[i]),
-        formatPromptNumber(bb.upper[i]),
-        formatPromptNumber(bb.lower[i]),
+        formatPromptPriceCell(bb.mid[i]),
+        formatPromptPriceCell(bb.upper[i]),
+        formatPromptPriceCell(bb.lower[i]),
       );
     }
-    if (id === "ATR") cells.push(formatPromptNumber(atrSeries[i]));
-    if (id === "RSI14") cells.push(formatPromptNumber(rsiSeries[i]));
+    if (id === "ATR") cells.push(formatPromptPriceCell(atrSeries[i]));
+    if (id === "RSI14") cells.push(formatPromptRsiCell(rsiSeries[i]));
     if (id === "MACD") {
       cells.push(
-        formatPromptNumber(macdTriple.macd[i]),
-        formatPromptNumber(macdTriple.signal[i]),
-        formatPromptNumber(macdTriple.hist[i]),
+        formatPromptMacdCell(macdTriple.macd[i]),
+        formatPromptMacdCell(macdTriple.signal[i]),
+        formatPromptMacdCell(macdTriple.hist[i]),
       );
     }
   }
@@ -1126,11 +1129,61 @@ function closeToNumber(raw) {
   return Number.isFinite(x) ? x : NaN;
 }
 
-/** @param {number | null | undefined} x */
-function formatPromptNumber(x) {
+/** 去掉 fixed 尾零；用于压缩 LLM 表格 token */
+function stripFixedTrailingZeros(t: string): string {
+  let s = t.replace(/\.?0+$/, "");
+  if (s === "-0") s = "0";
+  return s === "" ? "0" : s;
+}
+
+/** 价格量级 OHLC / EMA / 布林 / ATR：高价少小数，低价多小数 */
+function formatPromptPriceCell(x: number | null | undefined): string {
   if (x == null || !Number.isFinite(x)) return "—";
-  const t = x.toFixed(12).replace(/\.?0+$/, "");
-  return t === "" ? "0" : t;
+  const ax = Math.abs(x);
+  const decimals = ax >= 500 ? 1 : ax >= 50 ? 2 : 4;
+  return stripFixedTrailingZeros(x.toFixed(decimals));
+}
+
+function formatPromptRsiCell(x: number | null | undefined): string {
+  if (x == null || !Number.isFinite(x)) return "—";
+  return stripFixedTrailingZeros(x.toFixed(1));
+}
+
+function formatPromptMacdCell(x: number | null | undefined): string {
+  if (x == null || !Number.isFinite(x)) return "—";
+  return stripFixedTrailingZeros(x.toFixed(2));
+}
+
+/** 成交量 / 成交额：K/M/B 缩写 */
+function formatPromptQtyAbbrev(raw: unknown): string {
+  if (raw === undefined || raw === null || raw === "") return "—";
+  const x =
+    typeof raw === "number" ? raw : parseFloat(String(raw).replace(/,/g, ""));
+  if (!Number.isFinite(x)) return "—";
+  const ax = Math.abs(x);
+  if (ax >= 1e9) return `${stripFixedTrailingZeros((x / 1e9).toFixed(2))}B`;
+  if (ax >= 1e6) return `${stripFixedTrailingZeros((x / 1e6).toFixed(2))}M`;
+  if (ax >= 1e3) return `${stripFixedTrailingZeros((x / 1e3).toFixed(2))}K`;
+  return stripFixedTrailingZeros(x.toFixed(2));
+}
+
+/** ISO → `MM-DD HH:mm`，省年份与秒 */
+function compactPromptUtcFromIso(timeIso: string): string {
+  const s = String(timeIso ?? "").trim();
+  if (!s) return "—";
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}:\d{2})/);
+  if (m) return `${m[2]}-${m[3]} ${m[4]}`;
+  return s.length > 16 ? s.slice(0, 16) : s;
+}
+
+/** 最近 K 线表：仅 OHLC（Vol/Turnover 不再默认附带） */
+const PROMPT_RECENT_KLINE_BASE_HEADERS = ["UTC", "O", "H", "L", "C"] as const;
+
+/** 触发 K 线表：标的 + 周期 + OHLC；Vol 仅当策略勾选 {@link StrategyIndicatorId} `VOL` */
+function promptTriggerKlineHeaders(orderedIds: readonly StrategyIndicatorId[]): string[] {
+  const h = ["标的", "周期", "UTC", "O", "H", "L", "C"];
+  if (orderedIds.includes("VOL")) h.push("Vol");
+  return h;
 }
 
 /** Markdown 表格单元格：转义 `|`，压缩换行，空值显示为 — */
@@ -1151,7 +1204,7 @@ function mdTable(headers, rows) {
 /**
  * @param {{ ok: boolean, error?: string, rows?: Array<{ timeIso: string, open: string, high: string, low: string, close: string, volume: string, turnover: string | null }>, instId?: string | null, bar?: string } | null | undefined} recent
  * @param {string} [heading]
- * @param {readonly StrategyIndicatorId[] | undefined} [strategyIndicators] 未传时默认仅 EMA20（兼容旧单周期 user）
+ * @param {readonly StrategyIndicatorId[] | undefined} [strategyIndicators] 未传时默认仅 EMA20（兼容旧单周期 user）；不含 Vol/Turnover
  */
 function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线（OKX REST）", strategyIndicators) {
   if (!recent) return "";
@@ -1209,7 +1262,7 @@ function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线�
     macdTriple = computeMacdTriple(closes);
   }
 
-  const baseHeaders = ["Time (UTC)", "Open", "High", "Low", "Close", "Volume", "QuoteVol"];
+  const baseHeaders = [...PROMPT_RECENT_KLINE_BASE_HEADERS];
   const indHeaders = indicatorColumnHeaders(orderedIds);
   const headers = [...baseHeaders, ...indHeaders];
 
@@ -1222,15 +1275,23 @@ function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线�
   const tableRows = sliceRows.map((r, j) => {
     const i = sliceStart + j;
     const base = [
-      r.timeIso.replace("T", " ").slice(0, 19),
-      r.open,
-      r.high,
-      r.low,
-      r.close,
-      r.volume,
-      r.turnover != null && r.turnover !== "" ? r.turnover : "—",
+      compactPromptUtcFromIso(r.timeIso),
+      formatPromptPriceCell(closeToNumber(r.open)),
+      formatPromptPriceCell(closeToNumber(r.high)),
+      formatPromptPriceCell(closeToNumber(r.low)),
+      formatPromptPriceCell(closeToNumber(r.close)),
     ];
-    const extra = indicatorCellsForRow(orderedIds, j, i, sliceEma, bbSafe, atrSeries, rsiSeries, macdTriple);
+    const extra = indicatorCellsForRow(
+      orderedIds,
+      j,
+      i,
+      r.volume,
+      sliceEma,
+      bbSafe,
+      atrSeries,
+      rsiSeries,
+      macdTriple,
+    );
     return [...base, ...extra];
   });
 
@@ -1252,24 +1313,25 @@ function buildRecentCandlesMarkdownSection(recent, heading = "### 最近 K 线�
  * @param {readonly StrategyIndicatorId[] | undefined} [strategyIndicators] 未传时表中默认带 EMA20
  */
 function buildUserPrompt(symbol, periodKey, candle, recentCandles, strategyIndicators) {
+  const orderedIds = orderStrategyIndicatorsForPrompt(
+    strategyIndicators === undefined ? ["EM20"] : strategyIndicators,
+  );
   const row = [
     symbol,
     `${periodKey}（已收盘）`,
-    candle.timestamp,
-    candle.open,
-    candle.high,
-    candle.low,
-    candle.close,
-    candle.volume,
-    candle.turnover != null ? candle.turnover : "—",
+    compactPromptUtcFromIso(String(candle.timestamp ?? "")),
+    formatPromptPriceCell(closeToNumber(candle.open)),
+    formatPromptPriceCell(closeToNumber(candle.high)),
+    formatPromptPriceCell(closeToNumber(candle.low)),
+    formatPromptPriceCell(closeToNumber(candle.close)),
   ];
+  if (orderedIds.includes("VOL")) {
+    row.push(formatPromptQtyAbbrev(candle.volume));
+  }
   const head = [
     "## K 线（已收盘）",
     "",
-    mdTable(
-      ["标的", "周期", "时间", "Open", "High", "Low", "Close", "Volume", "Turnover"],
-      [row],
-    ),
+    mdTable(promptTriggerKlineHeaders(orderedIds), [row]),
   ].join("\n");
   return head + buildRecentCandlesMarkdownSection(recentCandles, "### 最近 K 线（OKX REST）", strategyIndicators);
 }
@@ -1288,20 +1350,24 @@ const MULTI_TIMEFRAME_PROMPT_SPECS = [
  * @param {object} candle
  * @param {Record<string, Parameters<typeof buildRecentCandlesMarkdownSection>[0]>} recentCandlesByInterval
  * @param {readonly StrategyDecisionIntervalTv[]} [marketTimeframes] 策略「市场数据」勾选；空或未传则四周期全开（与 shared 容错一致）
- * @param {readonly StrategyIndicatorId[]} [strategyIndicators] 策略「技术指标」勾选；空数组则仅 OHLCV+成交额列
+ * @param {readonly StrategyIndicatorId[]} [strategyIndicators] 策略「技术指标」勾选；空数组则仅 OHLC（无 Vol / 无 Turnover）
  */
 function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesByInterval, marketTimeframes, strategyIndicators) {
+  const orderedIds = orderStrategyIndicatorsForPrompt(
+    strategyIndicators === undefined ? ["EM20"] : strategyIndicators,
+  );
   const triggerRow = [
     symbol,
     `${periodKey}`,
-    candle.timestamp,
-    candle.open,
-    candle.high,
-    candle.low,
-    candle.close,
-    candle.volume,
-    candle.turnover != null ? candle.turnover : "—",
+    compactPromptUtcFromIso(String(candle.timestamp ?? "")),
+    formatPromptPriceCell(closeToNumber(candle.open)),
+    formatPromptPriceCell(closeToNumber(candle.high)),
+    formatPromptPriceCell(closeToNumber(candle.low)),
+    formatPromptPriceCell(closeToNumber(candle.close)),
   ];
+  if (orderedIds.includes("VOL")) {
+    triggerRow.push(formatPromptQtyAbbrev(candle.volume));
+  }
   const tfList = Array.isArray(marketTimeframes) ? marketTimeframes : [];
   const specs = filterMultiTimeframeSpecsByMarketSelection(MULTI_TIMEFRAME_PROMPT_SPECS, tfList);
   const sections = specs
@@ -1316,10 +1382,7 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
   const klineHead = [
     "## 最新推送的 K 线",
     "",
-    mdTable(
-      ["标的", "周期", "时间", "Open", "High", "Low", "Close", "Volume", "Turnover"],
-      [triggerRow],
-    ),
+    mdTable(promptTriggerKlineHeaders(orderedIds), [triggerRow]),
   ];
   if (!sections.length) {
     return klineHead.join("\n");

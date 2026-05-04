@@ -46,6 +46,22 @@ type MultiTimeframeChartImage = {
 
 type PrimaryChartImage = { mimeType: string; base64: string; dataUrl: string };
 
+/**
+ * 与前端仪表盘卡片的 `strategyRunning` 一致：当前 `promptStrategy` 在 `dashboardStrategyRanges` 内同时具备
+ * 有效 `baselineEquityUsdt` 与非空 `statsSince` 时视为仪表盘已启动。
+ * @param {import("./app-config.js").AppConfig} cfg
+ */
+function isDashboardStrategyRunningForBarAgent(cfg) {
+  const id = typeof cfg.promptStrategy === "string" ? cfg.promptStrategy.trim() : "";
+  if (!id) return false;
+  const entry = cfg.dashboardStrategyRanges[id];
+  if (!entry || typeof entry !== "object") return false;
+  const b = entry.baselineEquityUsdt;
+  const baselineOk = b != null && Number.isFinite(Number(b));
+  const since = typeof entry.statsSince === "string" ? entry.statsSince.trim() : "";
+  return baselineOk && since.length > 0;
+}
+
 /** @param {boolean | null | undefined} b */
 function zhBool(b) {
   if (b === true) return "是";
@@ -568,6 +584,11 @@ async function emitBarClose(ctx) {
 
   if (cfg.barCloseAgentAutoEnabled === false) {
     finishSkipped("未调用 LLM：右侧面板已关闭「K 线收盘自动 Agent」。");
+    return;
+  }
+
+  if (!isDashboardStrategyRunningForBarAgent(cfg)) {
+    finishSkipped("未调用 LLM：请先在仪表盘对当前策略点击「启动」，收盘自动 Agent 才会运行。");
     return;
   }
 

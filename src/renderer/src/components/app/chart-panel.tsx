@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { ChartSymbolSelect } from "@/components/chart-symbol-select";
 import { FishModeOverlay } from "@/components/app/fish-mode-overlay";
 import { Button } from "@/components/ui/button";
+import { PromptStrategySelect } from "@/components/prompt-strategy-select";
 import {
   Dialog,
   DialogContent,
@@ -68,7 +69,12 @@ export function ChartPanel() {
         <CardHeader className="flex h-10 shrink-0 flex-row items-center justify-between gap-0 border-b border-border px-3 py-0">
           <div className="flex min-w-0 items-center gap-2">
             <CardTitle className="text-xs leading-none font-semibold tracking-wider text-muted-foreground uppercase">
-              行情
+            <div className="titlebar-title">
+              <PromptStrategySelect
+                className="justify-start"
+                triggerClassName="max-w-[180px] justify-start"
+              />
+            </div>
             </CardTitle>
           </div>
           <div className="flex min-w-0 shrink flex-wrap items-center justify-end gap-1.5">

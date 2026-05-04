@@ -91,9 +91,12 @@ function createNewStrategyExtras(): StrategyExtrasV1 {
   };
 }
 
+type DashboardStrategyRuntimeRow = {
+  status?: string;
+};
+
 /**
- * 与 `TradingDashboardCard` 中「策略已启动」一致：`dashboardStrategyRanges[strategyId]`
- * 同时具备有效起始权益与统计起点时间视为运行中（未点暂停则不允许删）。
+ * 与 `normalizeConfig` 中 `dashboardStrategyRanges` 一致：仪表盘统计会话（独立于执行态）。
  */
 function parseDashboardStrategyRanges(payload: unknown): Record<string, DashboardStrategyRangeRow> {
   const root = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : null;
@@ -115,6 +118,22 @@ function parseDashboardStrategyRanges(payload: unknown): Record<string, Dashboar
   return out;
 }
 
+function parseStrategyRuntimeById(payload: unknown): Record<string, DashboardStrategyRuntimeRow> {
+  const root = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : null;
+  const raw = root?.strategyRuntimeById;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, DashboardStrategyRuntimeRow> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const id = k.trim();
+    if (!id || !v || typeof v !== "object" || Array.isArray(v)) continue;
+    const row = v as Record<string, unknown>;
+    const status = typeof row.status === "string" && row.status.trim() ? row.status.trim() : "";
+    out[id] = status ? { status } : {};
+  }
+  return out;
+}
+
+/** 仪表盘统计会话是否与 bar-close 旧版判定一致（有基线 + 有效起点时间） */
 function isDashboardStrategyRunningEntry(row: DashboardStrategyRangeRow | undefined): boolean {
   if (!row) return false;
   const b = row.baselineEquityUsdt;
@@ -122,6 +141,12 @@ function isDashboardStrategyRunningEntry(row: DashboardStrategyRangeRow | undefi
   const s = typeof row.statsSince === "string" ? row.statsSince.trim() : "";
   const sinceOk = s.length > 0 && Number.isFinite(Date.parse(s));
   return baselineOk && sinceOk;
+}
+
+/** 策略执行态是否为运行或暂停（删除前须先停止） */
+function isStrategyExecutionBlocking(row: DashboardStrategyRuntimeRow | undefined): boolean {
+  const s = typeof row?.status === "string" ? row.status.trim() : "";
+  return s === "running" || s === "paused";
 }
 
 export function StrategyCenterModal() {
@@ -136,22 +161,27 @@ export function StrategyCenterModal() {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [titleEditing, setTitleEditing] = useState(false);
-  /** 与 `normalizeConfig` 中 `dashboardStrategyRanges` 一致，用于判断是否处于仪表盘「已启动」 */
+  /** 与 `normalizeConfig` 中 `dashboardStrategyRanges` 一致：判断是否处于仪表盘统计区间 */
   const [dashboardStrategyRanges, setDashboardStrategyRanges] = useState<
     Record<string, DashboardStrategyRangeRow>
   >({});
+  const [strategyRuntimeById, setStrategyRuntimeById] = useState<Record<string, DashboardStrategyRuntimeRow>>({});
 
   const isNew = selectedId === null;
 
-  const dashboardRunningSelected =
+  const statsActiveSelected =
     Boolean(selectedId) && isDashboardStrategyRunningEntry(dashboardStrategyRanges[selectedId!.trim()]);
+  const executionBlockingSelected =
+    Boolean(selectedId) && isStrategyExecutionBlocking(strategyRuntimeById[selectedId!.trim()]);
+  const cannotDeleteSelected = statsActiveSelected || executionBlockingSelected;
 
-  const refreshDashboardRangesFromServer = useCallback(async () => {
+  const refreshDashboardSlicesFromServer = useCallback(async () => {
     const api = getArgus();
     if (!api?.getConfig) return;
     try {
       const cfg = await api.getConfig();
       setDashboardStrategyRanges(parseDashboardStrategyRanges(cfg));
+      setStrategyRuntimeById(parseStrategyRuntimeById(cfg));
     } catch (e) {
       console.error(e);
     }
@@ -171,7 +201,7 @@ export function StrategyCenterModal() {
 
   const refreshList = useCallback(async (preferId?: string | null) => {
     const api = getArgus();
-    await refreshDashboardRangesFromServer();
+    await refreshDashboardSlicesFromServer();
     if (!api?.listPromptStrategiesMeta) {
       setList([]);
       return;
@@ -201,12 +231,13 @@ export function StrategyCenterModal() {
       console.error(e);
       setStatus("加载策略列表失败");
     }
-  }, [applyRowToForm, refreshDashboardRangesFromServer]);
+  }, [applyRowToForm, refreshDashboardSlicesFromServer]);
 
   useEffect(() => {
     const onChanged = (e: Event) => {
       const detail = (e as CustomEvent<unknown>).detail;
       setDashboardStrategyRanges(parseDashboardStrategyRanges(detail));
+      setStrategyRuntimeById(parseStrategyRuntimeById(detail));
     };
     window.addEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, onChanged);
     return () => window.removeEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, onChanged);
@@ -214,16 +245,16 @@ export function StrategyCenterModal() {
 
   useEffect(() => {
     const onAppConfig = () => {
-      void refreshDashboardRangesFromServer();
+      void refreshDashboardSlicesFromServer();
     };
     window.addEventListener(ARGUS_APP_CONFIG_CHANGED, onAppConfig);
     return () => window.removeEventListener(ARGUS_APP_CONFIG_CHANGED, onAppConfig);
-  }, [refreshDashboardRangesFromServer]);
+  }, [refreshDashboardSlicesFromServer]);
 
   useEffect(() => {
     if (!open) return;
     const sync = () => {
-      void refreshDashboardRangesFromServer();
+      void refreshDashboardSlicesFromServer();
     };
     window.addEventListener("focus", sync);
     const t = window.setInterval(sync, 45_000);
@@ -231,7 +262,7 @@ export function StrategyCenterModal() {
       window.removeEventListener("focus", sync);
       window.clearInterval(t);
     };
-  }, [open, refreshDashboardRangesFromServer]);
+  }, [open, refreshDashboardSlicesFromServer]);
 
   useEffect(() => {
     const onOpen = () => {
@@ -327,8 +358,14 @@ export function StrategyCenterModal() {
 
   const onDelete = async () => {
     if (!selectedId) return;
-    if (dashboardRunningSelected) {
-      setStatus("无法删除：该策略在仪表盘中仍为「已启动」统计区间，请先在仪表盘点「暂停」后再删除。");
+    if (executionBlockingSelected) {
+      setStatus(
+        "无法删除：该策略处于运行或暂停（执行态），请先在仪表盘对该策略点「停止」后再删除。",
+      );
+      return;
+    }
+    if (statsActiveSelected) {
+      setStatus("无法删除：该策略仍有未结束的统计区间，请先在仪表盘「结束统计」后再删除。");
       return;
     }
     const api = getArgus();
@@ -464,11 +501,13 @@ export function StrategyCenterModal() {
                   size="sm"
                   className="h-8 w-full justify-center gap-1.5 text-xs text-destructive hover:text-destructive"
                   onClick={() => void onDelete()}
-                  disabled={busy || dashboardRunningSelected}
+                  disabled={busy || cannotDeleteSelected}
                   title={
-                    dashboardRunningSelected
-                      ? "该策略在仪表盘中仍为「已启动」，请先在仪表盘暂停后再删除"
-                      : undefined
+                    executionBlockingSelected
+                      ? "请先停止该策略的执行态再删除"
+                      : statsActiveSelected
+                        ? "请先结束该策略的仪表盘统计再删除"
+                        : undefined
                   }
                 >
                   <Trash2 className="size-3.5 shrink-0" aria-hidden />

@@ -10,7 +10,7 @@ type SyncDetail = {
 }
 
 /**
- * 顶栏仅展示当前使用的策略名称。切换在「仪表盘」内进行，且须在统计未启动时操作。
+ * 顶栏仅展示当前使用的策略名称。切换在「仪表盘」内进行；若执行态为运行中/已暂停则需先停止。
  * 仍挂载隐藏 `#config-prompt-strategy`，供 `argus-renderer` 与配置流同步。
  */
 export function PromptStrategySelect({
@@ -71,7 +71,7 @@ export function PromptStrategySelect({
             "flex h-7 min-w-0 max-w-full items-center rounded-lg border border-border px-2.5 text-sm text-foreground shadow-none",
             triggerClassName,
           )}
-          title="当前使用的策略 · 切换请打开「仪表盘」（统计进行中需先暂停）"
+          title="当前使用的策略 · 切换请打开「仪表盘」（执行态运行中/已暂停时需先停止策略）"
         >
           <span className="min-w-0 truncate font-medium tabular-nums">{displayLabel || "—"}</span>
         </div>

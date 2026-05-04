@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
-import { AlertCircle, Check, PencilLine, Pause, Play } from "lucide-react"
+import { AlertCircle, Check, Pause, PencilLine, Play, RotateCcw, Square } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -54,6 +54,19 @@ type SymbolOption = {
   value: string
 }
 
+type StrategyRuntimeStatus = "idle" | "running" | "paused" | "stopped"
+
+type StrategyRuntimeEntry = {
+  status?: StrategyRuntimeStatus
+  sessionId?: string | null
+  startedAt?: string | null
+  pausedAt?: string | null
+  stoppedAt?: string | null
+  lastDecisionAt?: string | null
+  lastOrderAt?: string | null
+  lastSkipReason?: string | null
+}
+
 type DashboardConfig = {
   promptStrategy?: string
   defaultSymbol?: string
@@ -65,6 +78,7 @@ type DashboardConfig = {
       statsSince?: string | null
     }
   >
+  strategyRuntimeById?: Record<string, StrategyRuntimeEntry>
 }
 
 type StrategyMeta = {
@@ -116,6 +130,47 @@ function resolveStrategyId(config: DashboardConfig | null) {
   return typeof config?.promptStrategy === "string" && config.promptStrategy.trim()
     ? config.promptStrategy.trim()
     : ""
+}
+
+function newSessionId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID()
+    }
+  } catch {
+    /* ignore */
+  }
+  return `sess_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+}
+
+function emptyStrategyRuntimeEntry(): StrategyRuntimeEntry {
+  return {
+    status: "idle",
+    sessionId: null,
+    startedAt: null,
+    pausedAt: null,
+    stoppedAt: null,
+    lastDecisionAt: null,
+    lastOrderAt: null,
+    lastSkipReason: null,
+  }
+}
+
+function resolveStrategyRuntime(config: DashboardConfig | null): StrategyRuntimeEntry {
+  const id = resolveStrategyId(config)
+  if (!id || !config?.strategyRuntimeById || typeof config.strategyRuntimeById !== "object") {
+    return emptyStrategyRuntimeEntry()
+  }
+  const row = config.strategyRuntimeById[id]
+  return row && typeof row === "object"
+    ? { ...emptyStrategyRuntimeEntry(), ...row }
+    : emptyStrategyRuntimeEntry()
+}
+
+function resolveExecutionStatus(config: DashboardConfig | null): StrategyRuntimeStatus {
+  const s = resolveStrategyRuntime(config).status
+  if (s === "running" || s === "paused" || s === "stopped") return s
+  return "idle"
 }
 
 function buildNextStrategyRanges(
@@ -194,33 +249,56 @@ function StrategyInfoCard({
   strategyName,
   symbolLabel,
   simulated,
-  strategyRunning,
+  executionStatusLabel,
+  statsTrackingActive,
   loading,
-  disabled,
   statusText,
-  onToggle,
   strategyEditDisabled,
   strategyEditBusy,
   strategyEditTitle,
   onStrategyEditClick,
+  onStartExecution,
+  onPauseExecution,
+  onResumeExecution,
+  onStopExecution,
+  canStartExecution,
+  canPauseExecution,
+  canResumeExecution,
+  canStopExecution,
+  onStartStats,
+  onEndStats,
+  canStartStats,
+  canEndStats,
 }: {
   strategyName: string
   symbolLabel: string
   simulated: boolean
-  strategyRunning: boolean
+  executionStatusLabel: string
+  statsTrackingActive: boolean
   loading: boolean
-  disabled: boolean
   statusText: string
-  onToggle: () => void
   strategyEditDisabled: boolean
   strategyEditBusy: boolean
   strategyEditTitle: string
   onStrategyEditClick: () => void
+  onStartExecution: () => void
+  onPauseExecution: () => void
+  onResumeExecution: () => void
+  onStopExecution: () => void
+  canStartExecution: boolean
+  canPauseExecution: boolean
+  canResumeExecution: boolean
+  canStopExecution: boolean
+  onStartStats: () => void
+  onEndStats: () => void
+  canStartStats: boolean
+  canEndStats: boolean
 }) {
+  const busy = loading
   return (
     <Card className="gap-0 py-0 shadow-none ring-border/60">
       <CardContent className="flex h-full flex-col px-6 py-5">
-        <div className="flex items-start justify-between gap-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-nowrap items-center gap-1">
               <p className="m-0 min-w-0 flex-1 truncate text-[2rem] font-semibold leading-none tracking-tight text-foreground">
@@ -252,30 +330,97 @@ function StrategyInfoCard({
                 </Badge>
               ) : null}
             </div>
+            <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-snug text-muted-foreground">
+              <span className="font-medium text-foreground/80">执行</span>
+              <span>{executionStatusLabel}</span>
+              <span className="mx-1 text-border" aria-hidden>
+                |
+              </span>
+              <span className="font-medium text-foreground/80">统计</span>
+              <span>{statsTrackingActive ? "统计中" : "未开始"}</span>
+            </div>
           </div>
 
-          <Button
-            type="button"
-            size="lg"
-            variant={strategyRunning ? "secondary" : "default"}
-            className="h-11 min-w-28 gap-2 px-4 text-sm shadow-none"
-            disabled={disabled}
-            title={
-              strategyRunning
-                ? "暂停后会清空当前统计范围与初始资金。"
-                : "启动后会以当前权益作为初始资金，并开始统计胜率和净值曲线。"
-            }
-            aria-pressed={strategyRunning}
-            onClick={onToggle}
-          >
-            {strategyRunning ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
-            {loading ? "更新中…" : strategyRunning ? "暂停" : "启动"}
-          </Button>
+          <div className="flex shrink-0 flex-col gap-3 lg:items-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 min-w-22 gap-1.5 px-3 shadow-none"
+                disabled={busy || !canStartExecution}
+                title="允许当前策略在 K 线收盘时自动运行 Agent（仍受右侧面板总开关与其它前置条件约束）"
+                onClick={onStartExecution}
+              >
+                <Play className="size-3.5" aria-hidden />
+                启动策略
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 min-w-18 gap-1.5 px-3 shadow-none"
+                disabled={busy || !canPauseExecution}
+                title="暂停自动执行，可稍后恢复"
+                onClick={onPauseExecution}
+              >
+                <Pause className="size-3.5" aria-hidden />
+                暂停
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 min-w-18 gap-1.5 px-3 shadow-none"
+                disabled={busy || !canResumeExecution}
+                title="从暂停恢复为运行中"
+                onClick={onResumeExecution}
+              >
+                <RotateCcw className="size-3.5" aria-hidden />
+                恢复
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-9 min-w-18 gap-1.5 px-3 shadow-none"
+                disabled={busy || !canStopExecution}
+                title="结束本次执行会话；不会自动平仓"
+                onClick={onStopExecution}
+              >
+                <Square className="size-3.5" aria-hidden />
+                停止
+              </Button>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 min-w-18 gap-1.5 px-3 shadow-none"
+                disabled={busy || !canStartStats}
+                title="以当前权益为基线，开始统计胜率与净值曲线"
+                onClick={onStartStats}
+              >
+                开始统计
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 min-w-18 gap-1.5 px-3 shadow-none"
+                disabled={busy || !canEndStats}
+                title="结束当前统计区间并清空基线"
+                onClick={onEndStats}
+              >
+                结束统计
+              </Button>
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 flex items-center gap-2 rounded-xl border border-border/60 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
           <AlertCircle className="size-3.5 shrink-0" aria-hidden />
-          <span className="truncate">{statusText}</span>
+          <span className="min-w-0 leading-snug">{statusText}</span>
         </div>
       </CardContent>
     </Card>
@@ -284,10 +429,8 @@ function StrategyInfoCard({
 
 function AccountOverviewCard({
   snap,
-  strategyRunning: _strategyRunning,
 }: {
   snap: DashboardPayload | null
-  strategyRunning: boolean
 }) {
   const winRate = snap?.swapClosePositionStats?.winRate ?? null
   const totalPnl = snap?.pnlVsBaselineUsdt ?? null
@@ -359,7 +502,7 @@ function AccountOverviewCard({
   )
 }
 
-function EquityCurveChart({ series, strategyRunning }: { series: EquityPoint[]; strategyRunning: boolean }) {
+function EquityCurveChart({ series, statsTrackingActive }: { series: EquityPoint[]; statsTrackingActive: boolean }) {
   const w = 1000
   const h = 300
   const padX = 24
@@ -368,7 +511,7 @@ function EquityCurveChart({ series, strategyRunning }: { series: EquityPoint[]; 
   if (!series.length) {
     return (
       <div className="flex h-full w-full min-h-[220px] flex-1 items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 text-center text-sm text-muted-foreground">
-        {strategyRunning ? "当前策略暂无净值采样数据" : "启动当前策略后开始绘制净值曲线"}
+        {statsTrackingActive ? "当前策略暂无净值采样数据" : "开始统计后绘制净值曲线"}
       </div>
     )
   }
@@ -422,11 +565,11 @@ function EquityCurveChart({ series, strategyRunning }: { series: EquityPoint[]; 
   )
 }
 
-function EquityCurveCard({ series, strategyRunning }: { series: EquityPoint[]; strategyRunning: boolean }) {
+function EquityCurveCard({ series, statsTrackingActive }: { series: EquityPoint[]; statsTrackingActive: boolean }) {
   return (
     <Card className="min-h-0 gap-0 bg-transparent py-0 shadow-none ring-border/60">
       <CardContent className="flex min-h-0 flex-1 flex-col px-5 py-5">
-        <EquityCurveChart series={series} strategyRunning={strategyRunning} />
+        <EquityCurveChart series={series} statsTrackingActive={statsTrackingActive} />
       </CardContent>
     </Card>
   )
@@ -486,7 +629,7 @@ export function TradingDashboardCard({
     }
   }, [active, load])
 
-  const startStrategyRange = useCallback(async () => {
+  const startStatsSession = useCallback(async () => {
     const eq = snap?.equityUsdt
     if (eq == null || !Number.isFinite(eq)) {
       setErr("需要当前权益以设为初始资金，请确认已连接 OKX 并刷新。")
@@ -510,7 +653,7 @@ export function TradingDashboardCard({
     }
   }, [config, load, snap?.equityUsdt])
 
-  const endStrategyRange = useCallback(async () => {
+  const endStatsSession = useCallback(async () => {
     try {
       setErr(null)
       const dashboardStrategyRanges = buildNextStrategyRanges(config, (current, strategyId) => {
@@ -526,17 +669,89 @@ export function TradingDashboardCard({
     }
   }, [config, load])
 
+  const persistStrategyRuntime = useCallback(
+    async (nextEntry: StrategyRuntimeEntry) => {
+      const strategyId = resolveStrategyId(config)
+      if (!strategyId || !window.argus?.saveConfig) {
+        setErr("无法保存执行态：请先选用策略。")
+        return
+      }
+      try {
+        setErr(null)
+        const baseMap =
+          config?.strategyRuntimeById && typeof config.strategyRuntimeById === "object"
+            ? { ...config.strategyRuntimeById }
+            : {}
+        const strategyRuntimeById = { ...baseMap, [strategyId]: nextEntry }
+        const saved = await window.argus.saveConfig({ strategyRuntimeById })
+        window.dispatchEvent(new CustomEvent(ARGUS_APP_CONFIG_CHANGED))
+        setConfig(saved as DashboardConfig)
+        void load()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      }
+    },
+    [config, load],
+  )
+
+  const startExecution = useCallback(async () => {
+    const strategyId = resolveStrategyId(config)
+    if (!strategyId) {
+      setErr("请先在策略中心创建并选用策略。")
+      return
+    }
+    const prev = resolveStrategyRuntime(config)
+    const now = new Date().toISOString()
+    await persistStrategyRuntime({
+      ...emptyStrategyRuntimeEntry(),
+      status: "running",
+      sessionId: newSessionId(),
+      startedAt: now,
+      pausedAt: null,
+      stoppedAt: null,
+      lastDecisionAt: prev.lastDecisionAt ?? null,
+      lastOrderAt: prev.lastOrderAt ?? null,
+      lastSkipReason: null,
+    })
+  }, [config, persistStrategyRuntime])
+
+  const pauseExecution = useCallback(async () => {
+    const prev = resolveStrategyRuntime(config)
+    const now = new Date().toISOString()
+    await persistStrategyRuntime({
+      ...prev,
+      status: "paused",
+      pausedAt: now,
+    })
+  }, [config, persistStrategyRuntime])
+
+  const resumeExecution = useCallback(async () => {
+    const prev = resolveStrategyRuntime(config)
+    await persistStrategyRuntime({
+      ...prev,
+      status: "running",
+      pausedAt: null,
+    })
+  }, [config, persistStrategyRuntime])
+
+  const stopExecution = useCallback(async () => {
+    const prev = resolveStrategyRuntime(config)
+    const now = new Date().toISOString()
+    await persistStrategyRuntime({
+      ...prev,
+      status: "stopped",
+      stoppedAt: now,
+      pausedAt: null,
+    })
+  }, [config, persistStrategyRuntime])
+
   const onPromptStrategyChange = useCallback(
     async (nextId: string): Promise<boolean> => {
       const cur = resolveStrategyId(config)
       if (nextId === cur || !window.argus?.saveConfig) return false
-      const baselinePresent =
-        snap?.baselineEquityUsdt != null && Number.isFinite(Number(snap.baselineEquityUsdt))
-      const sincePresent =
-        typeof snap?.dashboardAgentToolStatsSince === "string" &&
-        snap.dashboardAgentToolStatsSince.trim().length > 0
-      if (baselinePresent && sincePresent) {
-        setErr("请先暂停统计后再切换策略。")
+      const execSt = resolveExecutionStatus(config)
+      if (execSt === "running" || execSt === "paused") {
+        setErr("当前策略正在运行或已暂停（执行态），请先点「停止」后再切换策略。")
         return false
       }
       setStrategySwitchBusy(true)
@@ -554,7 +769,7 @@ export function TradingDashboardCard({
         setStrategySwitchBusy(false)
       }
     },
-    [config, load, snap?.baselineEquityUsdt, snap?.dashboardAgentToolStatsSince],
+    [config, load],
   )
 
   const series = useMemo(
@@ -565,8 +780,27 @@ export function TradingDashboardCard({
     snap?.baselineEquityUsdt != null && Number.isFinite(Number(snap.baselineEquityUsdt))
   const sincePresent =
     typeof snap?.dashboardAgentToolStatsSince === "string" && snap.dashboardAgentToolStatsSince.trim().length > 0
-  const strategyRunning = baselinePresent && sincePresent
-  const canStartStrategy = snap?.equityUsdt != null && Number.isFinite(Number(snap.equityUsdt))
+  const statsTrackingActive = baselinePresent && sincePresent
+  const executionStatus = resolveExecutionStatus(config)
+  const canStartStats = snap?.equityUsdt != null && Number.isFinite(Number(snap.equityUsdt))
+
+  const executionStatusLabel =
+    executionStatus === "running"
+      ? "运行中（收盘可自动跑 Agent）"
+      : executionStatus === "paused"
+        ? "已暂停"
+        : executionStatus === "stopped"
+          ? "已停止"
+          : "未启动"
+
+  const hasPromptStrategy = Boolean(resolveStrategyId(config))
+
+  const canStartExecution =
+    hasPromptStrategy && (executionStatus === "idle" || executionStatus === "stopped")
+  const canPauseExecution = executionStatus === "running"
+  const canResumeExecution = executionStatus === "paused"
+  const canStopExecution = executionStatus === "running" || executionStatus === "paused"
+
   const strategyName = useMemo(() => resolveStrategyName(config, strategies), [config, strategies])
   const symbolLabel = useMemo(() => resolveSymbolLabel(config), [config])
   const statusText = err
@@ -575,9 +809,7 @@ export function TradingDashboardCard({
       ? "未启用 OKX 永续，当前账户数据将显示为空。"
       : loading
         ? "正在同步最新账户数据。"
-        : strategyRunning
-          ? "策略已启动，胜率、盈亏和净值曲线都按当前范围统计。"
-          : "策略尚未启动，点击右侧按钮即可开始统计。"
+        : `${executionStatusLabel}；${statsTrackingActive ? "胜率与净值按当前统计区间。" : "统计未开始时可点「开始统计」。"}`
 
   const currentPromptId = resolveStrategyId(config)
   const strategyRowsForSelect = useMemo(() => {
@@ -589,9 +821,10 @@ export function TradingDashboardCard({
     if (!currentPromptId || strategies.some((s) => s.id === currentPromptId)) return strategies
     return [{ id: currentPromptId, label: formatPromptStrategyDisplayLabel(currentPromptId, "") }, ...strategies]
   }, [currentPromptId, strategies])
-  const strategyEditAccessible = !strategyRunning && !loading && strategyRowsForSelect.length > 0
-  const strategyEditTitle = strategyRunning
-    ? "统计进行中，请先点「暂停」后再切换策略"
+  const execBlocksStrategySwitch = executionStatus === "running" || executionStatus === "paused"
+  const strategyEditAccessible = !execBlocksStrategySwitch && !loading && strategyRowsForSelect.length > 0
+  const strategyEditTitle = execBlocksStrategySwitch
+    ? "执行态为运行中或已暂停，请先点「停止」后再切换策略"
     : loading
       ? "数据加载完成后可切换"
       : strategyRowsForSelect.length === 0
@@ -616,8 +849,8 @@ export function TradingDashboardCard({
   }, [currentPromptId, onPromptStrategyChange, pickerChoiceId])
 
   useEffect(() => {
-    if (strategyRunning) setStrategyPickerOpen(false)
-  }, [strategyRunning])
+    if (execBlocksStrategySwitch) setStrategyPickerOpen(false)
+  }, [execBlocksStrategySwitch])
 
   return (
     <>
@@ -631,20 +864,31 @@ export function TradingDashboardCard({
           strategyName={strategyName}
           symbolLabel={symbolLabel}
           simulated={snap?.simulated === true}
-          strategyRunning={strategyRunning}
+          executionStatusLabel={executionStatusLabel}
+          statsTrackingActive={statsTrackingActive}
           loading={loading}
-          disabled={loading || (!strategyRunning && !canStartStrategy)}
           statusText={statusText}
-          onToggle={() => void (strategyRunning ? endStrategyRange() : startStrategyRange())}
           strategyEditDisabled={!strategyEditAccessible}
           strategyEditBusy={strategySwitchBusy}
           strategyEditTitle={strategyEditTitle}
           onStrategyEditClick={() => setStrategyPickerOpen(true)}
+          onStartExecution={() => void startExecution()}
+          onPauseExecution={() => void pauseExecution()}
+          onResumeExecution={() => void resumeExecution()}
+          onStopExecution={() => void stopExecution()}
+          canStartExecution={canStartExecution}
+          canPauseExecution={canPauseExecution}
+          canResumeExecution={canResumeExecution}
+          canStopExecution={canStopExecution}
+          onStartStats={() => void startStatsSession()}
+          onEndStats={() => void endStatsSession()}
+          canStartStats={canStartStats && !statsTrackingActive}
+          canEndStats={statsTrackingActive}
         />
 
-        <AccountOverviewCard snap={snap} strategyRunning={strategyRunning} />
+        <AccountOverviewCard snap={snap} />
 
-        <EquityCurveCard series={series} strategyRunning={strategyRunning} />
+        <EquityCurveCard series={series} statsTrackingActive={statsTrackingActive} />
       </div>
 
       <Dialog open={strategyPickerOpen} onOpenChange={setStrategyPickerOpen}>

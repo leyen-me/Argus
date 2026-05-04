@@ -4,7 +4,7 @@
 import crypto from "node:crypto";
 import { publish } from "./runtime-bus.js";
 import { requestChartCaptureFromBrowser, type BrowserChartCaptureOk } from "./chart-capture-browser-bridge.js";
-import { loadAppConfig } from "./app-config.js";
+import { loadAppConfig, type AppConfig } from "./app-config.js";
 import { conversationKey } from "./llm-context.js";
 import {
   isLlmEnabled,
@@ -47,19 +47,21 @@ type MultiTimeframeChartImage = {
 type PrimaryChartImage = { mimeType: string; base64: string; dataUrl: string };
 
 /**
- * 与前端仪表盘卡片的 `strategyRunning` 一致：当前 `promptStrategy` 在 `dashboardStrategyRanges` 内同时具备
- * 有效 `baselineEquityUsdt` 与非空 `statsSince` 时视为仪表盘已启动。
- * @param {import("./app-config.js").AppConfig} cfg
+ * 当前策略执行态是否允许收盘 Agent；若非 `running` 则返回跳过原因（与仪表盘统计会话独立）。
  */
-function isDashboardStrategyRunningForBarAgent(cfg) {
+function describeBarCloseStrategyExecutionSkipReason(cfg: AppConfig): string | null {
   const id = typeof cfg.promptStrategy === "string" ? cfg.promptStrategy.trim() : "";
-  if (!id) return false;
-  const entry = cfg.dashboardStrategyRanges[id];
-  if (!entry || typeof entry !== "object") return false;
-  const b = entry.baselineEquityUsdt;
-  const baselineOk = b != null && Number.isFinite(Number(b));
-  const since = typeof entry.statsSince === "string" ? entry.statsSince.trim() : "";
-  return baselineOk && since.length > 0;
+  if (!id) return "未调用 LLM：请先在策略中心创建并选用策略。";
+  const row = cfg.strategyRuntimeById[id];
+  const st = row?.status ?? "idle";
+  if (st === "running") return null;
+  if (st === "paused") {
+    return "未调用 LLM：当前策略已暂停（执行态），请在仪表盘「恢复策略」或重新「启动策略」。";
+  }
+  if (st === "stopped") {
+    return "未调用 LLM：当前策略已停止，请在仪表盘点击「启动策略」以允许收盘自动 Agent。";
+  }
+  return "未调用 LLM：当前策略未启动，请在仪表盘点击「启动策略」。";
 }
 
 /** @param {boolean | null | undefined} b */
@@ -587,8 +589,9 @@ async function emitBarClose(ctx) {
     return;
   }
 
-  if (!isDashboardStrategyRunningForBarAgent(cfg)) {
-    finishSkipped("未调用 LLM：请先在仪表盘对当前策略点击「启动」，收盘自动 Agent 才会运行。");
+  const execSkipReason = describeBarCloseStrategyExecutionSkipReason(cfg);
+  if (execSkipReason) {
+    finishSkipped(execSkipReason);
     return;
   }
 

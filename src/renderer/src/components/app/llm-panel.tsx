@@ -52,12 +52,12 @@ export function LlmPanel() {
                     : "h-7 gap-1.5 border-border/80 bg-muted/40 px-3 text-[11px] text-muted-foreground shadow-none hover:bg-muted/70"
                 }
                 id="btn-bar-close-agent-toggle"
-                title="开启后，须在已配 LLM Key、截图成功、OKX 账户/仓位/挂单快照就绪时，K 线收盘才会自动调用 Agent"
+                title="全局总开关：关闭后，即使策略为「运行中」也不会在 K 线收盘自动调用 Agent"
                 aria-pressed={barCloseAgentAuto}
                 onClick={() => void toggleBarCloseAgent()}
               >
                 {barCloseAgentAuto ? <PlayCircle className="size-3.5" aria-hidden /> : <PauseCircle className="size-3.5" aria-hidden />}
-                {barCloseAgentAuto ? "运行中" : "已暂停"}
+                {barCloseAgentAuto ? "全局开启" : "全局关闭"}
               </Button>
               <Badge
                 id="llm-status"

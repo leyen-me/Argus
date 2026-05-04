@@ -311,6 +311,7 @@ const FALLBACK_APP_CONFIG = {
   dashboardBaselineEquityUsdt: null,
   dashboardAgentToolStatsSince: null,
   dashboardStrategyRanges: {},
+  strategyRuntimeById: {},
   promptStrategyDecisionIntervalTv: "5",
 };
 

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import * as localDb from "./local-db/index.js";
 import * as promptStrategiesStore from "./prompt-strategies-store.js";
 import { listOkxStrategySymbolOptions } from "../shared/strategy-fields.js";
@@ -12,6 +14,20 @@ import { formatPromptStrategyDisplayLabel } from "../shared/prompt-strategy-disp
 const DEFAULT_PROMPT_STRATEGY = promptStrategiesStore.DEFAULT_PROMPT_STRATEGY;
 
 const ALLOWED_INTERVAL = new Set(["1", "3", "5", "15", "30", "60", "120", "240", "D", "1D"]);
+
+/** 仪表盘「收盘自动 Agent」是否为当前策略运行中（与 UI 语义一致）：仅 `running` 时表示允许 Agent。 */
+export type StrategyRuntimeStatus = "idle" | "running" | "paused" | "stopped";
+
+export type StrategyRuntimeEntry = {
+  status: StrategyRuntimeStatus;
+  sessionId: string | null;
+  startedAt: string | null;
+  pausedAt: string | null;
+  stoppedAt: string | null;
+  lastDecisionAt: string | null;
+  lastOrderAt: string | null;
+  lastSkipReason: string | null;
+};
 
 /** `normalizeConfig` / `loadAppConfig` 的规范化形状（布尔与数字为宽类型，避免字面量收窄导致分支不可达）。 */
 export type AppConfig = {
@@ -44,6 +60,8 @@ export type AppConfig = {
   dashboardBaselineEquityUsdt: number | null;
   dashboardAgentToolStatsSince: string | null;
   dashboardStrategyRanges: Record<string, { baselineEquityUsdt: number | null; statsSince: string | null }>;
+  /** 按策略 id：`running` / `paused` / `stopped` / `idle` 控制收盘 Agent 授权；统计区间见 dashboardStrategyRanges。 */
+  strategyRuntimeById: Record<string, StrategyRuntimeEntry>;
   /** 取自当前 `prompt_strategy` 行，非 kv 字段；normalizeConfig 时注入。 */
   promptStrategyDecisionIntervalTv: import("../shared/strategy-fields.js").StrategyDecisionIntervalTv;
 };
@@ -90,6 +108,8 @@ const APP_SETTINGS_SEED: AppSettingsSeed = Object.freeze({
   dashboardAgentToolStatsSince: null,
   /** 仪表盘统计范围：按策略隔离保存，避免切换策略后混用同一段权益曲线。 */
   dashboardStrategyRanges: {},
+  /** 策略执行态：按策略 id 持久化；与仪表盘统计会话独立。 */
+  strategyRuntimeById: {},
 });
 
 const DEFAULT_OPENAI_BASE_URL = APP_SETTINGS_SEED.openaiBaseUrl;
@@ -276,6 +296,145 @@ function normalizeDashboardStrategyRanges(raw: unknown): AppConfig["dashboardStr
   return out;
 }
 
+const ALLOWED_RUNTIME_STATUS = new Set<StrategyRuntimeStatus>(["idle", "running", "paused", "stopped"]);
+
+function normalizeIsoOrNull(raw: unknown): string | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const t = raw.trim();
+  return Number.isFinite(Date.parse(t)) ? t : null;
+}
+
+function normalizeNullableString(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "string") return null;
+  const t = raw.trim();
+  return t.length ? t : null;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {AppConfig["strategyRuntimeById"]}
+ */
+function normalizeStrategyRuntimeById(raw: unknown): AppConfig["strategyRuntimeById"] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: AppConfig["strategyRuntimeById"] = {};
+  for (const [kRaw, v] of Object.entries(raw as Record<string, unknown>)) {
+    const id = typeof kRaw === "string" ? kRaw.trim() : "";
+    if (!id || !v || typeof v !== "object" || Array.isArray(v)) continue;
+    const row = v as Record<string, unknown>;
+    let status: StrategyRuntimeStatus = "idle";
+    if (typeof row.status === "string" && ALLOWED_RUNTIME_STATUS.has(row.status as StrategyRuntimeStatus)) {
+      status = row.status as StrategyRuntimeStatus;
+    }
+
+    let sessionId: string | null = null;
+    if (row.sessionId != null && row.sessionId !== "") {
+      sessionId =
+        typeof row.sessionId === "string" && row.sessionId.trim() ? row.sessionId.trim()
+        : null;
+    }
+
+    const startedAt = normalizeIsoOrNull(row.startedAt);
+    const pausedAt = normalizeIsoOrNull(row.pausedAt);
+    const stoppedAt = normalizeIsoOrNull(row.stoppedAt);
+    const lastDecisionAt = normalizeIsoOrNull(row.lastDecisionAt);
+    const lastOrderAt = normalizeIsoOrNull(row.lastOrderAt);
+    const lastSkipReason = normalizeNullableString(row.lastSkipReason);
+
+    const next: StrategyRuntimeEntry = {
+      status,
+      sessionId,
+      startedAt,
+      pausedAt,
+      stoppedAt,
+      lastDecisionAt,
+      lastOrderAt,
+      lastSkipReason,
+    };
+
+    /** 不完整记录：若没有 session 且仍为 running/paused，降级为 idle，避免幽灵运行态 */
+    const hasAnySignal =
+      sessionId ||
+      startedAt ||
+      pausedAt ||
+      stoppedAt ||
+      lastDecisionAt ||
+      lastOrderAt ||
+      (lastSkipReason && lastSkipReason.length > 0);
+    if (!hasAnySignal && (status === "running" || status === "paused" || status === "stopped")) {
+      next.status = "idle";
+    }
+
+    /** 仅存 idle 且无其它字段的行可省略 */
+    if (
+      next.status === "idle" &&
+      !next.sessionId &&
+      !next.startedAt &&
+      !next.pausedAt &&
+      !next.stoppedAt &&
+      !next.lastDecisionAt &&
+      !next.lastOrderAt &&
+      !next.lastSkipReason
+    ) {
+      continue;
+    }
+
+    out[id] = next;
+  }
+  return out;
+}
+
+/**
+ * 当前选用策略是否在执行态允许收盘 Agent。
+ * @param {Pick<AppConfig,"promptStrategy"|"strategyRuntimeById">} cfg
+ */
+function isPromptStrategyExecutionRunning(cfg: Pick<AppConfig, "promptStrategy" | "strategyRuntimeById">): boolean {
+  const id = typeof cfg.promptStrategy === "string" ? cfg.promptStrategy.trim() : "";
+  if (!id) return false;
+  const row = cfg.strategyRuntimeById[id];
+  return row?.status === "running";
+}
+
+/**
+ * 仪表盘统计区间是否与 bar-close 旧版门闩一致（有基线且有统计起点）。
+ * @param {import("./app-config.js").AppConfig["dashboardStrategyRanges"][string] | undefined} entry
+ */
+function isDashboardStatsSessionActive(entry: { baselineEquityUsdt: number | null; statsSince: string | null } | undefined): boolean {
+  if (!entry || typeof entry !== "object") return false;
+  const b = entry.baselineEquityUsdt;
+  const baselineOk = b != null && Number.isFinite(Number(b));
+  const since = typeof entry.statsSince === "string" ? entry.statsSince.trim() : "";
+  return baselineOk && since.length > 0 && Number.isFinite(Date.parse(since));
+}
+
+function migrateStrategyRuntimeFromLegacyDashboard(
+  promptStrategyId: string,
+  ranges: AppConfig["dashboardStrategyRanges"],
+): AppConfig["strategyRuntimeById"] {
+  /** 旧逻辑：仪表盘「统计会话」曾作为 Agent 门闩；仅存库无 strategyRuntimeById 时，仅迁移当前选用策略 */
+  const sid = typeof promptStrategyId === "string" ? promptStrategyId.trim() : "";
+  const out: AppConfig["strategyRuntimeById"] = {};
+  if (!sid) return out;
+  const row = ranges[sid];
+  if (!row || !isDashboardStatsSessionActive(row)) return out;
+  const since =
+    typeof row.statsSince === "string" && row.statsSince.trim()
+      ? row.statsSince.trim()
+      : "";
+  out[sid] = {
+    status: "running",
+    sessionId: randomUUID(),
+    startedAt: since,
+    pausedAt: null,
+    stoppedAt: null,
+    lastDecisionAt: null,
+    lastOrderAt: null,
+    lastSkipReason: null,
+  };
+  return out;
+}
+
 function normalizeConfig(raw: unknown): AppConfig {
   const base = defaultConfigFallback();
   if (!raw || typeof raw !== "object") return base;
@@ -396,6 +555,11 @@ function normalizeConfig(raw: unknown): AppConfig {
     dashboardAgentToolStatsSince = null;
   }
 
+  const hasExplicitStrategyRuntimeById = "strategyRuntimeById" in r;
+  const strategyRuntimeById = hasExplicitStrategyRuntimeById
+    ? normalizeStrategyRuntimeById(r.strategyRuntimeById)
+    : migrateStrategyRuntimeFromLegacyDashboard(promptStrategy, dashboardStrategyRanges);
+
   const promptStrategyDecisionIntervalTv =
     promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy);
 
@@ -429,6 +593,7 @@ function normalizeConfig(raw: unknown): AppConfig {
     dashboardBaselineEquityUsdt,
     dashboardAgentToolStatsSince,
     dashboardStrategyRanges,
+    strategyRuntimeById,
   };
 }
 
@@ -480,4 +645,6 @@ export {
   resolvePromptStrategyId,
   stripSystemPromptsForPersistence,
   EMPTY_SYSTEM_PROMPT_FALLBACK,
+  isDashboardStatsSessionActive,
+  isPromptStrategyExecutionRunning,
 };

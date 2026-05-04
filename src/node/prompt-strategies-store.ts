@@ -15,7 +15,14 @@ import {
 
 const DEFAULT_PROMPT_STRATEGY = "default";
 
-const ID_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
+const LEGACY_STRATEGY_ID_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
+/** 与 `crypto.randomUUID()` 一致的小写 UUID v4 */
+const STRATEGY_UUID_V4_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidPromptStrategyId(id: string): boolean {
+  return LEGACY_STRATEGY_ID_RE.test(id) || STRATEGY_UUID_V4_RE.test(id);
+}
 
 /** 仅占打开数据库 Side Effect；不向 `prompt_strategies` 写入任何种子行。 */
 function seedFromDiskIfEmpty() {
@@ -198,8 +205,8 @@ function saveStrategy(payload: {
 }) {
   seedFromDiskIfEmpty();
   const id = typeof payload?.id === "string" ? payload.id.trim() : "";
-  if (!ID_RE.test(id)) {
-    throw new Error("策略 ID 须为字母开头，仅含字母数字、下划线、连字符，长度 1–64。");
+  if (!isValidPromptStrategyId(id)) {
+    throw new Error("策略 ID 须为字母开头的字母数字/下划线/连字符（≤64），或为标准 UUID v4。");
   }
   const body = normalizeBody(payload?.body, "");
   if (!body) throw new Error("提示词正文不能为空。");
@@ -258,7 +265,7 @@ function deleteStrategy(strategyId) {
 }
 
 function validateStrategyId(id) {
-  return ID_RE.test(typeof id === "string" ? id.trim() : "");
+  return isValidPromptStrategyId(typeof id === "string" ? id.trim() : "");
 }
 
 export {

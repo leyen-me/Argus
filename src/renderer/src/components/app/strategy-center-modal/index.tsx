@@ -175,7 +175,7 @@ export function StrategyCenterModal() {
 
   const onNew = () => {
     setSelectedId(null);
-    setDraftId("");
+    setDraftId(crypto.randomUUID());
     setDraftLabel("");
     setDraftBody("");
     setDraftDecisionTv("5");
@@ -190,13 +190,9 @@ export function StrategyCenterModal() {
       setStatus("当前环境无法保存");
       return;
     }
-    const id = (isNew ? draftId : selectedId || "").trim();
+    const id = isNew ? draftId.trim() || crypto.randomUUID() : (selectedId || "").trim();
     const label = draftLabel.trim() || id;
     const body = draftBody.trim();
-    if (!id) {
-      setStatus("请填写策略 ID");
-      return;
-    }
     if (!body) {
       setStatus("策略逻辑不能为空");
       return;
@@ -267,7 +263,7 @@ export function StrategyCenterModal() {
     }
   };
 
-  const displayTitle = draftLabel.trim() || draftId.trim() || (isNew ? "新建策略" : "");
+  const displayTitle = isNew ? draftLabel.trim() || "新建策略" : draftLabel.trim() || draftId.trim() || "";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -389,27 +385,6 @@ export function StrategyCenterModal() {
           <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 gap-0 lg:grid-cols-[minmax(280px,340px)_1fr]">
             <ScrollArea className="min-h-0 border-b border-border lg:border-b-0 lg:border-r">
               <div className="space-y-5 p-4 pr-5">
-                {isNew ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1.5">
-                      <Label htmlFor="strategy-id-field" className="text-muted-foreground">
-                        策略 ID
-                      </Label>
-                      <ConfigHelpTooltip className="size-6">
-                        保存后不可修改；用于内部引用与文件级标识。
-                      </ConfigHelpTooltip>
-                    </div>
-                    <Input
-                      id="strategy-id-field"
-                      className="font-mono text-sm"
-                      value={draftId}
-                      onChange={(e) => setDraftId(e.target.value)}
-                      placeholder="如 swing_1h、scalp_5m"
-                      disabled={busy}
-                    />
-                  </div>
-                ) : null}
-
                 <section>
                   <div className="flex items-center gap-1.5">
                     <Label className="text-foreground">代币</Label>

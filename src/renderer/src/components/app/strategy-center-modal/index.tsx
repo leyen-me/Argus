@@ -21,6 +21,7 @@ import {
   ARGUS_STRATEGY_MODAL_CLOSE,
   ARGUS_STRATEGY_MODAL_OPEN,
 } from "@/lib/argus-strategy-modal-events";
+import { ARGUS_APP_CONFIG_CHANGED } from "@/lib/argus-config-modal-events";
 import {
   STRATEGY_DECISION_INTERVAL_TV,
   STRATEGY_TOKEN_SYMBOL_OPTIONS,
@@ -30,7 +31,6 @@ import {
   type StrategyIndicatorId,
 } from "@shared/strategy-fields";
 import { formatPromptStrategyDisplayLabel } from "@shared/prompt-strategy-display-label";
-import { ARGUS_PROMPT_STRATEGY_SYNC } from "@/components/prompt-strategy-select";
 
 type StrategyMeta = { id: string; label: string; sort_order: number };
 
@@ -43,11 +43,17 @@ type PromptStrategyRow = {
   extras: StrategyExtrasV1;
 };
 
+type DashboardStrategyRangeRow = {
+  baselineEquityUsdt?: number | null;
+  statsSince?: string | null;
+};
+
 type ArgusApi = {
   listPromptStrategiesMeta?: () => Promise<StrategyMeta[]>;
   getPromptStrategy?: (id: string) => Promise<PromptStrategyRow | null>;
   savePromptStrategy?: (payload: Record<string, unknown>) => Promise<unknown>;
   deletePromptStrategy?: (id: string) => Promise<unknown>;
+  getConfig?: () => Promise<unknown>;
 };
 
 const MARKET_TF_META: { id: StrategyDecisionIntervalTv; label: string }[] = [
@@ -85,6 +91,39 @@ function createNewStrategyExtras(): StrategyExtrasV1 {
   };
 }
 
+/**
+ * 与 `TradingDashboardCard` 中「策略已启动」一致：`dashboardStrategyRanges[strategyId]`
+ * 同时具备有效起始权益与统计起点时间视为运行中（未点暂停则不允许删）。
+ */
+function parseDashboardStrategyRanges(payload: unknown): Record<string, DashboardStrategyRangeRow> {
+  const root = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as Record<string, unknown>) : null;
+  const raw = root?.dashboardStrategyRanges;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, DashboardStrategyRangeRow> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const id = k.trim();
+    if (!id || !v || typeof v !== "object" || Array.isArray(v)) continue;
+    const row = v as Record<string, unknown>;
+    let baselineEquityUsdt: number | null = null;
+    if (typeof row.baselineEquityUsdt === "number" && Number.isFinite(row.baselineEquityUsdt)) {
+      baselineEquityUsdt = row.baselineEquityUsdt >= 0 ? row.baselineEquityUsdt : null;
+    }
+    const sr = row.statsSince;
+    const statsSince = typeof sr === "string" && sr.trim() ? sr.trim() : null;
+    out[id] = { baselineEquityUsdt, statsSince };
+  }
+  return out;
+}
+
+function isDashboardStrategyRunningEntry(row: DashboardStrategyRangeRow | undefined): boolean {
+  if (!row) return false;
+  const b = row.baselineEquityUsdt;
+  const baselineOk = typeof b === "number" && Number.isFinite(b) && b >= 0;
+  const s = typeof row.statsSince === "string" ? row.statsSince.trim() : "";
+  const sinceOk = s.length > 0 && Number.isFinite(Date.parse(s));
+  return baselineOk && sinceOk;
+}
+
 export function StrategyCenterModal() {
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<StrategyMeta[]>([]);
@@ -97,18 +136,26 @@ export function StrategyCenterModal() {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [titleEditing, setTitleEditing] = useState(false);
-  /** 顶栏当前选用的策略 id，与 `config-prompt-strategy` / PromptStrategySelect 同步 */
-  const [activePromptStrategyId, setActivePromptStrategyId] = useState("");
+  /** 与 `normalizeConfig` 中 `dashboardStrategyRanges` 一致，用于判断是否处于仪表盘「已启动」 */
+  const [dashboardStrategyRanges, setDashboardStrategyRanges] = useState<
+    Record<string, DashboardStrategyRangeRow>
+  >({});
 
   const isNew = selectedId === null;
 
-  const isActiveStrategySelected =
-    Boolean(selectedId) &&
-    Boolean(activePromptStrategyId.trim()) &&
-    selectedId!.trim() === activePromptStrategyId.trim();
+  const dashboardRunningSelected =
+    Boolean(selectedId) && isDashboardStrategyRunningEntry(dashboardStrategyRanges[selectedId!.trim()]);
 
-  /** 多策略时禁止删顶栏当前项；仅存一条时可删（含正在使用），以便库表为空。 */
-  const blockDeleteActiveUnlessLast = isActiveStrategySelected && list.length > 1;
+  const refreshDashboardRangesFromServer = useCallback(async () => {
+    const api = getArgus();
+    if (!api?.getConfig) return;
+    try {
+      const cfg = await api.getConfig();
+      setDashboardStrategyRanges(parseDashboardStrategyRanges(cfg));
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
 
   const applyRowToForm = useCallback((row: PromptStrategyRow) => {
     setDraftId(row.id);
@@ -124,6 +171,7 @@ export function StrategyCenterModal() {
 
   const refreshList = useCallback(async (preferId?: string | null) => {
     const api = getArgus();
+    await refreshDashboardRangesFromServer();
     if (!api?.listPromptStrategiesMeta) {
       setList([]);
       return;
@@ -153,17 +201,43 @@ export function StrategyCenterModal() {
       console.error(e);
       setStatus("加载策略列表失败");
     }
-  }, [applyRowToForm]);
+  }, [applyRowToForm, refreshDashboardRangesFromServer]);
+
+  useEffect(() => {
+    const onChanged = (e: Event) => {
+      const detail = (e as CustomEvent<unknown>).detail;
+      setDashboardStrategyRanges(parseDashboardStrategyRanges(detail));
+    };
+    window.addEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, onChanged);
+    return () => window.removeEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, onChanged);
+  }, []);
+
+  useEffect(() => {
+    const onAppConfig = () => {
+      void refreshDashboardRangesFromServer();
+    };
+    window.addEventListener(ARGUS_APP_CONFIG_CHANGED, onAppConfig);
+    return () => window.removeEventListener(ARGUS_APP_CONFIG_CHANGED, onAppConfig);
+  }, [refreshDashboardRangesFromServer]);
+
+  useEffect(() => {
+    if (!open) return;
+    const sync = () => {
+      void refreshDashboardRangesFromServer();
+    };
+    window.addEventListener("focus", sync);
+    const t = window.setInterval(sync, 45_000);
+    return () => {
+      window.removeEventListener("focus", sync);
+      window.clearInterval(t);
+    };
+  }, [open, refreshDashboardRangesFromServer]);
 
   useEffect(() => {
     const onOpen = () => {
       setOpen(true);
       setStatus(null);
       setTitleEditing(false);
-      const sel = document.getElementById("config-prompt-strategy");
-      if (sel instanceof HTMLSelectElement) {
-        setActivePromptStrategyId(String(sel.value ?? "").trim());
-      }
       void refreshList();
     };
     const onClose = () => setOpen(false);
@@ -174,20 +248,6 @@ export function StrategyCenterModal() {
       window.removeEventListener(ARGUS_STRATEGY_MODAL_CLOSE, onClose);
     };
   }, [refreshList]);
-
-  useEffect(() => {
-    const onSync = (e: Event) => {
-      const detail = (e as CustomEvent<{ value?: unknown }>).detail;
-      const v = detail && typeof detail.value === "string" ? detail.value.trim() : "";
-      setActivePromptStrategyId(v);
-    };
-    window.addEventListener(ARGUS_PROMPT_STRATEGY_SYNC, onSync);
-    const sel = document.getElementById("config-prompt-strategy");
-    if (sel instanceof HTMLSelectElement) {
-      setActivePromptStrategyId(String(sel.value ?? "").trim());
-    }
-    return () => window.removeEventListener(ARGUS_PROMPT_STRATEGY_SYNC, onSync);
-  }, []);
 
   const loadOne = async (id: string) => {
     const api = getArgus();
@@ -267,8 +327,8 @@ export function StrategyCenterModal() {
 
   const onDelete = async () => {
     if (!selectedId) return;
-    if (blockDeleteActiveUnlessLast) {
-      setStatus("无法删除顶栏正在使用的策略，请先在顶栏切换到其他策略。");
+    if (dashboardRunningSelected) {
+      setStatus("无法删除：该策略在仪表盘中仍为「已启动」统计区间，请先在仪表盘点「暂停」后再删除。");
       return;
     }
     const api = getArgus();
@@ -404,10 +464,10 @@ export function StrategyCenterModal() {
                   size="sm"
                   className="h-8 w-full justify-center gap-1.5 text-xs text-destructive hover:text-destructive"
                   onClick={() => void onDelete()}
-                  disabled={busy || blockDeleteActiveUnlessLast}
+                  disabled={busy || dashboardRunningSelected}
                   title={
-                    blockDeleteActiveUnlessLast
-                      ? "顶栏正在使用此策略，请先在顶栏切换到其他策略后再删除"
+                    dashboardRunningSelected
+                      ? "该策略在仪表盘中仍为「已启动」，请先在仪表盘暂停后再删除"
                       : undefined
                   }
                 >

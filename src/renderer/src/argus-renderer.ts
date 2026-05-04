@@ -2039,7 +2039,7 @@ function applyChartIntervalSelect(intervalRaw) {
 }
 
 /**
- * 同步顶栏当前策略下拉；仍沿用隐藏原生 select 供 imperative 逻辑读写。
+ * 同步顶栏当前策略展示与隐藏原生 select（供内部逻辑读取）；顶栏由 React 只读展示，用户切换在仪表盘内完成。
  * @param {{ promptStrategies?: string[], promptStrategy?: string, promptStrategySelectOptions?: Array<{ value: string, label: string }> }} cfg
  */
 function applyPromptStrategySelect(cfg) {

@@ -1,11 +1,5 @@
-import { useCallback, useEffect, useState } from "react"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { useEffect, useMemo, useState } from "react"
+
 import { cn } from "@/lib/utils"
 
 export const ARGUS_PROMPT_STRATEGY_SYNC = "argus:prompt-strategy-sync"
@@ -15,6 +9,10 @@ type SyncDetail = {
   value: string
 }
 
+/**
+ * 顶栏仅展示当前使用的策略名称。切换在「仪表盘」内进行，且须在统计未启动时操作。
+ * 仍挂载隐藏 `#config-prompt-strategy`，供 `argus-renderer` 与配置流同步。
+ */
 export function PromptStrategySelect({
   className,
   triggerClassName,
@@ -40,46 +38,43 @@ export function PromptStrategySelect({
     return () => window.removeEventListener(ARGUS_PROMPT_STRATEGY_SYNC, onSync)
   }, [])
 
-  const onValueChange = useCallback((next: string) => {
-    setValue(next)
-    const sel = document.getElementById("config-prompt-strategy") as HTMLSelectElement | null
-    if (!sel) return
-    sel.value = next
-    sel.dispatchEvent(new Event("change", { bubbles: true }))
-  }, [])
-
-  const resolvedValue = options.some((o) => o.value === value) ? value : (options[0]?.value ?? "")
+  const displayLabel = useMemo(() => {
+    if (!options.length) return ""
+    const v = value.trim()
+    const matched = v ? options.find((o) => o.value === v) : undefined
+    return matched?.label?.trim() || matched?.value || options[0]?.label || options[0]?.value || ""
+  }, [options, value])
 
   return (
     <div className={cn("prompt-strategy-select flex min-w-0 shrink items-center justify-end", className)}>
-      <select id="config-prompt-strategy" className="sr-only" tabIndex={-1} title="当前策略" />
+      <select
+        id="config-prompt-strategy"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+        title="当前策略（由程序同步，顶栏不在此切换）"
+      />
       {options.length === 0 ? (
         <div
           className={cn(
             "flex h-7 min-w-0 max-w-full items-center rounded-lg border border-border bg-background px-2.5 text-sm text-muted-foreground",
             triggerClassName,
           )}
-          aria-hidden
+          title="策略列表加载中，或请先在策略中心创建"
         >
           加载策略…
         </div>
       ) : (
-        <Select value={resolvedValue} onValueChange={onValueChange}>
-          <SelectTrigger
-            size="sm"
-            className={cn("h-7 min-w-0 max-w-full border-border bg-background shadow-none", triggerClassName)}
-            title="当前策略"
-          >
-            <SelectValue placeholder="选择策略" />
-          </SelectTrigger>
-          <SelectContent position="popper" className="z-200">
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div
+          role="status"
+          className={cn(
+            "flex h-7 min-w-0 max-w-full items-center rounded-lg border border-border bg-background px-2.5 text-sm text-foreground shadow-none",
+            triggerClassName,
+          )}
+          title="当前使用的策略 · 切换请打开「仪表盘」（统计进行中需先暂停）"
+        >
+          <span className="min-w-0 truncate font-medium tabular-nums">{displayLabel || "—"}</span>
+        </div>
       )}
     </div>
   )

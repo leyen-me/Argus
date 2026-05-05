@@ -36,7 +36,7 @@ export function LlmPanel() {
   }, [barCloseAgentAuto])
 
   return (
-    <Card className="bg-background flex min-h-0 min-w-0 flex-[0.75] gap-0 rounded-none border-0 py-0 shadow-none ring-0">
+    <Card className="bg-background flex min-h-0 min-w-0 flex-1 gap-0 rounded-none border-0 py-0 shadow-none ring-0">
       <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
         <div className="flex h-10 shrink-0 items-center border-b border-border/60 px-3 py-0">
           <div className="flex min-w-0 flex-1 items-center justify-between gap-2">

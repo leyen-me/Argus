@@ -3,6 +3,7 @@ import { ChartSymbolSelect } from "@/components/chart-symbol-select";
 import { FishModeOverlay } from "@/components/app/fish-mode-overlay";
 import { Button } from "@/components/ui/button";
 import { PromptStrategySelect } from "@/components/prompt-strategy-select";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -16,7 +17,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Camera, EyeOff, Loader2 } from "lucide-react";
+import { Camera, EyeOff, Loader2, PanelRightClose, PanelRightOpen } from "lucide-react";
+
+export type ChartPanelProps = {
+  rightPanelCollapsed?: boolean;
+  onToggleRightPanel?: () => void;
+};
 
 /** 与 argus-renderer.js 中 `initLocalChartTestListener` 事件名保持一致 */
 const ARGUS_TEST_CAPTURE_LOCAL = "argus:test-chart-capture-local";
@@ -29,7 +35,10 @@ const MULTI_TIMEFRAME_CARDS = [
   { interval: "5m", label: "5 分钟", containerId: "tradingview_chart_5m", isPrimary: true },
 ];
 
-export function ChartPanel() {
+export function ChartPanel({
+  rightPanelCollapsed = false,
+  onToggleRightPanel,
+}: ChartPanelProps = {}) {
   const [testBusy, setTestBusy] = useState(false);
   const [testErr, setTestErr] = useState<string | null>(null);
   const [testPreviewUrl, setTestPreviewUrl] = useState<string | null>(null);
@@ -65,7 +74,12 @@ export function ChartPanel() {
 
   return (
     <>
-      <Card className="min-h-0 min-w-0 flex-[1.75] gap-0 rounded-none border-0 border-r border-border py-0 shadow-none ring-0">
+      <Card
+        className={cn(
+          "min-h-0 min-w-0 gap-0 rounded-none border-0 py-0 shadow-none ring-0",
+          rightPanelCollapsed ? "flex-1 border-r-0" : "flex-[1.75] border-r border-border",
+        )}
+      >
         <CardHeader className="flex h-10 shrink-0 flex-row items-center justify-between gap-0 border-b border-border px-3 py-0">
           <div className="flex min-w-0 items-center gap-2">
             <CardTitle className="text-xs leading-none font-semibold tracking-wider text-muted-foreground uppercase">
@@ -109,6 +123,25 @@ export function ChartPanel() {
               <span id="btn-fish-mode-label">隐私遮挡</span>
             </Button>
             <ChartSymbolSelect />
+            {onToggleRightPanel ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                className="shrink-0 border-border/80 shadow-none"
+                id="btn-toggle-right-panel"
+                title={rightPanelCollapsed ? "展开右侧 Argus 面板" : "收起右侧 Argus 面板"}
+                aria-label={rightPanelCollapsed ? "展开右侧 Argus 面板" : "收起右侧 Argus 面板"}
+                aria-expanded={!rightPanelCollapsed}
+                onClick={onToggleRightPanel}
+              >
+                {rightPanelCollapsed ? (
+                  <PanelRightOpen className="size-3.5 opacity-80" aria-hidden />
+                ) : (
+                  <PanelRightClose className="size-3.5 opacity-80" aria-hidden />
+                )}
+              </Button>
+            ) : null}
           </div>
         </CardHeader>
         {testErr ? (

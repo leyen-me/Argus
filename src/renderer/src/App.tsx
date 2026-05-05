@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChartPanel } from "@/components/app/chart-panel";
+import { cn } from "@/lib/utils";
 import { ConfigModal } from "@/components/app/config-modal";
 import { DashboardModal } from "@/components/app/dashboard-modal";
 import { StrategyCenterModal } from "@/components/app/strategy-center-modal";
@@ -14,6 +15,7 @@ import { initArgusApp } from "./argus-renderer";
 export default function App() {
   /** `null`：尚未收到配置同步；`0`：已同步且无策略；`>0`：已有策略 */
   const [strategyOptionCount, setStrategyOptionCount] = useState<number | null>(null);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
 
   useEffect(() => {
     void initArgusApp();
@@ -40,8 +42,22 @@ export default function App() {
             <StrategiesEmptyState />
           ) : (
             <>
-              <ChartPanel />
-              <LlmPanel />
+              <ChartPanel
+                rightPanelCollapsed={rightPanelCollapsed}
+                onToggleRightPanel={() => setRightPanelCollapsed((v) => !v)}
+              />
+              <div
+                className={cn(
+                  "flex min-h-0 min-w-0 transition-[flex-basis,flex-grow,max-width,opacity] duration-200 ease-out",
+                  rightPanelCollapsed
+                    ? "pointer-events-none max-w-0 flex-[0_0_0] overflow-hidden opacity-0"
+                    : "flex-[0.75]",
+                )}
+                aria-hidden={rightPanelCollapsed}
+                inert={rightPanelCollapsed ? true : undefined}
+              >
+                <LlmPanel />
+              </div>
             </>
           )}
         </main>

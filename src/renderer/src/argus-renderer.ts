@@ -446,17 +446,36 @@ function formatExchangeContextLine(ctx) {
 
 function updateOkxBarFromExchangeContext(ctx) {
   const bar = document.getElementById("okx-position-bar");
-  const textEl = document.getElementById("okx-position-text");
   const sel = document.getElementById("symbol-select");
-  if (!bar || !textEl) return;
+  if (!bar) return;
   const sym = sel?.value?.trim() || "";
   if (!sym.startsWith("OKX:")) {
     bar.hidden = true;
     return;
   }
   bar.hidden = false;
-  textEl.textContent = formatExchangeContextLine(ctx);
-  textEl.title = JSON.stringify(ctx, null, 2);
+  renderOkxPositionSnapshot(
+    {
+      ok: ctx?.ok,
+      skipped: ctx?.enabled === false,
+      reason: ctx?.reason,
+      message: ctx?.message,
+      simulated: ctx?.simulated,
+      instId: ctx?.instId,
+      hasPosition: ctx?.position?.hasPosition,
+      posNum: ctx?.position?.posNum,
+      absContracts: ctx?.position?.absContracts,
+      posSide: ctx?.position?.posSide,
+      fields: ctx?.position?.fields,
+      pending_orders: ctx?.pending_orders,
+      pending_algo_orders: ctx?.pending_algo_orders,
+    },
+    {
+      sourceText: "收盘快照",
+      footnote: formatExchangeContextLine(ctx),
+      titlePayload: ctx,
+    },
+  );
 }
 
 function refreshExchangeContextBarFromCache() {
@@ -2927,11 +2946,211 @@ function formatOkxPositionLine(r: OkxSwapPositionSnapshot | null | undefined): s
   return `${sim} · ${f.instId || id} · ${dir} ${contracts} 张${lev}${avg}${mark}${upl}`;
 }
 
+function currentOkxSymbolLabel() {
+  const sel = document.getElementById("symbol-select");
+  const sym = sel?.value?.trim() || "";
+  return sym.startsWith("OKX:") ? sym.slice(4) : sym || "—";
+}
+
+function formatCompactValue(v, options: { signed?: boolean; suffix?: string } = {}) {
+  if (v == null) return "—";
+  const raw = String(v).trim();
+  if (!raw) return "—";
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return `${raw}${options.suffix || ""}`;
+  const abs = Math.abs(n);
+  const maxDigits = abs >= 1000 ? 0 : abs >= 1 ? 2 : 4;
+  const out = n.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxDigits,
+  });
+  const prefix = options.signed && n > 0 ? "+" : "";
+  return `${prefix}${out}${options.suffix || ""}`;
+}
+
+function setOkxPanelText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+  return el;
+}
+
+function setOkxPanelTitle(id, text) {
+  const el = document.getElementById(id);
+  if (!el) return null;
+  const title = typeof text === "string" ? text.trim() : "";
+  if (title) el.setAttribute("title", title);
+  else el.removeAttribute("title");
+  return el;
+}
+
+function setOkxSideTone(kind) {
+  const el = document.getElementById("okx-position-side");
+  if (!el) return;
+  const map = {
+    long: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    short: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+    neutral: "border-border/70 bg-muted/40 text-foreground",
+    loading: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+    danger: "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400",
+  };
+  el.className = `inline-flex items-center rounded-full border px-2.5 py-1 text-[12px] font-semibold ${map[kind] || map.neutral}`;
+}
+
+function setOkxPnlTone(kind) {
+  const el = document.getElementById("okx-position-upl");
+  if (!el) return;
+  const map = {
+    positive: "text-[15px] font-semibold text-emerald-600 dark:text-emerald-400",
+    negative: "text-[15px] font-semibold text-rose-600 dark:text-rose-400",
+    neutral: "text-[15px] font-semibold text-foreground",
+  };
+  el.className = map[kind] || map.neutral;
+}
+
+function summarizePlainOrders(plain) {
+  const list = Array.isArray(plain) ? plain : [];
+  if (list.length === 0) return "0 笔";
+  return `${list.length} 笔`;
+}
+
+function formatPlainOrdersTooltip(plain) {
+  const list = Array.isArray(plain) ? plain : [];
+  if (list.length === 0) return "";
+  return list
+    .map((row, idx) => {
+      const main = formatOnePlainPendingBrief(row);
+      const state =
+        row && typeof row === "object" && row.state != null && String(row.state).trim() !== ""
+          ? ` · ${String(row.state).trim()}`
+          : "";
+      const filled =
+        row && typeof row === "object" && row.accFillSz != null && String(row.accFillSz).trim() !== ""
+          ? ` · 已成交 ${String(row.accFillSz).trim()}`
+          : "";
+      return `${idx + 1}. ${main}${state}${filled}`;
+    })
+    .join("\n");
+}
+
+function formatAlgoSummaryLine(row) {
+  if (!row || typeof row !== "object") return "";
+  const parts = [];
+  if (row.tpTriggerPx != null && String(row.tpTriggerPx).trim() !== "") {
+    parts.push(`TP ${String(row.tpTriggerPx).trim()}`);
+  }
+  if (row.slTriggerPx != null && String(row.slTriggerPx).trim() !== "") {
+    parts.push(`SL ${String(row.slTriggerPx).trim()}`);
+  }
+  if (!parts.length && row.triggerPx != null && String(row.triggerPx).trim() !== "") {
+    parts.push(`触发 ${String(row.triggerPx).trim()}`);
+  }
+  return parts.join(" / ");
+}
+
+function summarizeAlgoOrders(algo) {
+  const list = Array.isArray(algo) ? algo : [];
+  if (list.length === 0) return "0 笔";
+  const lines = list.map(formatAlgoSummaryLine).filter(Boolean);
+  if (!lines.length) return `${list.length} 笔`;
+  return `${list.length} 笔 · ${lines.slice(0, 2).join(" ｜ ")}${lines.length > 2 ? " …" : ""}`;
+}
+
+function renderOkxPositionSnapshot(
+  r: OkxSwapPositionSnapshot | null | undefined,
+  options: { sourceText?: string; footnote?: string; titlePayload?: unknown } = {},
+) {
+  const bar = document.getElementById("okx-position-bar");
+  if (!bar) return;
+  const sourceText = options.sourceText || "实时查询";
+  const fallbackSymbol = currentOkxSymbolLabel();
+  const modeText = r?.simulated !== false ? "模拟盘" : "实盘";
+  const instText = r?.fields?.instId || r?.instId || fallbackSymbol;
+  const pendingOrders = Array.isArray(r?.pending_orders) ? r.pending_orders : [];
+  const pendingAlgoOrders = Array.isArray(r?.pending_algo_orders) ? r.pending_algo_orders : [];
+
+  setOkxPanelText("okx-position-mode", modeText);
+  setOkxPanelText("okx-position-symbol", instText || fallbackSymbol || "—");
+  setOkxPanelText("okx-position-source", sourceText);
+  setOkxPanelText("okx-position-size", "—");
+  setOkxPanelText("okx-position-upl", "—");
+  setOkxPanelText("okx-position-entry", "—");
+  setOkxPanelText("okx-position-mark", "—");
+  setOkxPanelText("okx-position-orders", summarizePlainOrders(pendingOrders));
+  setOkxPanelText("okx-position-algos", summarizeAlgoOrders(pendingAlgoOrders));
+  setOkxPanelTitle("okx-position-orders", formatPlainOrdersTooltip(pendingOrders));
+  setOkxPanelTitle("okx-position-algos", pendingAlgoOrders.map(formatOneAlgoPendingBrief).filter(Boolean).join("\n"));
+  setOkxPnlTone("neutral");
+
+  if (!r) {
+    setOkxSideTone("neutral");
+    setOkxPanelText("okx-position-side", "—");
+    setOkxPanelText("okx-position-text", options.footnote || "暂无 OKX 数据");
+    bar.title = typeof options.titlePayload === "string" ? options.titlePayload : "暂无 OKX 数据";
+    return;
+  }
+
+  if (r.skipped && r.reason === "not_okx_chart") {
+    bar.hidden = true;
+    return;
+  }
+
+  if (r.skipped && r.reason === "okx_swap_disabled") {
+    setOkxSideTone("neutral");
+    setOkxPanelText("okx-position-side", "未启用");
+    setOkxPanelText("okx-position-text", options.footnote || "未启用 OKX 永续下单；在配置中开启后可显示交易所持仓。");
+    bar.title = "OKX 永续未启用";
+    return;
+  }
+
+  if (r.ok === false) {
+    setOkxSideTone("danger");
+    setOkxPanelText("okx-position-side", "异常");
+    setOkxPanelText("okx-position-text", options.footnote || r.message || "查询失败");
+    bar.title = typeof options.titlePayload === "string" ? options.titlePayload : JSON.stringify(options.titlePayload ?? r, null, 2);
+    return;
+  }
+
+  const f = r.fields;
+  if (!r.hasPosition || !f) {
+    setOkxSideTone("neutral");
+    setOkxPanelText("okx-position-side", "空仓");
+    setOkxPanelText("okx-position-size", "0 张");
+    setOkxPanelText("okx-position-text", options.footnote || formatOkxPositionLine(r));
+    bar.title = JSON.stringify(options.titlePayload ?? { position: r?.fields ?? null, pending_orders: pendingOrders, pending_algo_orders: pendingAlgoOrders }, null, 2);
+    return;
+  }
+
+  const isLong = Number(r.posNum) > 0;
+  const isShort = Number(r.posNum) < 0;
+  setOkxSideTone(isLong ? "long" : isShort ? "short" : "neutral");
+  setOkxPanelText("okx-position-side", isLong ? "多头" : isShort ? "空头" : "持仓");
+  setOkxPanelText("okx-position-size", `${formatCompactValue(f.pos ?? r.absContracts)} 张`);
+  setOkxPanelText("okx-position-upl", formatCompactValue(f.upl, { signed: true }));
+  setOkxPanelText("okx-position-entry", formatCompactValue(f.avgPx));
+  setOkxPanelText(
+    "okx-position-mark",
+    [formatCompactValue(f.markPx), f.lever != null && String(f.lever).trim() !== "" ? `${String(f.lever).trim()}x` : ""]
+      .filter(Boolean)
+      .join(" / "),
+  );
+  const uplNum = Number(f.upl);
+  setOkxPnlTone(!Number.isFinite(uplNum) ? "neutral" : uplNum > 0 ? "positive" : uplNum < 0 ? "negative" : "neutral");
+  setOkxPanelText("okx-position-text", options.footnote || `${formatOkxPositionLine(r)} ｜ ${formatPendingOrdersSummaryLine(pendingOrders, pendingAlgoOrders)}`);
+  bar.title = JSON.stringify(
+    options.titlePayload ?? {
+      position: r?.fields ?? null,
+      pending_orders: pendingOrders,
+      pending_algo_orders: pendingAlgoOrders,
+    },
+    null,
+    2,
+  );
+}
+
 async function refreshOkxPositionBar() {
   const bar = document.getElementById("okx-position-bar");
-  const textEl = document.getElementById("okx-position-text");
   const sel = document.getElementById("symbol-select");
-  if (!bar || !textEl || !sel) return;
+  if (!bar || !sel) return;
   const sym = sel.value?.trim() || "";
   if (!sym.startsWith("OKX:")) {
     bar.hidden = true;
@@ -2939,34 +3158,44 @@ async function refreshOkxPositionBar() {
   }
   bar.hidden = false;
   if (!window.argus || typeof window.argus.getOkxSwapPosition !== "function") {
-    textEl.textContent = "—";
-    textEl.removeAttribute("title");
+    renderOkxPositionSnapshot(null, {
+      sourceText: "实时查询",
+      footnote: "当前环境不支持 OKX 查询。",
+      titlePayload: "当前环境不支持 OKX 查询。",
+    });
     return;
   }
-  textEl.textContent = "查询中…";
+  setOkxPanelText("okx-position-mode", "查询中");
+  setOkxPanelText("okx-position-symbol", currentOkxSymbolLabel());
+  setOkxPanelText("okx-position-source", "实时查询");
+  setOkxSideTone("loading");
+  setOkxPnlTone("neutral");
+  setOkxPanelText("okx-position-side", "查询中");
+  setOkxPanelText("okx-position-size", "—");
+  setOkxPanelText("okx-position-upl", "—");
+  setOkxPanelText("okx-position-entry", "—");
+  setOkxPanelText("okx-position-mark", "—");
+  setOkxPanelText("okx-position-orders", "—");
+  setOkxPanelText("okx-position-algos", "—");
+  setOkxPanelTitle("okx-position-orders", "");
+  setOkxPanelTitle("okx-position-algos", "");
+  setOkxPanelText("okx-position-text", "正在向 OKX 拉取最新持仓与挂单…");
   try {
     const r = asOkxSwapPositionSnapshot(await window.argus.getOkxSwapPosition(sym));
-    const posLine = formatOkxPositionLine(r);
-    const ordersLine = formatPendingOrdersSummaryLine(r?.pending_orders, r?.pending_algo_orders);
-    const line =
-      posLine && posLine.length > 0
-        ? `${posLine} ｜ ${ordersLine}`
-        : ordersLine && ordersLine.length > 0
-          ? ordersLine
-          : "—";
-    textEl.textContent = line && line.length > 0 ? line : "—";
-    textEl.title = JSON.stringify(
-      {
-        position: r?.fields ?? null,
-        pending_orders: r?.pending_orders,
-        pending_algo_orders: r?.pending_algo_orders,
-      },
-      null,
-      2,
-    );
+    renderOkxPositionSnapshot(r, { sourceText: "实时查询" });
   } catch (e) {
-    textEl.textContent = e instanceof Error ? e.message : String(e);
-    textEl.removeAttribute("title");
+    renderOkxPositionSnapshot(
+      {
+        ok: false,
+        simulated: true,
+        message: e instanceof Error ? e.message : String(e),
+      },
+      {
+        sourceText: "实时查询",
+        footnote: e instanceof Error ? e.message : String(e),
+        titlePayload: e instanceof Error ? e.stack || e.message : String(e),
+      },
+    );
   }
 }
 
@@ -2975,9 +3204,8 @@ async function refreshOkxPositionBar() {
  */
 function applyOkxPositionFromPayload(payload) {
   const bar = document.getElementById("okx-position-bar");
-  const textEl = document.getElementById("okx-position-text");
   const sel = document.getElementById("symbol-select");
-  if (!bar || !textEl || !payload?.position) return;
+  if (!bar || !payload?.position) return;
   const cur = sel?.value?.trim() || "";
   if (payload.tvSymbol && cur && cur !== payload.tvSymbol) {
     void refreshOkxPositionBar();
@@ -2993,13 +3221,11 @@ function applyOkxPositionFromPayload(payload) {
     simulated: payload.simulated !== false,
     ...payload.position,
   };
-  const line = formatOkxPositionLine(r);
-  textEl.textContent = line && line.length > 0 ? line : "—";
-  if (payload.position.fields) {
-    textEl.title = JSON.stringify(payload.position.fields, null, 2);
-  } else {
-    textEl.title = textEl.textContent;
-  }
+  renderOkxPositionSnapshot(r, {
+    sourceText: "成交推送",
+    footnote: formatOkxPositionLine(r),
+    titlePayload: payload.position.fields ?? payload.position,
+  });
 }
 
 function initOkxPositionBar() {

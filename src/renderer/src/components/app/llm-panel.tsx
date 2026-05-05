@@ -78,24 +78,87 @@ export function LlmPanel() {
           aria-live="polite"
           title="OKX 永续持仓、普通挂单与算法单（止盈止损等，收盘推送或刷新）；须启用永续并配置 API。"
         >
-          <div className="flex items-start gap-3 rounded-lg border border-border/80 bg-muted/20 px-3 py-3 text-xs text-foreground shadow-sm">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-              <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-primary uppercase">
-                  OKX 持仓
-                </span>
-                {/* <span className="text-[11px] leading-none text-muted-foreground">永续、挂单、算法单</span> */}
+          <div className="rounded-xl border border-border/80 bg-linear-to-br from-background via-background to-muted/20 px-3 py-3 text-xs text-foreground shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-primary uppercase">
+                    OKX 持仓
+                  </span>
+                  <span
+                    className="inline-flex items-center rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                    id="okx-position-mode"
+                  >
+                    —
+                  </span>
+                  <span className="truncate text-[11px] text-muted-foreground" id="okx-position-symbol">
+                    —
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span
+                    className="inline-flex items-center rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 text-[12px] font-semibold text-foreground"
+                    id="okx-position-side"
+                  >
+                    —
+                  </span>
+                  <span className="text-[11px] text-muted-foreground" id="okx-position-source">
+                    —
+                  </span>
+                </div>
               </div>
-              <span
-                className="mt-2 block wrap-break-word text-[13px] leading-5 text-foreground"
-                id="okx-position-text"
-              >
-                —
-              </span>
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/15">
+                <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
+              </div>
             </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 xl:grid-cols-4">
+              <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
+                <div className="text-[10px] tracking-wide text-muted-foreground uppercase">仓位</div>
+                <div className="mt-1 text-[15px] font-semibold text-foreground" id="okx-position-size">
+                  —
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
+                <div className="text-[10px] tracking-wide text-muted-foreground uppercase">未实现盈亏</div>
+                <div className="mt-1 text-[15px] font-semibold text-foreground" id="okx-position-upl">
+                  —
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
+                <div className="text-[10px] tracking-wide text-muted-foreground uppercase">开仓均价</div>
+                <div className="mt-1 text-[15px] font-semibold text-foreground" id="okx-position-entry">
+                  —
+                </div>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/70 px-3 py-2">
+                <div className="text-[10px] tracking-wide text-muted-foreground uppercase">标记 / 杠杆</div>
+                <div className="mt-1 text-[15px] font-semibold text-foreground" id="okx-position-mark">
+                  —
+                </div>
+              </div>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-2">
+                <div className="text-[10px] tracking-wide text-muted-foreground uppercase">普通挂单</div>
+                <div className="mt-1 text-[13px] font-medium text-foreground" id="okx-position-orders">
+                  —
+                </div>
+              </div>
+              <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-2">
+                <div className="text-[10px] tracking-wide text-muted-foreground uppercase">算法单</div>
+                <div className="mt-1 text-[13px] font-medium text-foreground" id="okx-position-algos">
+                  —
+                </div>
+              </div>
+            </div>
+            <span
+              className="sr-only"
+              id="okx-position-text"
+            >
+              —
+            </span>
+          </div>
+          <div className="mt-2 flex justify-end">
             <Button
               type="button"
               variant="outline"

@@ -3205,6 +3205,7 @@ async function refreshOkxPositionBar() {
     return;
   }
   bar.hidden = false;
+  // Stale-while-revalidate：不清空上一轮文案，仅用边框表示刷新中。
   setOkxHeroTone("loading");
   if (!window.argus || typeof window.argus.getOkxSwapPosition !== "function") {
     renderOkxPositionSnapshot(null, {
@@ -3214,25 +3215,6 @@ async function refreshOkxPositionBar() {
     });
     return;
   }
-  setOkxPanelText("okx-position-mode", "查询中");
-  setOkxPanelText("okx-position-symbol", currentOkxSymbolLabel());
-  setOkxPanelText("okx-position-source", "实时查询");
-  setOkxSideTone("loading");
-  setOkxPnlTone("neutral");
-  setOkxPanelText("okx-position-side", "查询中");
-  setOkxPanelText("okx-position-status-copy", "同步中");
-  setOkxPanelText("okx-position-size", "—");
-  setOkxPanelText("okx-position-upl", "—");
-  setOkxPanelText("okx-position-entry", "—");
-  setOkxPanelText("okx-position-mark", "—");
-  setOkxPanelText("okx-position-tp", "—");
-  setOkxPanelText("okx-position-sl", "—");
-  setOkxPanelText("okx-position-orders", "—");
-  setOkxPanelText("okx-position-orders-sub", "正在加载挂单…");
-  setOkxPanelText("okx-position-algos", "—");
-  setOkxPanelTitle("okx-position-orders", "");
-  setOkxPanelTitle("okx-position-algos", "");
-  setOkxPanelText("okx-position-text", "正在向 OKX 拉取最新持仓与挂单…");
   try {
     const r = asOkxSwapPositionSnapshot(await window.argus.getOkxSwapPosition(sym));
     renderOkxPositionSnapshot(r, { sourceText: "实时查询" });

@@ -888,10 +888,12 @@ async function summarizeAgentAnalysisForCard(
   }
 }
 
-/** 拉取 K 线条数（供 EMA 预热）；表内只展示最近 {@link RECENT_CANDLES_DISPLAY_COUNT} 根 */
-const RECENT_CANDLES_FETCH_LIMIT = 100;
+/** 拉取 K 线条数（供 EMA 预热，须覆盖 EMA200）；表内只展示最近 {@link RECENT_CANDLES_DISPLAY_COUNT} 根 */
+const RECENT_CANDLES_FETCH_LIMIT = 250;
 const RECENT_CANDLES_DISPLAY_COUNT = 30;
 const EMA20_PERIOD = 20;
+const EMA50_PERIOD = 50;
+const EMA200_PERIOD = 200;
 const BB_PERIOD = 20;
 const BB_STD_MULT = 2;
 const ATR_PERIOD = 14;
@@ -1133,6 +1135,8 @@ function indicatorColumnHeaders(orderedIds: readonly StrategyIndicatorId[]): str
   for (const id of orderedIds) {
     if (id === "VOL") headers.push("Vol");
     if (id === "EM20") headers.push("E20");
+    if (id === "EM50") headers.push("E50");
+    if (id === "EM200") headers.push("E200");
     if (id === "BB") headers.push("BBM", "BBU", "BBL");
     if (id === "ATR") headers.push("ATR");
     if (id === "RSI14") headers.push("RSI");
@@ -1150,7 +1154,7 @@ function indicatorCellsForRow(
   j: number,
   i: number,
   volumeRaw: unknown,
-  sliceEma: (number | null)[],
+  sliceEmaById: Partial<Record<"EM20" | "EM50" | "EM200", (number | null)[]>>,
   bb: { mid: (number | null)[]; upper: (number | null)[]; lower: (number | null)[] },
   atrSeries: (number | null)[],
   rsiSeries: (number | null)[],
@@ -1161,7 +1165,10 @@ function indicatorCellsForRow(
   const cells: string[] = [];
   for (const id of orderedIds) {
     if (id === "VOL") cells.push(formatPromptQtyAbbrev(volumeRaw));
-    if (id === "EM20") cells.push(formatPromptPriceCell(sliceEma[j]));
+    if (id === "EM20" || id === "EM50" || id === "EM200") {
+      const slice = sliceEmaById[id];
+      cells.push(formatPromptPriceCell(slice?.[j]));
+    }
     if (id === "BB") {
       cells.push(
         formatPromptPriceCell(bb.mid[i]),
@@ -1266,6 +1273,8 @@ function promptRecentKlineColumnGlossary(orderedIds: readonly StrategyIndicatorI
     if (!set.has(id)) continue;
     if (id === "VOL") parts.push("Vol=成交量(K/M/B为数量缩写)");
     else if (id === "EM20") parts.push("E20=EMA(20,收盘)");
+    else if (id === "EM50") parts.push("E50=EMA(50,收盘)");
+    else if (id === "EM200") parts.push("E200=EMA(200,收盘)");
     else if (id === "BB") parts.push("BBM/BBU/BBL=布林中轨/上轨/下轨(20周期,2σ)");
     else if (id === "ATR") parts.push("ATR=ATR(14,Wilder)");
     else if (id === "RSI14") parts.push("RSI=RSI(14,Wilder)");
@@ -1326,10 +1335,15 @@ function buildRecentCandlesMarkdownSection(
   const sliceStart = rows.length - show;
   const sliceRows = rows.slice(sliceStart);
 
-  let sliceEma: (number | null)[] = [];
+  const sliceEmaById: Partial<Record<"EM20" | "EM50" | "EM200", (number | null)[]>> = {};
   if (orderedIds.includes("EM20")) {
-    const ema20 = computeEmaSeries(closes, EMA20_PERIOD);
-    sliceEma = ema20.slice(sliceStart);
+    sliceEmaById.EM20 = computeEmaSeries(closes, EMA20_PERIOD).slice(sliceStart);
+  }
+  if (orderedIds.includes("EM50")) {
+    sliceEmaById.EM50 = computeEmaSeries(closes, EMA50_PERIOD).slice(sliceStart);
+  }
+  if (orderedIds.includes("EM200")) {
+    sliceEmaById.EM200 = computeEmaSeries(closes, EMA200_PERIOD).slice(sliceStart);
   }
 
   let bb: ReturnType<typeof computeBollingerSeries> | null = null;
@@ -1389,7 +1403,7 @@ function buildRecentCandlesMarkdownSection(
       j,
       i,
       r.volume,
-      sliceEma,
+      sliceEmaById,
       bbSafe,
       atrSeries,
       rsiSeries,
@@ -1666,6 +1680,8 @@ export {
   RECENT_CANDLES_FETCH_LIMIT,
   RECENT_CANDLES_DISPLAY_COUNT,
   EMA20_PERIOD,
+  EMA50_PERIOD,
+  EMA200_PERIOD,
   mdCell,
   mdTable,
   buildMultimodalUserContent,

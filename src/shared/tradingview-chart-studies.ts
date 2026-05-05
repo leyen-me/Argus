@@ -22,6 +22,12 @@ export function tradingViewStudiesFromChartIndicators(
       case "EM20":
         studies.push({ id: "MAExp@tv-basicstudies", inputs: { length: 20 } });
         break;
+      case "EM50":
+        studies.push({ id: "MAExp@tv-basicstudies", inputs: { length: 50 } });
+        break;
+      case "EM200":
+        studies.push({ id: "MAExp@tv-basicstudies", inputs: { length: 200 } });
+        break;
       case "BB":
         studies.push({ id: "BB@tv-basicstudies", inputs: { length: 20, mult: 2 } });
         break;

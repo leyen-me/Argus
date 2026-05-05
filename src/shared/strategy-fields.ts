@@ -14,7 +14,16 @@ export const MULTI_TIMEFRAME_CAPTURE_SPECS = [
   { interval: "1D", label: "1D" },
 ] as const;
 
-export type StrategyIndicatorId = "VOL" | "EM20" | "BB" | "ATR" | "RSI14" | "MACD" | "SUPERTREND";
+export type StrategyIndicatorId =
+  | "VOL"
+  | "EM20"
+  | "EM50"
+  | "EM200"
+  | "BB"
+  | "ATR"
+  | "RSI14"
+  | "MACD"
+  | "SUPERTREND";
 
 /** 与 {@link StrategyIndicatorId} 取值一致；左侧 TradingView 图层单独配置，可与「技术指标」无关。 */
 export type StrategyChartIndicatorId = StrategyIndicatorId;
@@ -23,6 +32,8 @@ export type StrategyChartIndicatorId = StrategyIndicatorId;
 export const STRATEGY_INDICATOR_ORDER: readonly StrategyIndicatorId[] = [
   "VOL",
   "EM20",
+  "EM50",
+  "EM200",
   "BB",
   "ATR",
   "RSI14",
@@ -36,6 +47,8 @@ export const STRATEGY_INDICATOR_ORDER: readonly StrategyIndicatorId[] = [
 export const STRATEGY_CHART_TV_EMBED_SUPPORTED_IDS: readonly StrategyChartIndicatorId[] = [
   "VOL",
   "EM20",
+  "EM50",
+  "EM200",
   "BB",
   "ATR",
   "RSI14",
@@ -77,7 +90,7 @@ export type StrategyExtrasV1 = {
   tokenSymbols: string[];
   /** 多选：投喂模型的 K 线多周期（与 `## 多周期上下文` 及附图子集一致） */
   marketTimeframes: StrategyDecisionIntervalTv[];
-  /** 多选：技术指标列（成交量 Vol / EMA / 布林 / ATR / RSI / MACD），拼入各周期「最近 K 线」表 */
+  /** 多选：技术指标列（成交量 Vol / EMA20·50·200 / 布林 / ATR / RSI / MACD），拼入各周期「最近 K 线」表 */
   indicators: StrategyIndicatorId[];
   /** 多选：左侧 TradingView 预置指标（与上项独立；未写入 K 线表） */
   chartIndicators: StrategyChartIndicatorId[];

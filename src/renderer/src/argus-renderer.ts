@@ -1,4 +1,5 @@
 /* global TradingView */
+import { CountUp } from "countup.js";
 import { canonTradingViewInterval, sortMultiTimeframeSpecsSmallestFirst } from "@shared/strategy-fields";
 import { formatPromptStrategyDisplayLabel } from "@shared/prompt-strategy-display-label";
 
@@ -2968,6 +2969,102 @@ function formatCompactValue(v, options: { signed?: boolean; suffix?: string } = 
   return `${prefix}${out}${options.suffix || ""}`;
 }
 
+function parseLooseNumericText(s: string | null | undefined): number | null {
+  if (s == null) return null;
+  const t = s
+    .replace(/\s/g, "")
+    .replace(/,/g, "")
+    .replace(/^\+/, "")
+    .replace(/\u2212/g, "-")
+    .trim();
+  if (!t || t === "—") return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+let okxUplCountUp: CountUp | null = null;
+/** 最近一次已落稳的未实现盈亏数值（用于下一次滚动的起点）。 */
+let lastOkxUplNumeric: number | null = null;
+let okxUplAnimGen = 0;
+
+function teardownOkxUplCountUp() {
+  okxUplCountUp?.onDestroy();
+  okxUplCountUp = null;
+}
+
+function setOkxPanelUplPlain(text: string, tone: "positive" | "negative" | "neutral" = "neutral") {
+  teardownOkxUplCountUp();
+  okxUplAnimGen += 1;
+  const el = document.getElementById("okx-position-upl");
+  if (!el) return;
+  setOkxPnlTone(tone);
+  el.textContent = text;
+  if (text === "—") lastOkxUplNumeric = null;
+  else {
+    const n = parseLooseNumericText(text);
+    lastOkxUplNumeric = n;
+  }
+}
+
+function setOkxPanelUplAnimated(
+  endRaw: unknown,
+  tone: "positive" | "negative" | "neutral",
+  options: { duration?: number } = {},
+) {
+  const el = document.getElementById("okx-position-upl");
+  if (!el) return;
+
+  const endNum = Number(String(endRaw ?? "").trim());
+  if (!Number.isFinite(endNum)) {
+    setOkxPanelUplPlain("—", "neutral");
+    return;
+  }
+
+  setOkxPnlTone(tone);
+
+  let startNum: number | null = null;
+  const active = okxUplCountUp;
+  if (active && active.el === el && Number.isFinite(active.frameVal)) {
+    startNum = active.frameVal;
+  }
+  if (startNum == null && lastOkxUplNumeric != null && Number.isFinite(lastOkxUplNumeric)) {
+    startNum = lastOkxUplNumeric;
+  }
+  if (startNum == null) {
+    startNum = parseLooseNumericText(el.textContent);
+  }
+
+  teardownOkxUplCountUp();
+
+  const instant = startNum == null || !Number.isFinite(startNum) || startNum === endNum;
+  if (instant) {
+    okxUplAnimGen += 1;
+    el.textContent = formatCompactValue(String(endRaw), { signed: true });
+    lastOkxUplNumeric = endNum;
+    return;
+  }
+
+  const gen = ++okxUplAnimGen;
+  const duration = options.duration ?? 0.9;
+  okxUplCountUp = new CountUp(el, endNum, {
+    startVal: startNum,
+    duration,
+    decimalPlaces: 6,
+    useEasing: true,
+    formattingFn: (n) => formatCompactValue(String(n), { signed: true }),
+    onCompleteCallback: () => {
+      if (gen === okxUplAnimGen) lastOkxUplNumeric = endNum;
+    },
+  });
+  if (okxUplCountUp.error) {
+    el.textContent = formatCompactValue(String(endRaw), { signed: true });
+    lastOkxUplNumeric = endNum;
+    okxUplCountUp = null;
+    return;
+  }
+  okxUplCountUp.start();
+}
+
 function setOkxPanelText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
@@ -3104,7 +3201,6 @@ function renderOkxPositionSnapshot(
   setOkxPanelText("okx-position-source", sourceText);
   setOkxPanelText("okx-position-status-copy", "等待同步");
   setOkxPanelText("okx-position-size", "—");
-  setOkxPanelText("okx-position-upl", "—");
   setOkxPanelText("okx-position-entry", "—");
   setOkxPanelText("okx-position-mark", "—");
   setOkxPanelText("okx-position-tp", tpValue || "未设");
@@ -3119,6 +3215,7 @@ function renderOkxPositionSnapshot(
   if (!r) {
     setOkxHeroTone("neutral");
     setOkxSideTone("neutral");
+    setOkxPanelUplPlain("—");
     setOkxPanelText("okx-position-side", "—");
     setOkxPanelText("okx-position-status-copy", "暂无数据");
     setOkxPanelText("okx-position-text", options.footnote || "暂无 OKX 数据");
@@ -3134,6 +3231,7 @@ function renderOkxPositionSnapshot(
   if (r.skipped && r.reason === "okx_swap_disabled") {
     setOkxHeroTone("neutral");
     setOkxSideTone("neutral");
+    setOkxPanelUplPlain("—");
     setOkxPanelText("okx-position-side", "未启用");
     setOkxPanelText("okx-position-status-copy", "未启用");
     setOkxPanelText("okx-position-text", options.footnote || "未启用 OKX 永续下单；在配置中开启后可显示交易所持仓。");
@@ -3144,6 +3242,7 @@ function renderOkxPositionSnapshot(
   if (r.ok === false) {
     setOkxHeroTone("danger");
     setOkxSideTone("danger");
+    setOkxPanelUplPlain("—");
     setOkxPanelText("okx-position-side", "异常");
     setOkxPanelText("okx-position-status-copy", "查询失败");
     setOkxPanelText("okx-position-text", options.footnote || r.message || "查询失败");
@@ -3158,7 +3257,7 @@ function renderOkxPositionSnapshot(
     setOkxPanelText("okx-position-side", "空仓");
     setOkxPanelText("okx-position-status-copy", "当前空仓");
     setOkxPanelText("okx-position-size", "0 张");
-    setOkxPanelText("okx-position-upl", "0");
+    setOkxPanelUplAnimated(0, "neutral");
     setOkxPanelText("okx-position-entry", "—");
     setOkxPanelText("okx-position-mark", "—");
     setOkxPanelText("okx-position-text", options.footnote || formatOkxPositionLine(r));
@@ -3173,7 +3272,11 @@ function renderOkxPositionSnapshot(
   setOkxPanelText("okx-position-side", isLong ? "多头" : isShort ? "空头" : "持仓");
   setOkxPanelText("okx-position-status-copy", isLong ? "Long Exposure" : isShort ? "Short Exposure" : "Position Open");
   setOkxPanelText("okx-position-size", `${formatCompactValue(f.pos ?? r.absContracts)} 张`);
-  setOkxPanelText("okx-position-upl", formatCompactValue(f.upl, { signed: true }));
+  const uplNum = Number(f.upl);
+  setOkxPanelUplAnimated(
+    f.upl,
+    !Number.isFinite(uplNum) ? "neutral" : uplNum > 0 ? "positive" : uplNum < 0 ? "negative" : "neutral",
+  );
   setOkxPanelText("okx-position-entry", formatCompactValue(f.avgPx));
   setOkxPanelText(
     "okx-position-mark",
@@ -3181,8 +3284,6 @@ function renderOkxPositionSnapshot(
       .filter(Boolean)
       .join(" / "),
   );
-  const uplNum = Number(f.upl);
-  setOkxPnlTone(!Number.isFinite(uplNum) ? "neutral" : uplNum > 0 ? "positive" : uplNum < 0 ? "negative" : "neutral");
   setOkxPanelText("okx-position-text", options.footnote || `${formatOkxPositionLine(r)} ｜ ${formatPendingOrdersSummaryLine(pendingOrders, pendingAlgoOrders)}`);
   bar.title = JSON.stringify(
     options.titlePayload ?? {

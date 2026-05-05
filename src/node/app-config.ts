@@ -76,6 +76,8 @@ export type AppConfig = {
   strategyRuntimeById: Record<string, StrategyRuntimeEntry>;
   /** 取自当前 `prompt_strategy` 行，非 kv 字段；normalizeConfig 时注入。 */
   promptStrategyDecisionIntervalTv: import("../shared/strategy-fields.js").StrategyDecisionIntervalTv;
+  /** 取自当前策略 `extras.chartIndicators`，非 kv 字段。 */
+  promptStrategyChartIndicators: import("../shared/strategy-fields.js").StrategyChartIndicatorId[];
 };
 
 type AppSettingsSeed = Omit<
@@ -84,6 +86,7 @@ type AppSettingsSeed = Omit<
   | "promptStrategySelectOptions"
   | "systemPromptCrypto"
   | "promptStrategyDecisionIntervalTv"
+  | "promptStrategyChartIndicators"
 >;
 
 /**
@@ -190,6 +193,7 @@ function defaultConfigFallback(): AppConfig {
     promptStrategies: listPromptStrategies(),
     promptStrategySelectOptions: listPromptStrategySelectOptions(),
     promptStrategyDecisionIntervalTv: promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy),
+    promptStrategyChartIndicators: promptStrategiesStore.getChartIndicatorsForStrategyId(promptStrategy),
     ...loadSystemPromptsFromDisk(promptStrategy),
   };
 }
@@ -203,6 +207,7 @@ function stripSystemPromptsForPersistence(cfg) {
   const {
     systemPromptCrypto: _c,
     promptStrategyDecisionIntervalTv: _p,
+    promptStrategyChartIndicators: _pci,
     promptStrategySelectOptions: _pso,
     symbols: _s,
     defaultSymbol: _d,
@@ -603,6 +608,8 @@ function normalizeConfig(raw: unknown): AppConfig {
 
   const promptStrategyDecisionIntervalTv =
     promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy);
+  const promptStrategyChartIndicators =
+    promptStrategiesStore.getChartIndicatorsForStrategyId(promptStrategy);
 
   return {
     symbols,
@@ -615,6 +622,7 @@ function normalizeConfig(raw: unknown): AppConfig {
     promptStrategies: listPromptStrategies(),
     promptStrategySelectOptions: listPromptStrategySelectOptions(),
     promptStrategyDecisionIntervalTv,
+    promptStrategyChartIndicators,
     systemPromptCrypto,
     llmRequestTimeoutMs,
     llmReasoningEnabled,

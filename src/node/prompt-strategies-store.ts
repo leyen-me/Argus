@@ -8,6 +8,8 @@ import {
   okxTvSymbolFromStrategyToken,
   parseStrategyExtrasJson,
   stringifyStrategyExtras,
+  orderStrategyChartIndicators,
+  type StrategyChartIndicatorId,
   type StrategyDecisionIntervalTv,
   type StrategyExtrasV1,
   type StrategyIndicatorId,
@@ -177,6 +179,21 @@ function getIndicatorsForStrategyId(strategyId: unknown): StrategyIndicatorId[] 
   return STRATEGY_INDICATOR_ORDER.filter((id) => raw.includes(id));
 }
 
+/**
+ * 策略「图表指标」：驱动左侧 TradingView 预置 studies；无策略 id 时与旧行为一致（仅 EMA20）。
+ * @param {unknown} strategyId
+ * @returns {StrategyChartIndicatorId[]}
+ */
+function getChartIndicatorsForStrategyId(strategyId: unknown): StrategyChartIndicatorId[] {
+  seedFromDiskIfEmpty();
+  if (typeof strategyId !== "string" || !strategyId.trim()) {
+    return orderStrategyChartIndicators(["EM20"]);
+  }
+  const row = getStrategy(strategyId.trim());
+  if (!row) return orderStrategyChartIndicators(["EM20"]);
+  return orderStrategyChartIndicators(row.extras.chartIndicators);
+}
+
 /** @param {Partial<StrategyExtrasV1>} patch */
 function applyExtrasPatch(base: StrategyExtrasV1, patch: Partial<StrategyExtrasV1>): StrategyExtrasV1 {
   return {
@@ -184,6 +201,7 @@ function applyExtrasPatch(base: StrategyExtrasV1, patch: Partial<StrategyExtrasV
     marketTimeframes:
       patch.marketTimeframes !== undefined ? [...patch.marketTimeframes] : [...base.marketTimeframes],
     indicators: patch.indicators !== undefined ? [...patch.indicators] : [...base.indicators],
+    chartIndicators: patch.chartIndicators !== undefined ? [...patch.chartIndicators] : [...base.chartIndicators],
   };
 }
 
@@ -279,6 +297,7 @@ export {
   getOkxTvSymbolForStrategyId,
   getMarketTimeframesForStrategyId,
   getIndicatorsForStrategyId,
+  getChartIndicatorsForStrategyId,
   saveStrategy,
   deleteStrategy,
   validateStrategyId,

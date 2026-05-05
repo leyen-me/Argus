@@ -16,6 +16,9 @@ export const MULTI_TIMEFRAME_CAPTURE_SPECS = [
 
 export type StrategyIndicatorId = "VOL" | "EM20" | "BB" | "ATR" | "RSI14" | "MACD";
 
+/** 与 {@link StrategyIndicatorId} 取值一致；左侧 TradingView 图层单独配置，可与「技术指标」无关。 */
+export type StrategyChartIndicatorId = StrategyIndicatorId;
+
 /** K 线表追加列顺序（与策略中心勾选顺序无关，固定此序输出） */
 export const STRATEGY_INDICATOR_ORDER: readonly StrategyIndicatorId[] = ["VOL", "EM20", "BB", "ATR", "RSI14", "MACD"];
 export const STRATEGY_TOKEN_SYMBOL_OPTIONS = ["BTC", "ETH", "SOL", "DOGE"] as const;
@@ -55,6 +58,8 @@ export type StrategyExtrasV1 = {
   marketTimeframes: StrategyDecisionIntervalTv[];
   /** 多选：技术指标列（成交量 Vol / EMA / 布林 / ATR / RSI / MACD），拼入各周期「最近 K 线」表 */
   indicators: StrategyIndicatorId[];
+  /** 多选：左侧 TradingView 预置指标（与上项独立；未写入 K 线表） */
+  chartIndicators: StrategyChartIndicatorId[];
 };
 
 export function defaultStrategyExtras(): StrategyExtrasV1 {
@@ -62,6 +67,7 @@ export function defaultStrategyExtras(): StrategyExtrasV1 {
     tokenSymbols: ["BTC"],
     marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
     indicators: [],
+    chartIndicators: ["EM20"],
   };
 }
 
@@ -119,6 +125,13 @@ export function orderStrategyIndicatorsForPrompt(ids: readonly StrategyIndicator
   return STRATEGY_INDICATOR_ORDER.filter((id) => set.has(id));
 }
 
+/** 图表图层顺序：主图叠加 → 副图指标（与 {@link STRATEGY_INDICATOR_ORDER} 一致）。 */
+export function orderStrategyChartIndicators(
+  ids: readonly StrategyChartIndicatorId[] | undefined,
+): StrategyChartIndicatorId[] {
+  return orderStrategyIndicatorsForPrompt(ids) as StrategyChartIndicatorId[];
+}
+
 export function normalizeStrategyMarketTimeframes(raw: unknown): StrategyDecisionIntervalTv[] {
   if (!Array.isArray(raw)) return [...STRATEGY_DECISION_INTERVAL_TV];
   const out = raw
@@ -142,11 +155,23 @@ export function parseStrategyExtrasJson(raw: unknown): StrategyExtrasV1 {
   const marketTf = normalizeStrategyMarketTimeframes(o.marketTimeframes);
   let indicators = normalizeStrategyIndicators(o.indicators);
   if (!indicators.length && Array.isArray(o.indicators)) indicators = def.indicators;
+
+  const legacyNoChartKey = !Object.prototype.hasOwnProperty.call(o, "chartIndicators");
+  let chartIndicators = normalizeStrategyChartIndicators(o.chartIndicators);
+  if (legacyNoChartKey) chartIndicators = ["EM20"];
+
   return {
     tokenSymbols,
     marketTimeframes: marketTf.length ? marketTf : def.marketTimeframes,
     indicators,
+    chartIndicators,
   };
+}
+
+function normalizeStrategyChartIndicators(raw: unknown): StrategyChartIndicatorId[] {
+  if (!Array.isArray(raw)) return [];
+  const out = raw.filter((x): x is StrategyChartIndicatorId => isIndicator(x));
+  return out.length ? [...new Set(out)] : [];
 }
 
 export function stringifyStrategyExtras(extras: StrategyExtrasV1): string {

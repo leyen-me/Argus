@@ -26,6 +26,7 @@ import {
   STRATEGY_DECISION_INTERVAL_TV,
   STRATEGY_TOKEN_SYMBOL_OPTIONS,
   normalizeStrategyTokenSymbol,
+  type StrategyChartIndicatorId,
   type StrategyDecisionIntervalTv,
   type StrategyExtrasV1,
   type StrategyIndicatorId,
@@ -72,6 +73,9 @@ const INDICATORS: { id: StrategyIndicatorId; label: string }[] = [
   { id: "MACD", label: "MACD(12,26,9)" },
 ];
 
+/** 与 {@link INDICATORS} 同 id，用于左侧 TradingView 图层 */
+const CHART_INDICATORS: { id: StrategyChartIndicatorId; label: string }[] = INDICATORS;
+
 function getArgus(): ArgusApi | undefined {
   if (typeof window === "undefined") return undefined;
   return window.argus as ArgusApi | undefined;
@@ -88,6 +92,7 @@ function createNewStrategyExtras(): StrategyExtrasV1 {
     tokenSymbols: ["BTC"],
     marketTimeframes: ["5", "60"],
     indicators: ["VOL", "EM20"],
+    chartIndicators: ["EM20"],
   };
 }
 
@@ -194,6 +199,7 @@ export function StrategyCenterModal() {
       tokenSymbols: [normalizeStrategyTokenSymbol(row.extras?.tokenSymbols)],
       marketTimeframes: [...(row.extras?.marketTimeframes ?? [...STRATEGY_DECISION_INTERVAL_TV])],
       indicators: [...(row.extras?.indicators ?? [])],
+      chartIndicators: [...(row.extras?.chartIndicators ?? ["EM20"])],
     });
   }, []);
 
@@ -328,6 +334,7 @@ export function StrategyCenterModal() {
           tokenSymbols: draftExtras.tokenSymbols,
           marketTimeframes: draftExtras.marketTimeframes,
           indicators: draftExtras.indicators,
+          chartIndicators: draftExtras.chartIndicators,
         },
       });
       window.dispatchEvent(
@@ -627,6 +634,40 @@ export function StrategyCenterModal() {
                             setDraftExtras((prev) => ({
                               ...prev,
                               indicators: toggleInList(prev.indicators, ind.id),
+                            }))
+                          }
+                          disabled={busy}
+                        >
+                          {ind.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <Separator />
+
+                <section>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Label className="text-foreground">图表指标</Label>
+                    <ConfigHelpTooltip className="size-6">
+                      勾选后左侧 TradingView 多周期图会预置对应指标；与「技术指标」独立——后者只影响投喂模型的 K 线表列。全不选则主图无预置指标；勾选 Vol 会显示成交量副图。
+                    </ConfigHelpTooltip>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {CHART_INDICATORS.map((ind) => {
+                      const on = draftExtras.chartIndicators.includes(ind.id);
+                      return (
+                        <Button
+                          key={ind.id}
+                          type="button"
+                          size="sm"
+                          variant={on ? "default" : "outline"}
+                          className="h-8 min-w-[52px] px-2 text-xs"
+                          onClick={() =>
+                            setDraftExtras((prev) => ({
+                              ...prev,
+                              chartIndicators: toggleInList(prev.chartIndicators, ind.id),
                             }))
                           }
                           disabled={busy}

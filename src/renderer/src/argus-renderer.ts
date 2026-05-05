@@ -1,10 +1,11 @@
 /* global TradingView */
 import { CountUp } from "countup.js";
 import { canonTradingViewInterval, sortMultiTimeframeSpecsSmallestFirst } from "@shared/strategy-fields";
+import type { StrategyChartIndicatorId } from "@shared/strategy-fields";
+import { tradingViewStudiesFromChartIndicators } from "@shared/tradingview-chart-studies";
 import { formatPromptStrategyDisplayLabel } from "@shared/prompt-strategy-display-label";
 
-/** TradingView 内置：MAExp = EMA，周期由 length 指定 */
-const DEFAULT_EMA_LENGTH = 20;
+const DEFAULT_STRATEGY_CHART_INDICATORS: StrategyChartIndicatorId[] = ["EM20"];
 const MULTI_TIMEFRAME_SPECS = [
   {
     interval: "1D",
@@ -40,6 +41,7 @@ let tvLayoutObserver = null;
 let lastTvWidgetRequest = {
   symbol: "OKX:BTCUSDT",
   interval: "5",
+  chartIndicators: [...DEFAULT_STRATEGY_CHART_INDICATORS],
 };
 
 function normalizeTradingViewSymbolForPerp(symbol) {
@@ -73,11 +75,25 @@ function areTradingViewContainersReady() {
   });
 }
 
-function scheduleTradingViewWidget(symbol, interval, options: { debounceMs?: number; attempt?: number } = {}) {
-  const { debounceMs = 0, attempt = 0 } = options;
+function scheduleTradingViewWidget(
+  symbol,
+  interval,
+  options: {
+    debounceMs?: number;
+    attempt?: number;
+    chartIndicators?: import("@shared/strategy-fields").StrategyChartIndicatorId[];
+  } = {},
+) {
+  const { debounceMs = 0, attempt = 0, chartIndicators } = options;
   const nextSymbol = symbol || "OKX:BTCUSDT";
   const nextInterval = String(interval || chartInterval || "5");
-  lastTvWidgetRequest = { symbol: nextSymbol, interval: nextInterval };
+  const nextChartIndicators =
+    chartIndicators !== undefined ? chartIndicators : lastTvWidgetRequest.chartIndicators;
+  lastTvWidgetRequest = {
+    symbol: nextSymbol,
+    interval: nextInterval,
+    chartIndicators: nextChartIndicators,
+  };
   const seq = ++tvWidgetRenderSeq;
   cancelPendingTradingViewRender();
 
@@ -314,6 +330,7 @@ const FALLBACK_APP_CONFIG = {
   dashboardStrategyRanges: {},
   strategyRuntimeById: {},
   promptStrategyDecisionIntervalTv: "5",
+  promptStrategyChartIndicators: [...DEFAULT_STRATEGY_CHART_INDICATORS],
 };
 
 type RendererAppConfig = typeof FALLBACK_APP_CONFIG;
@@ -2140,7 +2157,10 @@ async function persistPromptStrategyPreference(promptStrategy) {
     applyPromptStrategySelect(saved);
     applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
     applySymbolSelect(saved);
-    createTradingViewWidget(saved.defaultSymbol, chartInterval);
+    createTradingViewWidget(saved.defaultSymbol, chartInterval, {
+      chartIndicators:
+        saved.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+    });
     if (typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(saved.defaultSymbol);
     }
@@ -2262,7 +2282,10 @@ async function applyMarketUiFromLoadedConfig(prefetched?: unknown) {
     applyPromptStrategySelect(cfg);
     applyChartIntervalSelect(cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
     const sym = cfg.defaultSymbol || FALLBACK_APP_CONFIG.defaultSymbol;
-    createTradingViewWidget(sym, chartInterval);
+    createTradingViewWidget(sym, chartInterval, {
+      chartIndicators:
+        cfg.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+    });
     if (window.argus && typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(sym);
     }
@@ -2348,7 +2371,9 @@ function initConfigCenter() {
           applyChartIntervalSelect(
             FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv ?? "5",
           );
-          createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol, chartInterval);
+          createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol, chartInterval, {
+            chartIndicators: FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+          });
           if (typeof window.argus.setMarketContext === "function") {
             window.argus.setMarketContext(FALLBACK_APP_CONFIG.defaultSymbol);
           }
@@ -2361,7 +2386,10 @@ function initConfigCenter() {
           fillConfigModalFields(saved);
           applySymbolSelect(saved);
           applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
-          createTradingViewWidget(saved.defaultSymbol, chartInterval);
+          createTradingViewWidget(saved.defaultSymbol, chartInterval, {
+            chartIndicators:
+              saved.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+          });
           if (typeof window.argus.setMarketContext === "function") {
             window.argus.setMarketContext(saved.defaultSymbol);
           }
@@ -2408,7 +2436,10 @@ function initConfigCenter() {
         if (!window.argus || typeof window.argus.saveConfig !== "function") {
           const cfg = await loadAppConfig();
           applySymbolSelect(cfg);
-          createTradingViewWidget(cfg.defaultSymbol, chartInterval);
+          createTradingViewWidget(cfg.defaultSymbol, chartInterval, {
+            chartIndicators:
+              cfg.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+          });
           closeModal();
           refreshExchangeContextBarFromCache();
           void refreshOkxPositionBar();
@@ -2434,7 +2465,10 @@ function initConfigCenter() {
           );
           applySymbolSelect(saved);
           applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
-          createTradingViewWidget(saved.defaultSymbol, chartInterval);
+          createTradingViewWidget(saved.defaultSymbol, chartInterval, {
+            chartIndicators:
+              saved.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+          });
           if (typeof window.argus.setMarketContext === "function") {
             window.argus.setMarketContext(saved.defaultSymbol);
           }
@@ -2503,6 +2537,7 @@ function createTradingViewWidgetNow(symbol, _interval) {
   }
 
   const tvSymbol = normalizeTradingViewSymbolForPerp(symbol || "OKX:BTCUSDT");
+  const tvStudies = tradingViewStudiesFromChartIndicators(lastTvWidgetRequest.chartIndicators);
   /**
    * tv.js（免费 Advanced Chart）里与「隐藏界面」相关的选项主要来自官方 embed：
    *
@@ -2529,25 +2564,24 @@ function createTradingViewWidgetNow(symbol, _interval) {
       hide_top_toolbar: true,
       hide_side_toolbar: true,
       hide_legend: true,
-      hide_volume: true,
+      hide_volume: tvStudies.hide_volume,
       hideideasbutton: true,
       /** 为 false 时 iframe 可能拒绝 imageCanvas 截图，需保留导出能力 */
       save_image: true,
       container_id: spec.containerId,
       allow_symbol_change: true,
-      studies: [
-        {
-          id: "MAExp@tv-basicstudies",
-          inputs: { length: DEFAULT_EMA_LENGTH },
-        },
-      ],
+      studies: tvStudies.studies,
     });
     tvWidgets.set(spec.interval, widget);
   }
 }
 
-function createTradingViewWidget(symbol, interval) {
-  scheduleTradingViewWidget(symbol, interval);
+function createTradingViewWidget(
+  symbol,
+  interval,
+  options: { chartIndicators?: import("@shared/strategy-fields").StrategyChartIndicatorId[] } = {},
+) {
+  scheduleTradingViewWidget(symbol, interval, options);
 }
 
 function initSymbolSelect() {
@@ -3410,7 +3444,10 @@ export function initArgusApp() {
     );
     applyPromptStrategySelect(cfg);
     const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
-    createTradingViewWidget(sym, chartInterval);
+    createTradingViewWidget(sym, chartInterval, {
+      chartIndicators:
+        cfg.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+    });
     if (window.argus && typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(sym);
     }

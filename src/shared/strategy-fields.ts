@@ -14,13 +14,34 @@ export const MULTI_TIMEFRAME_CAPTURE_SPECS = [
   { interval: "1D", label: "1D" },
 ] as const;
 
-export type StrategyIndicatorId = "VOL" | "EM20" | "BB" | "ATR" | "RSI14" | "MACD";
+export type StrategyIndicatorId = "VOL" | "EM20" | "BB" | "ATR" | "RSI14" | "MACD" | "SUPERTREND";
 
 /** 与 {@link StrategyIndicatorId} 取值一致；左侧 TradingView 图层单独配置，可与「技术指标」无关。 */
 export type StrategyChartIndicatorId = StrategyIndicatorId;
 
 /** K 线表追加列顺序（与策略中心勾选顺序无关，固定此序输出） */
-export const STRATEGY_INDICATOR_ORDER: readonly StrategyIndicatorId[] = ["VOL", "EM20", "BB", "ATR", "RSI14", "MACD"];
+export const STRATEGY_INDICATOR_ORDER: readonly StrategyIndicatorId[] = [
+  "VOL",
+  "EM20",
+  "BB",
+  "ATR",
+  "RSI14",
+  "MACD",
+  "SUPERTREND",
+];
+/**
+ * 免费 TradingView「Advanced Chart」嵌入（`tv.js` widget）里可通过 `studies` 预置的指标。
+ * SuperTrend 等仅在自托管 Charting Library 提供；嵌入里使用会触发 `cannot_get_metainfo`。
+ */
+export const STRATEGY_CHART_TV_EMBED_SUPPORTED_IDS: readonly StrategyChartIndicatorId[] = [
+  "VOL",
+  "EM20",
+  "BB",
+  "ATR",
+  "RSI14",
+  "MACD",
+];
+
 export const STRATEGY_TOKEN_SYMBOL_OPTIONS = ["BTC", "ETH", "SOL", "DOGE"] as const;
 export type StrategyTokenSymbol = (typeof STRATEGY_TOKEN_SYMBOL_OPTIONS)[number];
 
@@ -159,6 +180,9 @@ export function parseStrategyExtrasJson(raw: unknown): StrategyExtrasV1 {
   const legacyNoChartKey = !Object.prototype.hasOwnProperty.call(o, "chartIndicators");
   let chartIndicators = normalizeStrategyChartIndicators(o.chartIndicators);
   if (legacyNoChartKey) chartIndicators = ["EM20"];
+
+  const tvEmbedOk = new Set(STRATEGY_CHART_TV_EMBED_SUPPORTED_IDS);
+  chartIndicators = chartIndicators.filter((id) => tvEmbedOk.has(id));
 
   return {
     tokenSymbols,

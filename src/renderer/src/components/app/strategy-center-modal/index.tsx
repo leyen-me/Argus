@@ -23,6 +23,7 @@ import {
 } from "@/lib/argus-strategy-modal-events";
 import { ARGUS_APP_CONFIG_CHANGED } from "@/lib/argus-config-modal-events";
 import {
+  STRATEGY_CHART_TV_EMBED_SUPPORTED_IDS,
   STRATEGY_DECISION_INTERVAL_TV,
   STRATEGY_TOKEN_SYMBOL_OPTIONS,
   normalizeStrategyTokenSymbol,
@@ -71,10 +72,14 @@ const INDICATORS: { id: StrategyIndicatorId; label: string }[] = [
   { id: "ATR", label: "ATR(14)" },
   { id: "RSI14", label: "RSI(14)" },
   { id: "MACD", label: "MACD(12,26,9)" },
+  { id: "SUPERTREND", label: "SuperTrend(10,3)" },
 ];
 
-/** 与 {@link INDICATORS} 同 id，用于左侧 TradingView 图层 */
-const CHART_INDICATORS: { id: StrategyChartIndicatorId; label: string }[] = INDICATORS;
+const CHART_TV_EMBED_SET = new Set(STRATEGY_CHART_TV_EMBED_SUPPORTED_IDS);
+/** 免费 TV 嵌入可绘制的子集；SuperTrend 仅「技术指标」进 LLM 表 */
+const CHART_INDICATORS: { id: StrategyChartIndicatorId; label: string }[] = INDICATORS.filter((r) =>
+  CHART_TV_EMBED_SET.has(r.id),
+);
 
 function getArgus(): ArgusApi | undefined {
   if (typeof window === "undefined") return undefined;
@@ -617,7 +622,7 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">技术指标</Label>
                     <ConfigHelpTooltip className="size-6">
-                      勾选后写入各周期「最近 K 线」表列；未勾选不出现该列。Vol=合约成交量（K/M/B）；EMA(20)；BB(20,2σ)；ATR(14)；RSI(14)；MACD(12,26,9)。不含成交额 Turnover。
+                      勾选后写入各周期「最近 K 线」表列；未勾选不出现该列。Vol=合约成交量（K/M/B）；EMA(20)；BB(20,2σ)；ATR(14)；RSI(14)；MACD(12,26,9)；SuperTrend(10,3)+方向 U/D（左侧免费 TradingView 小部件画不出 SuperTrend，数值仅在此表）。不含成交额 Turnover。
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -651,7 +656,7 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">图表指标</Label>
                     <ConfigHelpTooltip className="size-6">
-                      勾选后左侧 TradingView 多周期图会预置对应指标；与「技术指标」独立——后者只影响投喂模型的 K 线表列。全不选则主图无预置指标；勾选 Vol 会显示成交量副图。
+                      勾选后左侧 TradingView 多周期图会预置对应指标；与「技术指标」独立。SuperTrend 仅能通过「技术指标」写入 K 线表（免费嵌入无法加载该 study）。全不选则主图无预置指标；勾选 Vol 显示成交量副图。
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">

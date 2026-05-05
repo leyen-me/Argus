@@ -899,6 +899,9 @@ const RSI_PERIOD = 14;
 const MACD_FAST = 12;
 const MACD_SLOW = 26;
 const MACD_SIGNAL = 9;
+/** 与 TradingView 内置 SuperTrend 默认一致：ATR 周期 × 倍数 */
+const SUPERTREND_ATR_PERIOD = 10;
+const SUPERTREND_MULTIPLIER = 3;
 
 /**
  * 收盘价 EMA：第 `period` 根起有效，首值为前 `period` 根收盘 SMA，之后标准 EMA（α=2/(period+1)）。
@@ -997,6 +1000,56 @@ function computeAtrWilderSeries(tr, period) {
   return out;
 }
 
+/** SuperTrend：公式见 https://www.tradingview.com/support/solutions/43000634738/ */
+function computeSuperTrendSeries(highs, lows, closes, atrPeriod, multiplier) {
+  const n = closes.length;
+  const line = /** @type {(number | null)[]} */ (Array(n).fill(null));
+  const up = /** @type {(boolean | null)[]} */ (Array(n).fill(null));
+  if (!Number.isFinite(atrPeriod) || atrPeriod < 1 || !Number.isFinite(multiplier) || n === 0) {
+    return { line, up };
+  }
+  const tr = computeTrueRangeSeries(highs, lows, closes);
+  const atr = computeAtrWilderSeries(tr, atrPeriod);
+  let prevUb: number | null = null;
+  let prevLb: number | null = null;
+  let prevSt: number | null = null;
+  const near = (a: number | null, b: number | null) => {
+    if (a == null || b == null || !Number.isFinite(a) || !Number.isFinite(b)) return false;
+    return Math.abs(a - b) <= 1e-9 * (Math.abs(a) + Math.abs(b) + 1);
+  };
+
+  for (let i = 0; i < n; i++) {
+    if (atr[i] == null || !Number.isFinite(atr[i])) continue;
+    const hl2 = (highs[i] + lows[i]) / 2;
+    const basicU = hl2 + multiplier * atr[i];
+    const basicL = hl2 - multiplier * atr[i];
+    let ub = basicU;
+    let lb = basicL;
+    if (prevUb != null && prevLb != null) {
+      const prevClose = closes[i - 1];
+      ub =
+        basicU < prevUb || (Number.isFinite(prevClose) && prevClose > prevUb) ? basicU : prevUb;
+      lb =
+        basicL > prevLb || (Number.isFinite(prevClose) && prevClose < prevLb) ? basicL : prevLb;
+    }
+    let trendUp = false;
+    if (prevSt == null) {
+      trendUp = false;
+    } else if (near(prevSt, prevUb)) {
+      trendUp = Number.isFinite(closes[i]) && closes[i] > ub;
+    } else {
+      trendUp = !(Number.isFinite(closes[i]) && closes[i] < lb);
+    }
+    const st = trendUp ? lb : ub;
+    line[i] = st;
+    up[i] = trendUp;
+    prevUb = ub;
+    prevLb = lb;
+    prevSt = st;
+  }
+  return { line, up };
+}
+
 /** RSI(Wilder)：首期为涨跌均值简单平均，其后递推平滑；输出 0–100 */
 function computeRsiWilderSeries(closes, period) {
   const n = closes.length;
@@ -1084,6 +1137,7 @@ function indicatorColumnHeaders(orderedIds: readonly StrategyIndicatorId[]): str
     if (id === "ATR") headers.push("ATR");
     if (id === "RSI14") headers.push("RSI");
     if (id === "MACD") headers.push("DIF", "SIG", "Hist");
+    if (id === "SUPERTREND") headers.push("ST", "Dir");
   }
   return headers;
 }
@@ -1101,6 +1155,8 @@ function indicatorCellsForRow(
   atrSeries: (number | null)[],
   rsiSeries: (number | null)[],
   macdTriple: { macd: (number | null)[]; signal: (number | null)[]; hist: (number | null)[] },
+  stLine: (number | null)[],
+  stUp: (boolean | null)[],
 ): string[] {
   const cells: string[] = [];
   for (const id of orderedIds) {
@@ -1121,6 +1177,9 @@ function indicatorCellsForRow(
         formatPromptMacdCell(macdTriple.signal[i]),
         formatPromptMacdCell(macdTriple.hist[i]),
       );
+    }
+    if (id === "SUPERTREND") {
+      cells.push(formatPromptPriceCell(stLine[i]), formatPromptSuperTrendDir(stUp[i]));
     }
   }
   return cells;
@@ -1153,6 +1212,11 @@ function formatPromptRsiCell(x: number | null | undefined): string {
 function formatPromptMacdCell(x: number | null | undefined): string {
   if (x == null || !Number.isFinite(x)) return "—";
   return stripFixedTrailingZeros(x.toFixed(2));
+}
+
+function formatPromptSuperTrendDir(up: boolean | null | undefined): string {
+  if (up == null) return "—";
+  return up ? "U" : "D";
 }
 
 /** 成交量等数量字段：K/M/B 缩写（prompt 中不再输出 Turnover） */
@@ -1206,6 +1270,7 @@ function promptRecentKlineColumnGlossary(orderedIds: readonly StrategyIndicatorI
     else if (id === "ATR") parts.push("ATR=ATR(14,Wilder)");
     else if (id === "RSI14") parts.push("RSI=RSI(14,Wilder)");
     else if (id === "MACD") parts.push("DIF/SIG/Hist=MACD线/信号线/柱状图(12,26,9)");
+    else if (id === "SUPERTREND") parts.push("ST/Dir=SuperTrend 线价与方向 U 多 D 空（ATR10×3）");
   }
   return `列说明：${parts.join("；")}。`;
 }
@@ -1292,6 +1357,14 @@ function buildRecentCandlesMarkdownSection(
     macdTriple = computeMacdTriple(closes);
   }
 
+  let stLine: (number | null)[] = [];
+  let stUp: (boolean | null)[] = [];
+  if (orderedIds.includes("SUPERTREND")) {
+    const st = computeSuperTrendSeries(highs, lows, closes, SUPERTREND_ATR_PERIOD, SUPERTREND_MULTIPLIER);
+    stLine = st.line;
+    stUp = st.up;
+  }
+
   const baseHeaders = [...PROMPT_RECENT_KLINE_BASE_HEADERS];
   const indHeaders = indicatorColumnHeaders(orderedIds);
   const headers = [...baseHeaders, ...indHeaders];
@@ -1321,6 +1394,8 @@ function buildRecentCandlesMarkdownSection(
       atrSeries,
       rsiSeries,
       macdTriple,
+      stLine,
+      stUp,
     );
     return [...base, ...extra];
   });

@@ -5,7 +5,7 @@ export type TradingViewStudySpec = { id: string; inputs?: Record<string, number>
 
 /**
  * 将策略「图表指标」映射为 TradingView 预置 studies，并给出是否隐藏成交量副图。
- * 指标参数与策略中心文案一致：EMA(20)、BB(20,2)、ATR(14)、RSI(14)、MACD(12,26,9)。
+ * 仅包含 {@link STRATEGY_CHART_TV_EMBED_SUPPORTED_IDS}；SuperTrend 在免费嵌入中不可用，勿加入 `studies`。
  */
 export function tradingViewStudiesFromChartIndicators(
   ids: readonly StrategyChartIndicatorId[] | undefined,

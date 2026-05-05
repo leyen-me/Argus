@@ -12,14 +12,35 @@ import { TitleBar } from "@/components/app/title-bar";
 import { ARGUS_PROMPT_STRATEGY_SYNC } from "@/components/prompt-strategy-select";
 import { initArgusApp } from "./argus-renderer";
 
+const RIGHT_PANEL_COLLAPSED_KEY = "argus.ui.rightPanelCollapsed";
+
+function readStoredRightPanelCollapsed(): boolean {
+  try {
+    const v = window.localStorage.getItem(RIGHT_PANEL_COLLAPSED_KEY);
+    if (v === "1" || v === "true") return true;
+    if (v === "0" || v === "false") return false;
+  } catch {
+    /* private mode / quota */
+  }
+  return false;
+}
+
 export default function App() {
   /** `null`：尚未收到配置同步；`0`：已同步且无策略；`>0`：已有策略 */
   const [strategyOptionCount, setStrategyOptionCount] = useState<number | null>(null);
-  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(readStoredRightPanelCollapsed);
 
   useEffect(() => {
     void initArgusApp();
   }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(RIGHT_PANEL_COLLAPSED_KEY, rightPanelCollapsed ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [rightPanelCollapsed]);
 
   useEffect(() => {
     const onSync = (e: Event) => {

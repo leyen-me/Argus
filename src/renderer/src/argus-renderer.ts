@@ -2987,11 +2987,11 @@ function setOkxSideTone(kind) {
   const el = document.getElementById("okx-position-side");
   if (!el) return;
   const map = {
-    long: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    short: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-    neutral: "border-border/70 bg-muted/40 text-foreground",
-    loading: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
-    danger: "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400",
+    long: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    short: "border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+    neutral: "border-border/70 bg-background/70 text-foreground",
+    loading: "border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+    danger: "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300",
   };
   el.className = `inline-flex items-center rounded-full border px-2.5 py-1 text-[12px] font-semibold ${map[kind] || map.neutral}`;
 }
@@ -3000,11 +3000,29 @@ function setOkxPnlTone(kind) {
   const el = document.getElementById("okx-position-upl");
   if (!el) return;
   const map = {
-    positive: "text-[15px] font-semibold text-emerald-600 dark:text-emerald-400",
-    negative: "text-[15px] font-semibold text-rose-600 dark:text-rose-400",
-    neutral: "text-[15px] font-semibold text-foreground",
+    positive: "mt-1 text-4xl leading-none font-semibold tracking-tight text-emerald-700 dark:text-emerald-300",
+    negative: "mt-1 text-4xl leading-none font-semibold tracking-tight text-rose-700 dark:text-rose-300",
+    neutral: "mt-1 text-4xl leading-none font-semibold tracking-tight text-foreground",
   };
   el.className = map[kind] || map.neutral;
+}
+
+function setOkxHeroTone(kind) {
+  const shell = document.getElementById("okx-position-shell");
+  if (!shell) return;
+  const map = {
+    long:
+      "rounded-2xl border px-4 py-4 text-xs text-foreground shadow-md bg-card border-emerald-500/30",
+    short:
+      "rounded-2xl border px-4 py-4 text-xs text-foreground shadow-md bg-card border-rose-500/30",
+    neutral:
+      "rounded-2xl border px-4 py-4 text-xs text-foreground shadow-md bg-card border-border/80",
+    loading:
+      "rounded-2xl border px-4 py-4 text-xs text-foreground shadow-md bg-card border-sky-500/30",
+    danger:
+      "rounded-2xl border px-4 py-4 text-xs text-foreground shadow-md bg-card border-red-500/30",
+  };
+  shell.className = map[kind] || map.neutral;
 }
 
 function summarizePlainOrders(plain) {
@@ -3047,6 +3065,16 @@ function formatAlgoSummaryLine(row) {
   return parts.join(" / ");
 }
 
+function pickAlgoTriggerValue(algo, key) {
+  const list = Array.isArray(algo) ? algo : [];
+  for (const row of list) {
+    if (!row || typeof row !== "object") continue;
+    const raw = row[key];
+    if (raw != null && String(raw).trim() !== "") return String(raw).trim();
+  }
+  return "";
+}
+
 function summarizeAlgoOrders(algo) {
   const list = Array.isArray(algo) ? algo : [];
   if (list.length === 0) return "0 笔";
@@ -3067,23 +3095,32 @@ function renderOkxPositionSnapshot(
   const instText = r?.fields?.instId || r?.instId || fallbackSymbol;
   const pendingOrders = Array.isArray(r?.pending_orders) ? r.pending_orders : [];
   const pendingAlgoOrders = Array.isArray(r?.pending_algo_orders) ? r.pending_algo_orders : [];
+  const tpValue = pickAlgoTriggerValue(pendingAlgoOrders, "tpTriggerPx");
+  const slValue = pickAlgoTriggerValue(pendingAlgoOrders, "slTriggerPx");
 
+  setOkxHeroTone("neutral");
   setOkxPanelText("okx-position-mode", modeText);
   setOkxPanelText("okx-position-symbol", instText || fallbackSymbol || "—");
   setOkxPanelText("okx-position-source", sourceText);
+  setOkxPanelText("okx-position-status-copy", "等待同步");
   setOkxPanelText("okx-position-size", "—");
   setOkxPanelText("okx-position-upl", "—");
   setOkxPanelText("okx-position-entry", "—");
   setOkxPanelText("okx-position-mark", "—");
+  setOkxPanelText("okx-position-tp", tpValue || "未设");
+  setOkxPanelText("okx-position-sl", slValue || "未设");
   setOkxPanelText("okx-position-orders", summarizePlainOrders(pendingOrders));
+  setOkxPanelText("okx-position-orders-sub", pendingOrders.length > 0 ? "悬浮查看挂单详情" : "当前无普通挂单");
   setOkxPanelText("okx-position-algos", summarizeAlgoOrders(pendingAlgoOrders));
   setOkxPanelTitle("okx-position-orders", formatPlainOrdersTooltip(pendingOrders));
   setOkxPanelTitle("okx-position-algos", pendingAlgoOrders.map(formatOneAlgoPendingBrief).filter(Boolean).join("\n"));
   setOkxPnlTone("neutral");
 
   if (!r) {
+    setOkxHeroTone("neutral");
     setOkxSideTone("neutral");
     setOkxPanelText("okx-position-side", "—");
+    setOkxPanelText("okx-position-status-copy", "暂无数据");
     setOkxPanelText("okx-position-text", options.footnote || "暂无 OKX 数据");
     bar.title = typeof options.titlePayload === "string" ? options.titlePayload : "暂无 OKX 数据";
     return;
@@ -3095,16 +3132,20 @@ function renderOkxPositionSnapshot(
   }
 
   if (r.skipped && r.reason === "okx_swap_disabled") {
+    setOkxHeroTone("neutral");
     setOkxSideTone("neutral");
     setOkxPanelText("okx-position-side", "未启用");
+    setOkxPanelText("okx-position-status-copy", "未启用");
     setOkxPanelText("okx-position-text", options.footnote || "未启用 OKX 永续下单；在配置中开启后可显示交易所持仓。");
     bar.title = "OKX 永续未启用";
     return;
   }
 
   if (r.ok === false) {
+    setOkxHeroTone("danger");
     setOkxSideTone("danger");
     setOkxPanelText("okx-position-side", "异常");
+    setOkxPanelText("okx-position-status-copy", "查询失败");
     setOkxPanelText("okx-position-text", options.footnote || r.message || "查询失败");
     bar.title = typeof options.titlePayload === "string" ? options.titlePayload : JSON.stringify(options.titlePayload ?? r, null, 2);
     return;
@@ -3112,9 +3153,14 @@ function renderOkxPositionSnapshot(
 
   const f = r.fields;
   if (!r.hasPosition || !f) {
+    setOkxHeroTone("neutral");
     setOkxSideTone("neutral");
     setOkxPanelText("okx-position-side", "空仓");
+    setOkxPanelText("okx-position-status-copy", "当前空仓");
     setOkxPanelText("okx-position-size", "0 张");
+    setOkxPanelText("okx-position-upl", "0");
+    setOkxPanelText("okx-position-entry", "—");
+    setOkxPanelText("okx-position-mark", "—");
     setOkxPanelText("okx-position-text", options.footnote || formatOkxPositionLine(r));
     bar.title = JSON.stringify(options.titlePayload ?? { position: r?.fields ?? null, pending_orders: pendingOrders, pending_algo_orders: pendingAlgoOrders }, null, 2);
     return;
@@ -3122,8 +3168,10 @@ function renderOkxPositionSnapshot(
 
   const isLong = Number(r.posNum) > 0;
   const isShort = Number(r.posNum) < 0;
+  setOkxHeroTone(isLong ? "long" : isShort ? "short" : "neutral");
   setOkxSideTone(isLong ? "long" : isShort ? "short" : "neutral");
   setOkxPanelText("okx-position-side", isLong ? "多头" : isShort ? "空头" : "持仓");
+  setOkxPanelText("okx-position-status-copy", isLong ? "Long Exposure" : isShort ? "Short Exposure" : "Position Open");
   setOkxPanelText("okx-position-size", `${formatCompactValue(f.pos ?? r.absContracts)} 张`);
   setOkxPanelText("okx-position-upl", formatCompactValue(f.upl, { signed: true }));
   setOkxPanelText("okx-position-entry", formatCompactValue(f.avgPx));
@@ -3157,6 +3205,7 @@ async function refreshOkxPositionBar() {
     return;
   }
   bar.hidden = false;
+  setOkxHeroTone("loading");
   if (!window.argus || typeof window.argus.getOkxSwapPosition !== "function") {
     renderOkxPositionSnapshot(null, {
       sourceText: "实时查询",
@@ -3171,11 +3220,15 @@ async function refreshOkxPositionBar() {
   setOkxSideTone("loading");
   setOkxPnlTone("neutral");
   setOkxPanelText("okx-position-side", "查询中");
+  setOkxPanelText("okx-position-status-copy", "同步中");
   setOkxPanelText("okx-position-size", "—");
   setOkxPanelText("okx-position-upl", "—");
   setOkxPanelText("okx-position-entry", "—");
   setOkxPanelText("okx-position-mark", "—");
+  setOkxPanelText("okx-position-tp", "—");
+  setOkxPanelText("okx-position-sl", "—");
   setOkxPanelText("okx-position-orders", "—");
+  setOkxPanelText("okx-position-orders-sub", "正在加载挂单…");
   setOkxPanelText("okx-position-algos", "—");
   setOkxPanelTitle("okx-position-orders", "");
   setOkxPanelTitle("okx-position-algos", "");

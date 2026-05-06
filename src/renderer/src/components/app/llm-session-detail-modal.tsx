@@ -212,14 +212,15 @@ function SecondarySection({
   tone?: "muted" | "reasoning";
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const preview = text.trim().split("\n").find(Boolean) || "暂无内容";
 
   return (
     <div
       className={cn(
-        "rounded-2xl border px-3.5 py-3",
+        "group/secondary rounded-2xl border px-3.5 py-3 transition-colors",
         tone === "reasoning"
-          ? "border-chart-4/20 bg-chart-4/6"
-          : "border-border/70 bg-muted/25",
+          ? "border-chart-4/20 bg-chart-4/6 hover:bg-chart-4/10"
+          : "border-border/70 bg-muted/22 hover:bg-muted/35",
       )}
     >
       <div className="flex items-center justify-between gap-2">
@@ -232,7 +233,10 @@ function SecondarySection({
           <span>{title}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <CopyTextButton text={text} className="h-6 px-2 text-[10px]" />
+          <CopyTextButton
+            text={text}
+            className="h-6 px-2 text-[10px] opacity-0 transition-opacity group-hover/secondary:opacity-100 focus-visible:opacity-100"
+          />
           <Button
             type="button"
             variant="ghost"
@@ -250,7 +254,9 @@ function SecondarySection({
         <pre className="mt-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground">
           {text}
         </pre>
-      ) : null}
+      ) : (
+        <p className="mt-2 line-clamp-1 text-[12px] leading-relaxed text-muted-foreground">{preview}</p>
+      )}
     </div>
   );
 }
@@ -309,8 +315,61 @@ function MessageTextBlock({
   }
 
   return (
-    <div className={cn(bubble && "rounded-[22px] border border-border/70 bg-muted/45 px-4 py-3")}>
+    <div
+      className={cn(
+        bubble &&
+          "rounded-[22px] border border-primary/15 bg-primary/8 px-4 py-3 shadow-sm",
+      )}
+    >
       <pre className="font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground">{text}</pre>
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="mx-auto flex max-w-[720px] flex-col gap-5 pt-2" aria-label="加载会话明细">
+      <div className="flex justify-end">
+        <div className="h-16 w-[52%] animate-pulse rounded-[22px] bg-muted/45" />
+      </div>
+      <div className="flex gap-3">
+        <div className="size-7 animate-pulse rounded-full bg-muted/60" />
+        <div className="flex-1 space-y-3">
+          <div className="h-4 w-24 animate-pulse rounded bg-muted/60" />
+          <div className="space-y-2">
+            <div className="h-3.5 w-full animate-pulse rounded bg-muted/45" />
+            <div className="h-3.5 w-[92%] animate-pulse rounded bg-muted/45" />
+            <div className="h-3.5 w-[68%] animate-pulse rounded bg-muted/45" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusState({ tone, message }: { tone: "empty" | "error"; message: string }) {
+  return (
+    <div className="flex h-full min-h-[260px] items-center justify-center px-4">
+      <div
+        className={cn(
+          "w-full max-w-sm rounded-3xl border px-5 py-6 text-center shadow-sm",
+          tone === "error"
+            ? "border-destructive/25 bg-destructive/6 text-destructive"
+            : "border-border/70 bg-background/80 text-muted-foreground",
+        )}
+      >
+        <div
+          className={cn(
+            "mx-auto mb-3 flex size-10 items-center justify-center rounded-full border",
+            tone === "error"
+              ? "border-destructive/25 bg-destructive/8"
+              : "border-border/70 bg-muted/35",
+          )}
+        >
+          <MessageSquareText className="size-4" aria-hidden />
+        </div>
+        <p className="m-0 text-sm font-medium">{message}</p>
+      </div>
     </div>
   );
 }
@@ -328,7 +387,7 @@ function MessageRowContent({ msg }: { msg: AgentSessionMessage }) {
       <div className="space-y-4">
         {mainText ? (
           <div className="space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
               <div className="text-[11px] text-muted-foreground">回答</div>
               <CopyTextButton text={mainText} className="h-6 px-2 text-[10px]" />
             </div>
@@ -346,7 +405,7 @@ function MessageRowContent({ msg }: { msg: AgentSessionMessage }) {
 
   return (
     <div className="space-y-2.5">
-      <div className="flex justify-end">
+      <div className="flex justify-end opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100">
         <CopyTextButton text={bodyText} className="h-6 px-2 text-[10px]" />
       </div>
       {collapse ? (
@@ -370,7 +429,7 @@ function SessionDetailRowView({
   if (row.kind === "chart") {
     return (
       <div className="flex justify-start" role="listitem">
-        <div className="w-full max-w-[78%] space-y-2 rounded-3xl border border-border/75 bg-muted/22 px-4 py-3">
+        <div className="w-full max-w-[78%] space-y-2 rounded-3xl border border-border/75 bg-background/75 px-4 py-3 shadow-sm transition-colors hover:bg-background">
           <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
             <ImageIcon className="size-3.5" aria-hidden />
             <span>图表附件</span>
@@ -419,7 +478,10 @@ function SessionDetailRowView({
   const isAssistant = role === "assistant";
   const roleKey = sanitizeSessionMsgRoleClass(msg.role);
   return (
-    <div className={cn("flex", meta.align === "end" ? "justify-end" : "justify-start")} role="listitem">
+    <div
+      className={cn("group/message flex", meta.align === "end" ? "justify-end" : "justify-start")}
+      role="listitem"
+    >
       <div
         className={cn(
           "w-full",
@@ -434,7 +496,7 @@ function SessionDetailRowView({
         >
           {meta.align === "start" ? (
             <>
-              <span className="flex size-6 items-center justify-center rounded-full border border-border/70 bg-muted/35">
+              <span className="flex size-6 items-center justify-center rounded-full border border-border/70 bg-background shadow-sm">
                 {meta.icon}
               </span>
               <span className="font-medium">{meta.label}</span>
@@ -444,7 +506,7 @@ function SessionDetailRowView({
             <>
               <span className="opacity-70">{seq ? seq.slice(3) : roleKey}</span>
               <span className="font-medium">{meta.label}</span>
-              <span className="flex size-6 items-center justify-center rounded-full border border-primary/20 bg-primary/8 text-primary">
+              <span className="flex size-6 items-center justify-center rounded-full border border-primary/20 bg-primary/8 text-primary shadow-sm">
                 {meta.icon}
               </span>
             </>
@@ -455,7 +517,7 @@ function SessionDetailRowView({
             isAssistant && "pl-8",
             !isAssistant &&
               !isUser &&
-              "rounded-3xl border border-border/70 bg-muted/22 px-4 py-3",
+              "rounded-3xl border border-border/70 bg-background/70 px-4 py-3 shadow-sm",
           )}
         >
           <MessageRowContent msg={msg} />
@@ -586,7 +648,7 @@ export function LlmSessionDetailModal() {
         forceMount
         data-argus-llm-session-detail=""
         className={cn(
-          "flex h-[min(88vh,780px)] w-[min(820px,calc(100%-2rem))] flex-col gap-0 overflow-hidden rounded-[28px] p-0 sm:max-w-[820px]",
+          "flex h-[min(88vh,780px)] w-[min(820px,calc(100%-2rem))] flex-col gap-0 overflow-hidden rounded-[28px] bg-background p-0 shadow-2xl ring-1 ring-foreground/10 sm:max-w-[820px]",
         )}
       >
         <DialogHeader className="shrink-0 space-y-0 border-b border-border/70 bg-background/96 px-5 py-4 text-left supports-backdrop-filter:backdrop-blur">
@@ -605,7 +667,7 @@ export function LlmSessionDetailModal() {
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="shrink-0 text-muted-foreground hover:text-foreground"
+                className="shrink-0 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
                 aria-label="关闭"
               >
                 <XIcon className="size-4" />
@@ -624,11 +686,11 @@ export function LlmSessionDetailModal() {
           ) : null}
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 bg-muted/18 px-5 py-4">
+        <div className="min-h-0 flex-1 bg-linear-to-b from-background via-background to-muted/25 px-5 py-4">
           {loading ? (
-            <p className="m-0 text-sm text-muted-foreground">加载中…</p>
+            <LoadingState />
           ) : error ? (
-            <p className="m-0 text-sm text-destructive">{error}</p>
+            <StatusState tone="error" message={error} />
           ) : (
             <ScrollArea className="h-[min(60vh,620px)] pr-3 md:h-[min(64vh,660px)]">
               <div className="mx-auto flex max-w-[720px] flex-col gap-5 pb-3 pt-1" role="list" aria-label="多轮消息">

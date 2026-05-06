@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy, ImageIcon, MessageSquareText, XIcon } from "lucide-react";
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  ImageIcon,
+  MessageSquareText,
+  UserRound,
+  Wrench,
+  XIcon,
+} from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -190,16 +200,119 @@ function CollapsiblePlainText({ text, label }: { text: string; label: string }) 
   );
 }
 
-function roleCardClass(role: string | undefined): string {
+function SecondarySection({
+  title,
+  text,
+  defaultOpen = false,
+  tone = "muted",
+}: {
+  title: string;
+  text: string;
+  defaultOpen?: boolean;
+  tone?: "muted" | "reasoning";
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border px-3.5 py-3",
+        tone === "reasoning"
+          ? "border-chart-4/20 bg-chart-4/6"
+          : "border-border/70 bg-muted/25",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+          {tone === "reasoning" ? (
+            <MessageSquareText className="size-3.5" aria-hidden />
+          ) : (
+            <Wrench className="size-3.5" aria-hidden />
+          )}
+          <span>{title}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <CopyTextButton text={text} className="h-6 px-2 text-[10px]" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="h-6 px-1.5 text-[10px] text-muted-foreground"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? <ChevronUp className="size-3.5" aria-hidden /> : <ChevronDown className="size-3.5" aria-hidden />}
+            {open ? "收起" : "展开"}
+          </Button>
+        </div>
+      </div>
+      {open ? (
+        <pre className="mt-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground">
+          {text}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
+function roleMeta(role: string | undefined): {
+  label: string;
+  icon: React.ReactNode;
+  align: "start" | "end";
+} {
   const r = String(role || "").toLowerCase();
-  if (r === "user")
-    return "border-primary/22 bg-primary/[0.06] shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--primary)_12%,transparent)]";
-  if (r === "assistant")
-    return "border-chart-2/28 bg-chart-2/[0.06] shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--chart-2)_10%,transparent)]";
-  if (r === "system")
-    return "border-chart-3/25 bg-muted/35 shadow-[inset_0_1px_0_0_color-mix(in_oklch,var(--border)_35%,transparent)]";
-  if (r === "tool") return "border-chart-4/28 bg-chart-4/[0.07]";
-  return "border-border/80 bg-muted/25";
+  if (r === "user") {
+    return {
+      label: "你",
+      icon: <UserRound className="size-3.5" aria-hidden />,
+      align: "end",
+    };
+  }
+  if (r === "assistant") {
+    return {
+      label: "Argus",
+      icon: <Bot className="size-3.5" aria-hidden />,
+      align: "start",
+    };
+  }
+  if (r === "tool") {
+    return {
+      label: "工具",
+      icon: <Wrench className="size-3.5" aria-hidden />,
+      align: "start",
+    };
+  }
+  return {
+    label: String(role || "system"),
+    icon: <MessageSquareText className="size-3.5" aria-hidden />,
+    align: "start",
+  };
+}
+
+function MessageTextBlock({
+  text,
+  markdown = false,
+  bubble = false,
+}: {
+  text: string;
+  markdown?: boolean;
+  bubble?: boolean;
+}) {
+  if (markdown) {
+    return (
+      <div className={cn("min-w-0", bubble && "rounded-[22px] bg-muted/55 px-4 py-3")}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={sessionMarkdownComponents}>
+          {text}
+        </ReactMarkdown>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn(bubble && "rounded-[22px] border border-border/70 bg-muted/45 px-4 py-3")}>
+      <pre className="font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground">{text}</pre>
+    </div>
+  );
 }
 
 function MessageRowContent({ msg }: { msg: AgentSessionMessage }) {
@@ -212,30 +325,17 @@ function MessageRowContent({ msg }: { msg: AgentSessionMessage }) {
     const mainText = formatAssistantSessionMainText(msg);
     const toolText = JSON.stringify(toolCalls, null, 2);
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         {mainText ? (
-          <div className="space-y-2">
-            <div className="flex justify-end">
-              <CopyTextButton text={mainText} />
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[11px] text-muted-foreground">回答</div>
+              <CopyTextButton text={mainText} className="h-6 px-2 text-[10px]" />
             </div>
-            <div className="rounded-lg border border-border/60 bg-background/60 px-3 py-2.5">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={sessionMarkdownComponents}>
-                {mainText}
-              </ReactMarkdown>
-            </div>
+            <MessageTextBlock text={mainText} markdown />
           </div>
         ) : null}
-        <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-3 py-2.5">
-          <div className="mb-2 text-[10px] font-bold tracking-[0.12em] text-muted-foreground uppercase">
-            工具调用
-          </div>
-          <div className="flex justify-end">
-            <CopyTextButton text={toolText} />
-          </div>
-          <pre className="mt-1 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground">
-            {toolText}
-          </pre>
-        </div>
+        <SecondarySection title="工具调用" text={toolText} />
       </div>
     );
   }
@@ -245,20 +345,16 @@ function MessageRowContent({ msg }: { msg: AgentSessionMessage }) {
   const useMarkdown = isAssistant && !hasToolCalls && bodyText !== "（空）";
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       <div className="flex justify-end">
-        <CopyTextButton text={bodyText} />
+        <CopyTextButton text={bodyText} className="h-6 px-2 text-[10px]" />
       </div>
       {collapse ? (
         <CollapsiblePlainText text={bodyText} label="全文" />
       ) : useMarkdown ? (
-        <div className="rounded-lg border border-border/60 bg-background/60 px-3 py-2.5">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={sessionMarkdownComponents}>
-            {bodyText}
-          </ReactMarkdown>
-        </div>
+        <MessageTextBlock text={bodyText} markdown />
       ) : (
-        <pre className="font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground">{bodyText}</pre>
+        <MessageTextBlock text={bodyText} bubble={role === "user"} />
       )}
     </div>
   );
@@ -273,84 +369,98 @@ function SessionDetailRowView({
 }) {
   if (row.kind === "chart") {
     return (
-      <div
-        className="rounded-xl border border-border/80 bg-card/80 p-3 shadow-sm"
-        role="listitem"
-      >
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-[10px] font-extrabold tracking-[0.14em] text-muted-foreground uppercase">
-            chart
-          </span>
-          <Badge variant="outline" className="h-5 text-[10px] font-normal">
-            收盘截图
-          </Badge>
-        </div>
-        <button
-          type="button"
-          className="group relative w-full max-w-[260px] overflow-hidden rounded-lg border border-border/80 bg-muted/20 text-left ring-1 ring-transparent transition hover:ring-primary/25"
-          title="放大查看本轮截图"
-          aria-label="放大预览图表截图"
-          onClick={() => onOpenChart(row.dataUrl)}
-        >
-          <img
-            src={row.dataUrl}
-            alt="本轮 K 线收盘时的图表截图"
-            className="max-h-[140px] w-full object-contain"
-            decoding="async"
-          />
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/0 opacity-0 transition group-hover:bg-background/35 group-hover:opacity-100">
-            <span className="flex items-center gap-1 rounded-full bg-background/90 px-2.5 py-1 text-[10px] font-semibold shadow-sm ring-1 ring-border/70">
-              <ImageIcon className="size-3 opacity-80" aria-hidden />
-              预览
+      <div className="flex justify-start" role="listitem">
+        <div className="w-full max-w-[78%] space-y-2 rounded-3xl border border-border/75 bg-muted/22 px-4 py-3">
+          <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+            <ImageIcon className="size-3.5" aria-hidden />
+            <span>图表附件</span>
+            <span className="text-[10px] opacity-70">本轮收盘截图</span>
+          </div>
+          <button
+            type="button"
+            className="group relative w-full max-w-[320px] overflow-hidden rounded-2xl border border-border/70 bg-background/70 text-left ring-1 ring-transparent transition hover:ring-primary/25"
+            title="放大查看本轮截图"
+            aria-label="放大预览图表截图"
+            onClick={() => onOpenChart(row.dataUrl)}
+          >
+            <img
+              src={row.dataUrl}
+              alt="本轮 K 线收盘时的图表截图"
+              className="max-h-[180px] w-full object-contain"
+              decoding="async"
+            />
+            <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/0 opacity-0 transition group-hover:bg-background/35 group-hover:opacity-100">
+              <span className="flex items-center gap-1 rounded-full bg-background/90 px-2.5 py-1 text-[10px] font-semibold shadow-sm ring-1 ring-border/70">
+                <ImageIcon className="size-3 opacity-80" aria-hidden />
+                预览
+              </span>
             </span>
-          </span>
-        </button>
+          </button>
+        </div>
       </div>
     );
   }
 
   if (row.kind === "reasoning") {
     return (
-      <div
-        className="rounded-xl border border-chart-4/30 bg-chart-4/8 p-3 shadow-sm"
-        role="listitem"
-      >
-        <div className="mb-2 text-[10px] font-extrabold tracking-[0.12em] text-chart-4 uppercase">
-          reasoning · 深度思考
+      <div className="flex justify-start" role="listitem">
+        <div className="w-full max-w-[78%]">
+          <SecondarySection title="深度思考" text={row.text} tone="reasoning" />
         </div>
-        <div className="flex justify-end">
-          <CopyTextButton text={row.text} />
-        </div>
-        <pre className="mt-1 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground">
-          {row.text}
-        </pre>
       </div>
     );
   }
 
   const { msg } = row;
   const seq = msg.seq != null ? ` · #${msg.seq}` : "";
+  const role = String(msg.role || "").toLowerCase();
+  const meta = roleMeta(msg.role);
+  const isUser = role === "user";
+  const isAssistant = role === "assistant";
   const roleKey = sanitizeSessionMsgRoleClass(msg.role);
   return (
-    <div
-      className={cn(
-        "rounded-xl border p-3 shadow-sm backdrop-blur-[2px]",
-        roleCardClass(msg.role),
-      )}
-      role="listitem"
-    >
-      <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[10px] font-extrabold tracking-[0.14em] text-muted-foreground uppercase">
-          {(msg.role || "?") + seq}
-        </span>
-        <Badge
-          variant="secondary"
-          className="h-5 text-[10px] font-medium text-muted-foreground capitalize"
+    <div className={cn("flex", meta.align === "end" ? "justify-end" : "justify-start")} role="listitem">
+      <div
+        className={cn(
+          "w-full",
+          isUser ? "max-w-[78%]" : isAssistant ? "max-w-none" : "max-w-[82%]",
+        )}
+      >
+        <div
+          className={cn(
+            "mb-2 flex items-center gap-2 text-[11px] text-muted-foreground",
+            meta.align === "end" && "justify-end",
+          )}
         >
-          {roleKey}
-        </Badge>
+          {meta.align === "start" ? (
+            <>
+              <span className="flex size-6 items-center justify-center rounded-full border border-border/70 bg-muted/35">
+                {meta.icon}
+              </span>
+              <span className="font-medium">{meta.label}</span>
+              <span className="opacity-70">{seq ? seq.slice(3) : roleKey}</span>
+            </>
+          ) : (
+            <>
+              <span className="opacity-70">{seq ? seq.slice(3) : roleKey}</span>
+              <span className="font-medium">{meta.label}</span>
+              <span className="flex size-6 items-center justify-center rounded-full border border-primary/20 bg-primary/8 text-primary">
+                {meta.icon}
+              </span>
+            </>
+          )}
+        </div>
+        <div
+          className={cn(
+            isAssistant && "pl-8",
+            !isAssistant &&
+              !isUser &&
+              "rounded-3xl border border-border/70 bg-muted/22 px-4 py-3",
+          )}
+        >
+          <MessageRowContent msg={msg} />
+        </div>
       </div>
-      <MessageRowContent msg={msg} />
     </div>
   );
 }
@@ -476,18 +586,18 @@ export function LlmSessionDetailModal() {
         forceMount
         data-argus-llm-session-detail=""
         className={cn(
-          "flex h-[min(88vh,760px)] w-[min(640px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[640px]",
+          "flex h-[min(88vh,780px)] w-[min(820px,calc(100%-2rem))] flex-col gap-0 overflow-hidden rounded-[28px] p-0 sm:max-w-[820px]",
         )}
       >
-        <DialogHeader className="shrink-0 space-y-0 border-b border-border px-5 py-4 text-left">
+        <DialogHeader className="shrink-0 space-y-0 border-b border-border/70 bg-background/96 px-5 py-4 text-left supports-backdrop-filter:backdrop-blur">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 flex-1 items-start gap-2.5">
-              <div className="mt-1 flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-muted/40">
-                <MessageSquareText className="size-4 opacity-80" aria-hidden />
+              <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-border/75 bg-muted/35">
+                <MessageSquareText className="size-4 opacity-75" aria-hidden />
               </div>
-              <div className="min-w-0 flex-1 space-y-1">
-                <DialogTitle className="text-base font-semibold">Agent 会话明细</DialogTitle>
-                <p className="truncate text-lg font-semibold tracking-tight text-foreground">{headline}</p>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <DialogTitle className="text-sm font-medium text-muted-foreground">会话明细</DialogTitle>
+                <p className="truncate text-[17px] font-semibold tracking-tight text-foreground">{headline}</p>
               </div>
             </div>
             <DialogClose asChild>
@@ -506,32 +616,22 @@ export function LlmSessionDetailModal() {
             查看本轮收盘 Agent 多轮对话、工具调用与图表截图
           </DialogDescription>
           {!loading && !error && messageCount > 0 ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="font-normal">
-                {messageCount} 条消息
-              </Badge>
-              {chartUrl ? (
-                <Badge variant="secondary" className="font-normal">
-                  含图表
-                </Badge>
-              ) : null}
-              {reasoningText.trim() ? (
-                <Badge variant="secondary" className="border-chart-4/25 bg-chart-4/10 font-normal text-chart-4">
-                  含推理
-                </Badge>
-              ) : null}
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              <span>{messageCount} 条消息</span>
+              {chartUrl ? <span>含图表附件</span> : null}
+              {reasoningText.trim() ? <span>含推理记录</span> : null}
             </div>
           ) : null}
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 px-5 py-4">
+        <div className="min-h-0 flex-1 bg-muted/18 px-5 py-4">
           {loading ? (
             <p className="m-0 text-sm text-muted-foreground">加载中…</p>
           ) : error ? (
             <p className="m-0 text-sm text-destructive">{error}</p>
           ) : (
-            <ScrollArea className="h-[min(56vh,560px)] pr-3 md:h-[min(60vh,600px)]">
-              <div className="flex flex-col gap-3 pb-2" role="list" aria-label="多轮消息">
+            <ScrollArea className="h-[min(60vh,620px)] pr-3 md:h-[min(64vh,660px)]">
+              <div className="mx-auto flex max-w-[720px] flex-col gap-5 pb-3 pt-1" role="list" aria-label="多轮消息">
                 {rows.map((row, i) => (
                   <SessionDetailRowView key={`${row.kind}-${i}`} row={row} onOpenChart={onOpenChart} />
                 ))}

@@ -6,6 +6,7 @@ import { tradingViewStudiesFromChartIndicators } from "@shared/tradingview-chart
 import { formatPromptStrategyDisplayLabel } from "@shared/prompt-strategy-display-label";
 
 const DEFAULT_STRATEGY_CHART_INDICATORS: StrategyChartIndicatorId[] = ["EM20"];
+const TV_LAYOUT_RERENDER_MIN_DELTA_PX = 24;
 const MULTI_TIMEFRAME_SPECS = [
   {
     interval: "1D",
@@ -144,9 +145,18 @@ function initTradingViewAutoLayout() {
     if (width <= 0 || height <= 0) return;
     const hadStableSize = lastWidth > 0 && lastHeight > 0;
     if (width === lastWidth && height === lastHeight) return;
+    const widthDelta = Math.abs(width - lastWidth);
+    const heightDelta = Math.abs(height - lastHeight);
     lastWidth = width;
     lastHeight = height;
     if (!hadStableSize) return;
+    // 忽略 Dialog 开关/滚动条补偿带来的轻微尺寸抖动，避免无意义地整组重建 TradingView。
+    if (
+      widthDelta < TV_LAYOUT_RERENDER_MIN_DELTA_PX &&
+      heightDelta < TV_LAYOUT_RERENDER_MIN_DELTA_PX
+    ) {
+      return;
+    }
     if (tvWidgets.size === 0) return;
     scheduleTradingViewWidget(lastTvWidgetRequest.symbol, lastTvWidgetRequest.interval, { debounceMs: 160 });
   });

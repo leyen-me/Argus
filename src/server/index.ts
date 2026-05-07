@@ -222,6 +222,7 @@ function createApp(distDir: string | undefined) {
 
 function main() {
   const PORT = Number(process.env.PORT || 8787);
+  const HOST = process.env.HOST || "0.0.0.0";
   const distDir = path.join(__dirname, "..", "..", "dist", "renderer");
 
   const app = createApp(distDir);
@@ -250,8 +251,8 @@ function main() {
     });
   });
 
-  server.listen(PORT, async () => {
-    console.info(`[Argus server] listening http://127.0.0.1:${PORT}`);
+  server.listen(PORT, HOST, async () => {
+    console.info(`[Argus server] listening http://${HOST}:${PORT}`);
     const cfg = loadAppConfig();
     await routeMarket(cfg, cfg.defaultSymbol);
     startBackgroundEquitySampler();

@@ -4,7 +4,7 @@ import {
   canonTradingViewInterval,
   intervalsForTradingViewChartGrid,
   sortMultiTimeframeSpecsSmallestFirst,
-  STRATEGY_CHART_LAYOUT_INTERVALS_DESC,
+  STRATEGY_DECISION_INTERVAL_TV,
   STRATEGY_DEFAULT_MARKET_TIMEFRAMES,
 } from "@shared/strategy-fields";
 import type { StrategyChartIndicatorId, StrategyDecisionIntervalTv } from "@shared/strategy-fields";
@@ -34,7 +34,7 @@ const TV_CHART_EMBED_BY_IV: Record<StrategyDecisionIntervalTv, TvEmbedChartSpec>
 };
 
 /** 卸载 widget 时需清空的所有可能容器（含当前策略未勾选的格子）。 */
-const ALL_TV_EMBED_CONTAINER_SPECS = STRATEGY_CHART_LAYOUT_INTERVALS_DESC.map(
+const ALL_TV_EMBED_CONTAINER_SPECS = STRATEGY_DECISION_INTERVAL_TV.map(
   (iv) => TV_CHART_EMBED_BY_IV[iv],
 );
 
@@ -42,7 +42,7 @@ function tvSpecsForLayoutIntervals(layoutDesc: StrategyDecisionIntervalTv[]): Tv
   return layoutDesc.map((iv) => TV_CHART_EMBED_BY_IV[iv]).filter(Boolean);
 }
 
-/** 与当前策略「市场数据」勾选一致的可视化周期列表（大到小）；供 widget 挂载与截图。 */
+/** 与当前策略「市场数据」勾选一致的可视化周期列表（从小到大）；供 widget 挂载与截图。 */
 let rendererActiveTvSpecs = tvSpecsForLayoutIntervals(intervalsForTradingViewChartGrid(undefined));
 
 let tvWidgets = new Map();
@@ -379,7 +379,7 @@ type RendererAppConfig = typeof FALLBACK_APP_CONFIG;
 
 let rendererCfgSnapshotForTradingViewLayout: RendererAppConfig | null = null;
 
-/** 附图宫格展示的周期应与配置中当前策略的「市场数据」勾选一致（大到小已在 intervalsForTradingViewChartGrid 中体现）。 */
+/** 附图宫格展示的周期应与配置中当前策略的「市场数据」勾选一致（从小到大已在 intervalsForTradingViewChartGrid 中体现）。 */
 function refreshRendererTradingViewLayoutFromCfg(cfg: RendererAppConfig) {
   rendererCfgSnapshotForTradingViewLayout = cfg;
   const layout = intervalsForTradingViewChartGrid(cfg.promptStrategyMarketTimeframes);

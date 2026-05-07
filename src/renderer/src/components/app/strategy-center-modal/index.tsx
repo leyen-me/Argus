@@ -23,7 +23,6 @@ import {
 } from "@/lib/argus-strategy-modal-events";
 import { ARGUS_APP_CONFIG_CHANGED } from "@/lib/argus-config-modal-events";
 import {
-  STRATEGY_CHART_LAYOUT_INTERVALS_DESC,
   STRATEGY_CHART_TV_EMBED_SUPPORTED_IDS,
   STRATEGY_DECISION_INTERVAL_TV,
   STRATEGY_DEFAULT_MARKET_TIMEFRAMES,
@@ -595,12 +594,12 @@ export function StrategyCenterModal() {
                     <Label className="text-foreground">市场数据</Label>
                     <ConfigHelpTooltip className="size-6">
                       与「## 多周期上下文」及模型附图顺序一致，只投喂勾选的周期；左侧 TradingView
-                      亦只显示已勾选的格子（周期从大到小从左到右排列）。至多勾选{" "}
+                      亦只显示已勾选的格子（周期从小到大从左到右排列）。至多勾选{" "}
                       {MAX_STRATEGY_MARKET_TIMEFRAMES} 个（共 5 个周期可选）。
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {STRATEGY_CHART_LAYOUT_INTERVALS_DESC.map((id) => {
+                    {STRATEGY_DECISION_INTERVAL_TV.map((id) => {
                       const on = draftExtras.marketTimeframes.includes(id);
                       const atCap =
                         !on && draftExtras.marketTimeframes.length >= MAX_STRATEGY_MARKET_TIMEFRAMES;

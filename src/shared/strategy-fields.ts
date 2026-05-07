@@ -14,15 +14,6 @@ export const MAX_STRATEGY_MARKET_TIMEFRAMES = 4;
  */
 export const STRATEGY_DEFAULT_MARKET_TIMEFRAMES: readonly StrategyDecisionIntervalTv[] = ["5", "15", "60", "1D"];
 
-/** 左侧嵌入多图 DOM 顺序：周期从大到小、从左到右（先上排后下排）。 */
-export const STRATEGY_CHART_LAYOUT_INTERVALS_DESC: readonly StrategyDecisionIntervalTv[] = [
-  "1D",
-  "240",
-  "60",
-  "15",
-  "5",
-];
-
 /** 送入 LLM 的附图 / K 线多周期（小周期在前、大周期在后，与提示词 `## 多周期上下文` 一致）。 */
 export const MULTI_TIMEFRAME_CAPTURE_SPECS = [
   { interval: "5", label: "5m" },
@@ -204,17 +195,20 @@ export function normalizeStrategyMarketTimeframes(raw: unknown): StrategyDecisio
   return sortMultiTimeframeSpecsSmallestFirst(out.map((interval) => ({ interval }))).map((s) => s.interval as StrategyDecisionIntervalTv);
 }
 
-/** 在「周期从大到小」的固定次序中筛出已勾选项，供左侧附图宫格 DOM 顺序使用。 */
-export function sortMarketTimeframesForChartGridDesc(
+/**
+ * 在「周期从小到大」的固定次序中筛出已勾选项，供左侧附图宫格 DOM 顺序与策略中心「市场数据」按钮顺序使用。
+ * 次序与 {@link STRATEGY_DECISION_INTERVAL_TV} 一致。
+ */
+export function sortMarketTimeframesForChartGrid(
   selected: readonly StrategyDecisionIntervalTv[],
 ): StrategyDecisionIntervalTv[] {
   const set = new Set(selected);
-  return STRATEGY_CHART_LAYOUT_INTERVALS_DESC.filter((id) => set.has(id));
+  return STRATEGY_DECISION_INTERVAL_TV.filter((id) => set.has(id));
 }
 
-/** 从策略 `extras.marketTimeframes` 或配置字段推导左侧应挂载的附图周期序列（大到小）。 */
+/** 从策略 `extras.marketTimeframes` 或配置字段推导左侧应挂载的附图周期序列（从小到大）。 */
 export function intervalsForTradingViewChartGrid(marketTimeframesField: unknown): StrategyDecisionIntervalTv[] {
-  return sortMarketTimeframesForChartGridDesc(normalizeStrategyMarketTimeframes(marketTimeframesField));
+  return sortMarketTimeframesForChartGrid(normalizeStrategyMarketTimeframes(marketTimeframesField));
 }
 
 export function parseStrategyExtrasJson(raw: unknown): StrategyExtrasV1 {

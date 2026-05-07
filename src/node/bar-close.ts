@@ -47,6 +47,30 @@ type MultiTimeframeChartImage = {
 type PrimaryChartImage = { mimeType: string; base64: string; dataUrl: string };
 
 /**
+ * 历史仓位注入 LLM 时的下界：与仪表盘「启动策略」写入的会话起点对齐（优先 `strategyRuntimeById.startedAt`，其次仪表盘 `statsSince` / 首段 `startedAt`）。
+ * @returns 毫秒时间戳；无法解析则 `null`（此时 OKX 请求不按会话过滤，与旧行为一致）。
+ */
+function resolveStrategyPositionHistorySinceMs(cfg: AppConfig): number | null {
+  const id = typeof cfg.promptStrategy === "string" ? cfg.promptStrategy.trim() : "";
+  if (!id) return null;
+  const runRow = cfg.strategyRuntimeById[id];
+  const dashRow = cfg.dashboardStrategyRanges[id];
+  const candidates = [
+    runRow?.startedAt,
+    dashRow?.statsSince,
+    Array.isArray(dashRow?.segments) ? dashRow.segments[0]?.startedAt : undefined,
+  ];
+  for (const raw of candidates) {
+    if (typeof raw !== "string") continue;
+    const t = raw.trim();
+    if (!t) continue;
+    const ms = Date.parse(t);
+    if (Number.isFinite(ms)) return ms;
+  }
+  return null;
+}
+
+/**
  * 当前策略执行态是否允许收盘 Agent；若非 `running` 则返回跳过原因（与仪表盘统计会话独立）。
  */
 function describeBarCloseStrategyExecutionSkipReason(cfg: AppConfig): string | null {
@@ -162,11 +186,19 @@ function formatOkxPositionHistoryForPrompt(ph) {
     ].join("\n");
   }
   if (!ph.rows || ph.rows.length === 0) {
+    const sinceIso =
+      ph.sessionSinceMs != null && Number.isFinite(ph.sessionSinceMs)
+        ? new Date(ph.sessionSinceMs).toISOString()
+        : null;
+    const emptyHint =
+      sinceIso != null
+        ? `> **说明**：以下为自本轮策略在仪表盘「启动策略」以来（起算 UTC：\`${sinceIso}\`）的平仓记录；当前列表为空表示该时段内该合约无历史仓位（或尚无已结仓位）。`
+        : "> **说明**：数据来自 OKX `positions-history`；若为空，可能近约 3 个月该 `instId` 无记录。";
     return [
       "",
       "### 最近仓位历史",
       "",
-      "> **说明**：数据来自 OKX `positions-history`；若为空，可能近约 3 个月该 `instId` 无记录。",
+      emptyHint,
       "",
       "（无历史仓位行。）",
     ].join("\n");
@@ -197,11 +229,19 @@ function formatOkxPositionHistoryForPrompt(ph) {
       okxPosHistTimeIso(/** @type {string} */ (o.uTime)),
     ];
   });
+  const sinceIso =
+    ph.sessionSinceMs != null && Number.isFinite(ph.sessionSinceMs)
+      ? new Date(ph.sessionSinceMs).toISOString()
+      : null;
+  const tableHint =
+    sinceIso != null
+      ? `> **说明**：以下为自本轮策略在仪表盘「启动策略」以来（起算 UTC：\`${sinceIso}\`）的最近平仓记录（最多 10 条），来自 OKX positions-history，供你参考盈亏。`
+      : "> **说明**：最近最多 10 条历史平仓记录（OKX positions-history），供你参考盈亏；未绑定策略会话起点时可能包含更早的操作。";
   return [
     "",
     "### 最近仓位历史",
     "",
-    "> **说明**：最近交易的 10 条历史仓位记录，供你参考盈亏情况。",
+    tableHint,
     "",
     mdTable(OKX_POSITION_HISTORY_LLM_HEADERS, tableRows),
   ].join("\n");
@@ -499,6 +539,7 @@ async function emitBarClose(ctx) {
   };
 
   const convKey = conversationKey(ctx.tvSymbol, canonTradingViewInterval(ctx.interval));
+  const sessionSinceMs = resolveStrategyPositionHistorySinceMs(cfg);
   const [exchangeCtx, recentCandlesPack, positionsHistory, recentAgentMemories] = await Promise.all([
     getOkxExchangeContextForBar(cfg, ctx.tvSymbol, ctx.interval),
     Promise.all(
@@ -507,7 +548,7 @@ async function emitBarClose(ctx) {
         await fetchRecentCandlesForTv(ctx.tvSymbol, spec.interval, RECENT_CANDLES_FETCH_LIMIT),
       ]),
     ),
-    fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10),
+    fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10, sessionSinceMs),
     Promise.resolve(listRecentAgentMemories({ tvSymbol: ctx.tvSymbol, interval: ctx.interval, limit: 6 })),
   ]);
   const recentCandles = Object.fromEntries(recentCandlesPack);

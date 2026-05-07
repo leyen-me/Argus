@@ -2039,11 +2039,29 @@ async function aggregateSwapClosePositionStats(
 }
 
 /**
+ * 仅保留 `uTime`（无则 `cTime`）不早于 `sinceMs` 的历史仓位行；与 {@link aggregateSwapClosePositionStats} 的 `begin` 语义一致。
+ * @param {unknown[]} rows
+ * @param {number | null | undefined} sinceMs
+ */
+function filterSwapPositionHistoryRowsFromSinceMs(rows, sinceMs) {
+  if (!Array.isArray(rows)) return [];
+  if (sinceMs == null || !Number.isFinite(sinceMs) || sinceMs <= 0) return [...rows];
+  const out: OkxApiRow[] = [];
+  for (const row of rows) {
+    const t = swapPositionHistoryEffectiveTimeMs(row);
+    if (Number.isFinite(t) && t >= sinceMs) out.push(row as OkxApiRow);
+  }
+  return out;
+}
+
+/**
  * K 线收盘前：拉取该合约下 OKX 永续**历史仓位**（`GET /api/v5/account/positions-history`）最近最多 `maxRows` 条，
  * 供 LLM 了解近期该标的下的平仓/实现盈亏。非统计用途。官方数据约近 3 个月、按 uTime 倒序。
+ * 若传入 `sessionSinceMs`，请求会带 OKX `begin` 参数并再本地过滤，仅保留本轮策略会话内的记录。
  * @param {object} cfg
  * @param {string} tvSymbol
  * @param {number} [maxRows=10]
+ * @param {number | null} [sessionSinceMs] 仪表盘「启动策略」以来的 UTC 毫秒时间戳；`null`/无效则不按会话裁剪
  * @returns {Promise<{
  *   ok: true,
  *   skipped: true,
@@ -2052,13 +2070,19 @@ async function aggregateSwapClosePositionStats(
  *   ok: true,
  *   skipped: false,
  *   instId: string,
- *   rows: object[]
+ *   rows: object[],
+ *   sessionSinceMs: number | null
  * } | {
  *   ok: false,
  *   message: string
  * }>}
  */
-async function fetchRecentSwapPositionsHistoryForBar(cfg, tvSymbol, maxRows = 10) {
+async function fetchRecentSwapPositionsHistoryForBar(
+  cfg,
+  tvSymbol,
+  maxRows = 10,
+  sessionSinceMs: number | null = null,
+) {
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
     return { ok: true, skipped: true, reason: "okx_swap_disabled" };
   }
@@ -2077,15 +2101,19 @@ async function fetchRecentSwapPositionsHistoryForBar(cfg, tvSymbol, maxRows = 10
   }
   const n = Math.min(100, Math.max(1, Math.floor(maxRows)));
   const simulated = cfg.okxSimulated !== false;
+  const sinceOk = sessionSinceMs != null && Number.isFinite(sessionSinceMs) && sessionSinceMs > 0;
+  const sinceMsNorm = sinceOk ? Math.floor(/** @type {number} */ (sessionSinceMs)) : null;
   try {
     const client = createOkxClient({ apiKey, secretKey, passphrase, simulated });
     const q = new URLSearchParams({ instType: "SWAP", instId, limit: String(n) });
+    if (sinceMsNorm != null) q.set("begin", String(sinceMsNorm));
     const json = (await client.request("GET", `/api/v5/account/positions-history?${q.toString()}`, "")) as OkxApiRow;
     if (String(json?.code) !== "0") {
       return { ok: false, message: formatOkxErrorBody(json) };
     }
-    const rows = Array.isArray(json?.data) ? json.data : [];
-    return { ok: true, skipped: false, instId, rows };
+    const rawRows = Array.isArray(json?.data) ? json.data : [];
+    const rows = filterSwapPositionHistoryRowsFromSinceMs(rawRows, sinceMsNorm);
+    return { ok: true, skipped: false, instId, rows, sessionSinceMs: sinceMsNorm };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, message: msg };

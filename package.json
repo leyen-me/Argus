@@ -6,13 +6,11 @@
   "main": "src/server/index.ts",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild",
-      "better-sqlite3"
+      "esbuild"
     ]
   },
   "scripts": {
-    "postinstall": "tsx scripts/rebuild-sqlite.ts",
-    "rebuild:native": "tsx scripts/rebuild-sqlite.ts",
+    "db:generate": "drizzle-kit generate",
     "start": "tsx src/server/index.ts",
     "server": "tsx src/server/index.ts",
     "server:dev": "tsx src/server/index.ts",
@@ -27,7 +25,6 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.2",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
     "@types/nodemailer": "^8.0.0",
@@ -36,6 +33,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.7.0",
     "concurrently": "^9.2.1",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
@@ -47,12 +45,14 @@
     "vite": "^6.4.2"
   },
   "dependencies": {
-    "better-sqlite3": "^12.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "countup.js": "^2.10.0",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
     "lucide-react": "^1.8.0",
+    "mysql2": "^3.22.3",
     "nodemailer": "^6.9.16",
     "openai": "^6.34.0",
     "radix-ui": "^1.4.3",

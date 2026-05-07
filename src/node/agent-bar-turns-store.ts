@@ -1,14 +1,13 @@
 /**
  * 每根 K 线收盘 Agent：`agent_sessions`（会话元数据 + 图）+ `agent_session_messages`（有序 API 消息，便于排查）。
  */
-import { getDatabase } from "./local-db/index.js";
+import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
 
-type SqlRow = Record<string, unknown>;
+import { getDb } from "./db/client.js";
+import { agentSessionMessages, agentSessions } from "./db/schema.js";
 
 /**
  * 多模态 user 中的 data: 大图不落 messages 表，避免与 chart_png 重复；排查时对照 session 行。
- * @param {unknown} content
- * @returns {unknown}
  */
 function redactContentForStorage(content) {
   if (content == null) return null;
@@ -32,10 +31,6 @@ function redactContentForStorage(content) {
   });
 }
 
-/**
- * @param {unknown} content
- * @returns {"hold" | "open" | "close" | "amend" | null}
- */
 function extractAssistantDecision(content) {
   if (content == null) return null;
   let text = "";
@@ -56,10 +51,6 @@ function extractAssistantDecision(content) {
   return null;
 }
 
-/**
- * @param {unknown} m
- * @param {number} seq
- */
 function messageToRow(m, seq) {
   const msg = m && typeof m === "object" ? m : {};
   const role = String(/** @type {{ role?: string }} */ (msg).role || "");
@@ -86,32 +77,8 @@ function messageToRow(m, seq) {
   };
 }
 
-/**
- * @param {object} row
- * @param {string} row.barCloseId
- * @param {string} row.tvSymbol
- * @param {string} row.interval
- * @param {string} [row.periodLabel]
- * @param {string} row.capturedAt
- * @param {string} row.textForLlm
- * @param {string} row.llmUserFullText
- * @param {object | null} [row.exchangeContext]
- * @param {string | null} [row.chartMime]
- * @param {string | null} [row.chartBase64] 裸 base64，无 data: 前缀
- * @param {string | null} [row.chartCaptureError]
- * @param {string | null} [row.assistantText]
- * @param {string | null} [row.cardSummary] 二次 LLM 卡片短摘要
- * @param {unknown[] | null} [row.toolTrace]
- * @param {object | null} [row.exchangeAfter]
- * @param {boolean} [row.agentOk]
- * @param {string | null} [row.agentError]
- * @param {string | null} [row.systemPrompt] 当次请求使用的 system 全文快照
- * @param {unknown[] | null} [row.messagesOut] runTradingAgentTurn 返回的完整 messages 线程
- * @param {string | null} [row.assistantReasoningText] 首轮 completion 深度思考快照（可选）
- * @param {"hold" | "open" | "close" | "amend" | null} [row.assistantDecision]
- */
-function persistAgentBarTurn(row) {
-  const db = getDatabase();
+async function persistAgentBarTurn(row) {
+  const db = getDb();
   const encBefore = row.exchangeContext != null ? JSON.stringify(row.exchangeContext) : null;
   const encAfter = row.exchangeAfter != null ? JSON.stringify(row.exchangeAfter) : null;
   const encToolTrace = Array.isArray(row.toolTrace) ? JSON.stringify(row.toolTrace) : null;
@@ -133,92 +100,59 @@ function persistAgentBarTurn(row) {
   const messagesRaw = Array.isArray(row.messagesOut) ? row.messagesOut : [];
   const messageRows = messagesRaw.map((m, i) => messageToRow(m, i));
 
-  const insertSession = db.prepare(`
-    INSERT INTO agent_sessions (
-      bar_close_id, tv_symbol, interval, period_label, captured_at,
-      text_for_llm, llm_user_full_text, exchange_context_json,
-      chart_mime, chart_png, chart_capture_error,
-      assistant_text, card_summary, tool_trace_json, exchange_after_json, agent_ok, agent_error,
-      estimated_prompt_tokens, context_window_tokens, updated_at, system_prompt_text,
-      assistant_reasoning_text, assistant_decision
-    ) VALUES (
-      @bar_close_id, @tv_symbol, @interval, @period_label, @captured_at,
-      @text_for_llm, @llm_user_full_text, @exchange_context_json,
-      @chart_mime, @chart_png, @chart_capture_error,
-      @assistant_text, @card_summary, @tool_trace_json, @exchange_after_json, @agent_ok, @agent_error,
-      @estimated_prompt_tokens, @context_window_tokens, datetime('now'), @system_prompt_text,
-      @assistant_reasoning_text, @assistant_decision
-    )
-  `);
-  const insertMsg = db.prepare(`
-    INSERT INTO agent_session_messages (
-      bar_close_id, seq, role, content_json, tool_calls_json, tool_call_id, name, assistant_decision
-    ) VALUES (
-      @bar_close_id, @seq, @role, @content_json, @tool_calls_json, @tool_call_id, @name, @assistant_decision
-    )
-  `);
+  const updatedAt = new Date().toISOString();
 
-  const run = db.transaction(() => {
-    insertSession.run({
-      bar_close_id: barCloseId,
-      tv_symbol: String(row.tvSymbol || ""),
+  await db.transaction(async (tx) => {
+    await tx.insert(agentSessions).values({
+      barCloseId,
+      tvSymbol: String(row.tvSymbol || ""),
       interval: String(row.interval || ""),
-      period_label: String(row.periodLabel || ""),
-      captured_at: String(row.capturedAt || ""),
-      text_for_llm: String(row.textForLlm || ""),
-      llm_user_full_text: String(row.llmUserFullText || ""),
-      exchange_context_json: encBefore,
-      chart_mime: row.chartMime != null ? String(row.chartMime) : null,
-      chart_png: pngBuf,
-      chart_capture_error:
+      periodLabel: String(row.periodLabel || ""),
+      capturedAt: String(row.capturedAt || ""),
+      textForLlm: String(row.textForLlm || ""),
+      llmUserFullText: String(row.llmUserFullText || ""),
+      exchangeContextJson: encBefore,
+      chartMime: row.chartMime != null ? String(row.chartMime) : null,
+      chartPng: pngBuf,
+      chartCaptureError:
         row.chartCaptureError != null && String(row.chartCaptureError).trim() !== ""
           ? String(row.chartCaptureError)
           : null,
-      assistant_text: row.assistantText != null ? String(row.assistantText) : null,
-      card_summary:
+      assistantText: row.assistantText != null ? String(row.assistantText) : null,
+      cardSummary:
         row.cardSummary != null && String(row.cardSummary).trim() !== "" ? String(row.cardSummary) : null,
-      tool_trace_json: encToolTrace,
-      exchange_after_json: encAfter,
-      agent_ok: row.agentOk !== false ? 1 : 0,
-      agent_error:
-        row.agentError != null && String(row.agentError).trim() !== ""
-          ? String(row.agentError)
-          : null,
-      estimated_prompt_tokens: null,
-      context_window_tokens: null,
-      system_prompt_text: systemPrompt,
-      assistant_reasoning_text:
+      toolTraceJson: encToolTrace,
+      exchangeAfterJson: encAfter,
+      agentOk: row.agentOk !== false ? 1 : 0,
+      agentError:
+        row.agentError != null && String(row.agentError).trim() !== "" ? String(row.agentError) : null,
+      estimatedPromptTokens: null,
+      contextWindowTokens: null,
+      updatedAt,
+      systemPromptText: systemPrompt,
+      assistantReasoningText:
         row.assistantReasoningText != null && String(row.assistantReasoningText).trim() !== ""
           ? String(row.assistantReasoningText)
           : null,
-      assistant_decision: assistantDecision,
+      assistantDecision,
     });
+
     for (const mr of messageRows) {
-      insertMsg.run({
-        bar_close_id: barCloseId,
+      await tx.insert(agentSessionMessages).values({
+        barCloseId,
         seq: mr.seq,
         role: mr.role,
-        content_json: mr.content_json,
-        tool_calls_json: mr.tool_calls_json,
-        tool_call_id: mr.tool_call_id,
+        contentJson: mr.content_json,
+        toolCallsJson: mr.tool_calls_json,
+        toolCallId: mr.tool_call_id,
         name: mr.name,
-        assistant_decision: mr.assistant_decision,
+        assistantDecision: mr.assistant_decision,
       });
     }
   });
-  run();
 }
 
-/**
- * 分页列出某品种+周期的收盘 Agent 记录；不含 chart_png，按时间倒序（最新在前）。
- * @param {object} [args]
- * @param {string} args.tvSymbol
- * @param {string} args.interval
- * @param {number} [args.limit=20]
- * @param {{ capturedAt: string, barCloseId: string } | null} [args.cursor] 上一页最后一条，用于加载更早的记录
- * @returns {{ rows: object[], nextCursor: { capturedAt: string, barCloseId: string } | null, hasMore: boolean }}
- */
-function listAgentBarTurnsPage(args: Record<string, unknown> = {}) {
+async function listAgentBarTurnsPage(args: Record<string, unknown> = {}) {
   const tvSymbol = String(args.tvSymbol || "").trim();
   const interval = String(args.interval || "").trim();
   const limit = Math.min(100, Math.max(1, Math.floor(Number(args.limit) || 20)));
@@ -241,61 +175,84 @@ function listAgentBarTurnsPage(args: Record<string, unknown> = {}) {
         }
       : null;
 
-  const db = getDatabase();
-  let sql = `
-    SELECT
-      bar_close_id, tv_symbol, interval, period_label, captured_at,
-      text_for_llm, llm_user_full_text, exchange_context_json,
-      chart_mime, chart_capture_error,
-      assistant_text, card_summary, tool_trace_json, exchange_after_json, agent_ok, agent_error,
-      assistant_reasoning_text, assistant_decision,
-      CASE WHEN chart_png IS NOT NULL AND length(chart_png) > 0 THEN 1 ELSE 0 END AS has_chart
-    FROM agent_sessions
-    WHERE tv_symbol = ? AND interval = ?
-  `;
-  const params: Array<string | number> = [tvSymbol, interval];
+  const db = getDb();
 
-  if (cap && cap.capturedAt && cap.barCloseId) {
-    sql += ` AND (captured_at < ? OR (captured_at = ? AND bar_close_id < ?))`;
-    params.push(cap.capturedAt, cap.capturedAt, cap.barCloseId);
-  }
+  const hasChartSql = sql<number>`CASE WHEN ${agentSessions.chartPng} IS NOT NULL AND LENGTH(${agentSessions.chartPng}) > 0 THEN 1 ELSE 0 END`;
 
-  sql += ` ORDER BY captured_at DESC, bar_close_id DESC LIMIT ?`;
-  params.push(limit);
+  const whereClause =
+    cap && cap.capturedAt && cap.barCloseId
+      ? and(
+          eq(agentSessions.tvSymbol, tvSymbol),
+          eq(agentSessions.interval, interval),
+          or(
+            lt(agentSessions.capturedAt, cap.capturedAt),
+            and(
+              eq(agentSessions.capturedAt, cap.capturedAt),
+              lt(agentSessions.barCloseId, cap.barCloseId),
+            ),
+          ),
+        )
+      : and(eq(agentSessions.tvSymbol, tvSymbol), eq(agentSessions.interval, interval));
 
-  const raw = db.prepare(sql).all(...params) as SqlRow[];
+  const raw = await db
+    .select({
+      barCloseId: agentSessions.barCloseId,
+      tvSymbol: agentSessions.tvSymbol,
+      interval: agentSessions.interval,
+      periodLabel: agentSessions.periodLabel,
+      capturedAt: agentSessions.capturedAt,
+      textForLlm: agentSessions.textForLlm,
+      llmUserFullText: agentSessions.llmUserFullText,
+      exchangeContextJson: agentSessions.exchangeContextJson,
+      chartMime: agentSessions.chartMime,
+      chartCaptureError: agentSessions.chartCaptureError,
+      assistantText: agentSessions.assistantText,
+      cardSummary: agentSessions.cardSummary,
+      toolTraceJson: agentSessions.toolTraceJson,
+      exchangeAfterJson: agentSessions.exchangeAfterJson,
+      agentOk: agentSessions.agentOk,
+      agentError: agentSessions.agentError,
+      assistantReasoningText: agentSessions.assistantReasoningText,
+      assistantDecision: agentSessions.assistantDecision,
+      has_chart: hasChartSql,
+    })
+    .from(agentSessions)
+    .where(whereClause)
+    .orderBy(desc(agentSessions.capturedAt), desc(agentSessions.barCloseId))
+    .limit(limit);
+
   const rows = raw.map((r) => {
     let toolTrace: unknown[] | null = null;
-    if (typeof r.tool_trace_json === "string" && r.tool_trace_json.trim()) {
+    if (typeof r.toolTraceJson === "string" && r.toolTraceJson.trim()) {
       try {
-        const parsed = JSON.parse(r.tool_trace_json);
+        const parsed = JSON.parse(r.toolTraceJson);
         toolTrace = Array.isArray(parsed) ? parsed : null;
       } catch {
         toolTrace = null;
       }
     }
     return {
-      barCloseId: r.bar_close_id,
-      tvSymbol: r.tv_symbol,
+      barCloseId: r.barCloseId,
+      tvSymbol: r.tvSymbol,
       interval: r.interval,
-      periodLabel: r.period_label,
-      capturedAt: r.captured_at,
-      textForLlm: r.text_for_llm,
-      llmUserFullText: r.llm_user_full_text,
-      hasChart: r.has_chart === 1,
-      chartMime: r.chart_mime,
-      chartCaptureError: r.chart_capture_error,
-      assistantText: r.assistant_text,
+      periodLabel: r.periodLabel,
+      capturedAt: r.capturedAt,
+      textForLlm: r.textForLlm,
+      llmUserFullText: r.llmUserFullText,
+      hasChart: Number(r.has_chart) === 1,
+      chartMime: r.chartMime,
+      chartCaptureError: r.chartCaptureError,
+      assistantText: r.assistantText,
       assistantReasoningText:
-        r.assistant_reasoning_text != null && String(r.assistant_reasoning_text).trim()
-          ? String(r.assistant_reasoning_text)
+        r.assistantReasoningText != null && String(r.assistantReasoningText).trim()
+          ? String(r.assistantReasoningText).trim()
           : null,
       assistantDecision:
-        r.assistant_decision != null && String(r.assistant_decision).trim() ? String(r.assistant_decision) : null,
-      cardSummary: r.card_summary != null && String(r.card_summary).trim() ? String(r.card_summary) : null,
+        r.assistantDecision != null && String(r.assistantDecision).trim() ? String(r.assistantDecision) : null,
+      cardSummary: r.cardSummary != null && String(r.cardSummary).trim() ? String(r.cardSummary) : null,
       toolTrace,
-      agentOk: r.agent_ok === 1,
-      agentError: r.agent_error,
+      agentOk: Number(r.agentOk) === 1,
+      agentError: r.agentError,
     };
   });
 
@@ -307,88 +264,84 @@ function listAgentBarTurnsPage(args: Record<string, unknown> = {}) {
   return { rows, nextCursor, hasMore };
 }
 
-/**
- * @param {string} barCloseId
- * @returns {{ mimeType: string, base64: string, dataUrl: string } | null}
- */
-function getAgentBarTurnChart(barCloseId) {
+async function getAgentBarTurnChart(barCloseId) {
   const id = String(barCloseId || "").trim();
   if (!id) return null;
-  const row = getDatabase()
-    .prepare(`SELECT chart_mime, chart_png FROM agent_sessions WHERE bar_close_id = ?`)
-    .get(id) as { chart_png?: unknown; chart_mime?: string } | undefined;
-  if (!row || !row.chart_png) return null;
-  const mime = typeof row.chart_mime === "string" && row.chart_mime.trim() ? row.chart_mime : "image/png";
-  const buf = row.chart_png;
+  const db = getDb();
+  const rows = await db
+    .select({
+      chartMime: agentSessions.chartMime,
+      chartPng: agentSessions.chartPng,
+    })
+    .from(agentSessions)
+    .where(eq(agentSessions.barCloseId, id))
+    .limit(1);
+  const row = rows[0];
+  if (!row || !row.chartPng) return null;
+  const mime = typeof row.chartMime === "string" && row.chartMime.trim() ? row.chartMime : "image/png";
+  const bufUnknown = row.chartPng as unknown;
   let b64: string;
-  if (Buffer.isBuffer(buf)) {
-    b64 = buf.toString("base64");
-  } else if (buf instanceof Uint8Array) {
-    b64 = Buffer.from(buf).toString("base64");
+  if (Buffer.isBuffer(bufUnknown)) {
+    b64 = bufUnknown.toString("base64");
+  } else if (bufUnknown instanceof Uint8Array) {
+    b64 = Buffer.from(bufUnknown).toString("base64");
   } else {
-    b64 = Buffer.from(String(buf)).toString("base64");
+    b64 = Buffer.from(String(bufUnknown)).toString("base64");
   }
   return { mimeType: mime, base64: b64, dataUrl: `data:${mime};base64,${b64}` };
 }
 
-/**
- * 按 seq 返回当次会话的 API 消息行（content / tool_calls 已 JSON 解析），用于排查。
- * @param {string} barCloseId
- * @returns {{
- *   messages: Array<{
- *     seq: number,
- *     role: string,
- *     content: unknown,
- *     toolCalls: unknown[] | null,
- *     toolCallId: string | null,
- *     name: string | null,
- *     assistantDecision: string | null,
- *   }>,
- *   assistantReasoningText: string | null,
- *   assistantDecision: string | null,
- * }}
- */
-function getAgentSessionMessages(barCloseId) {
+async function getAgentSessionMessages(barCloseId) {
   const id = String(barCloseId || "").trim();
   if (!id) return { messages: [], assistantReasoningText: null, assistantDecision: null };
-  const db = getDatabase();
-  const reasoningRow = db
-    .prepare(`SELECT assistant_reasoning_text, assistant_decision FROM agent_sessions WHERE bar_close_id = ?`)
-    .get(id) as {
-      assistant_reasoning_text?: unknown;
-      assistant_decision?: unknown;
-    } | undefined;
+  const db = getDb();
+  const reasoningRows = await db
+    .select({
+      assistantReasoningText: agentSessions.assistantReasoningText,
+      assistantDecision: agentSessions.assistantDecision,
+    })
+    .from(agentSessions)
+    .where(eq(agentSessions.barCloseId, id))
+    .limit(1);
+  const reasoningRow = reasoningRows[0];
   let assistantReasoningText: string | null = null;
   let assistantDecision: string | null = null;
   if (
     reasoningRow &&
-    reasoningRow.assistant_reasoning_text != null &&
-    String(reasoningRow.assistant_reasoning_text).trim()
+    reasoningRow.assistantReasoningText != null &&
+    String(reasoningRow.assistantReasoningText).trim()
   ) {
-    assistantReasoningText = String(reasoningRow.assistant_reasoning_text).trim();
+    assistantReasoningText = String(reasoningRow.assistantReasoningText).trim();
   }
-  if (reasoningRow && reasoningRow.assistant_decision != null && String(reasoningRow.assistant_decision).trim()) {
-    assistantDecision = String(reasoningRow.assistant_decision).trim();
+  if (reasoningRow && reasoningRow.assistantDecision != null && String(reasoningRow.assistantDecision).trim()) {
+    assistantDecision = String(reasoningRow.assistantDecision).trim();
   }
-  const raw = db
-    .prepare(
-      `SELECT seq, role, content_json, tool_calls_json, tool_call_id, name, assistant_decision
-       FROM agent_session_messages WHERE bar_close_id = ? ORDER BY seq ASC`,
-    )
-    .all(id) as SqlRow[];
+  const raw = await db
+    .select({
+      seq: agentSessionMessages.seq,
+      role: agentSessionMessages.role,
+      contentJson: agentSessionMessages.contentJson,
+      toolCallsJson: agentSessionMessages.toolCallsJson,
+      toolCallId: agentSessionMessages.toolCallId,
+      name: agentSessionMessages.name,
+      assistantDecision: agentSessionMessages.assistantDecision,
+    })
+    .from(agentSessionMessages)
+    .where(eq(agentSessionMessages.barCloseId, id))
+    .orderBy(asc(agentSessionMessages.seq));
   const messages = raw.map((r) => {
     let content: unknown = null;
-    if (typeof r.content_json === "string" && r.content_json.length > 0) {
+    if (typeof r.contentJson === "string" && r.contentJson.length > 0) {
       try {
-        content = JSON.parse(r.content_json);
+        content = JSON.parse(r.contentJson);
       } catch {
-        content = r.content_json;
+        content = r.contentJson;
       }
     }
     let toolCalls: unknown[] | null = null;
-    if (typeof r.tool_calls_json === "string" && r.tool_calls_json.trim()) {
+    if (typeof r.toolCallsJson === "string" && r.toolCallsJson.trim()) {
       try {
-        const p = JSON.parse(r.tool_calls_json);
+        const p = JSON.parse(r.toolCallsJson);
         toolCalls = Array.isArray(p) ? p : null;
       } catch {
         toolCalls = null;
@@ -399,10 +352,10 @@ function getAgentSessionMessages(barCloseId) {
       role: String(r.role || ""),
       content,
       toolCalls,
-      toolCallId: r.tool_call_id != null ? String(r.tool_call_id) : null,
+      toolCallId: r.toolCallId != null ? String(r.toolCallId) : null,
       name: r.name != null ? String(r.name) : null,
       assistantDecision:
-        r.assistant_decision != null && String(r.assistant_decision).trim() ? String(r.assistant_decision) : null,
+        r.assistantDecision != null && String(r.assistantDecision).trim() ? String(r.assistantDecision) : null,
     };
   });
   return { messages, assistantReasoningText, assistantDecision };
@@ -441,41 +394,39 @@ function summarizeToolTrace(toolTrace) {
   return names.length ? names.join(" -> ") : "无工具动作";
 }
 
-/**
- * 供下一轮 user prompt 注入的最近策略记忆：仅返回同品种同周期最近若干条已落库会话摘要。
- * @param {object} args
- * @param {string} args.tvSymbol
- * @param {string} args.interval
- * @param {number} [args.limit=6]
- */
-function listRecentAgentMemories(args: Record<string, unknown> = {}) {
+async function listRecentAgentMemories(args: Record<string, unknown> = {}) {
   const tvSymbol = String(args.tvSymbol || "").trim();
   const interval = String(args.interval || "").trim();
   const limit = Math.min(20, Math.max(1, Math.floor(Number(args.limit) || 6)));
   if (!tvSymbol || !interval) return [];
 
-  const rows = getDatabase()
-    .prepare(
-      `SELECT
-         bar_close_id, captured_at, assistant_text, card_summary, tool_trace_json,
-         exchange_after_json, agent_ok, agent_error
-       FROM agent_sessions
-       WHERE tv_symbol = ? AND interval = ?
-       ORDER BY captured_at DESC, bar_close_id DESC
-       LIMIT ?`,
-    )
-    .all(tvSymbol, interval, limit) as SqlRow[];
+  const db = getDb();
+  const rows = await db
+    .select({
+      barCloseId: agentSessions.barCloseId,
+      capturedAt: agentSessions.capturedAt,
+      assistantText: agentSessions.assistantText,
+      cardSummary: agentSessions.cardSummary,
+      toolTraceJson: agentSessions.toolTraceJson,
+      exchangeAfterJson: agentSessions.exchangeAfterJson,
+      agentOk: agentSessions.agentOk,
+      agentError: agentSessions.agentError,
+    })
+    .from(agentSessions)
+    .where(and(eq(agentSessions.tvSymbol, tvSymbol), eq(agentSessions.interval, interval)))
+    .orderBy(desc(agentSessions.capturedAt), desc(agentSessions.barCloseId))
+    .limit(limit);
 
   return rows.map((row) => {
-    const toolTrace = safeJsonParse(row.tool_trace_json);
-    const exchangeAfter = safeJsonParse(row.exchange_after_json);
+    const toolTrace = safeJsonParse(row.toolTraceJson);
+    const exchangeAfter = safeJsonParse(row.exchangeAfterJson);
     return {
-      barCloseId: String(row.bar_close_id || ""),
-      capturedAt: String(row.captured_at || ""),
-      agentOk: row.agent_ok === 1,
-      agentError: row.agent_error != null ? String(row.agent_error) : null,
-      assistantText: row.assistant_text != null ? String(row.assistant_text) : null,
-      cardSummary: row.card_summary != null ? String(row.card_summary) : null,
+      barCloseId: String(row.barCloseId || ""),
+      capturedAt: String(row.capturedAt || ""),
+      agentOk: Number(row.agentOk) === 1,
+      agentError: row.agentError != null ? String(row.agentError) : null,
+      assistantText: row.assistantText != null ? String(row.assistantText) : null,
+      cardSummary: row.cardSummary != null ? String(row.cardSummary) : null,
       toolTrace: Array.isArray(toolTrace) ? toolTrace : [],
       exchangeAfter,
       holdingState: holdingStateFromExchangeAfter(exchangeAfter),

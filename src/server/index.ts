@@ -1,6 +1,7 @@
 /**
  * Argus HTTP API + WebSocket 推送（替代 Electron IPC）。
  */
+import "dotenv/config";
 
 import type { WebSocket as ClientWebSocket } from "ws";
 import type { Request, Response, NextFunction } from "express";
@@ -19,7 +20,7 @@ import {
   saveMergedConfigPayload,
 } from "../node/app-config.js";
 import * as promptStrategiesStore from "../node/prompt-strategies-store.js";
-import { closeDatabase } from "../node/local-db/index.js";
+import { closeDatabase, initDatabase } from "../node/local-db/index.js";
 import { wipeConversationStore } from "../node/llm-context.js";
 import { getOkxSwapPositionSnapshot } from "../node/okx-perp.js";
 import {
@@ -50,7 +51,7 @@ async function runBackgroundEquitySample() {
   if (dashboardEquitySamplerInFlight) return;
   dashboardEquitySamplerInFlight = true;
   try {
-    await sampleDashboardEquityOnce(loadAppConfig());
+    await sampleDashboardEquityOnce(await loadAppConfig());
   } catch {
     /* ignore */
   } finally {
@@ -76,7 +77,7 @@ async function routeMarket(cfg, tvSymbol) {
   const interval =
     typeof cfg.promptStrategyDecisionIntervalTv === "string"
       ? normalizeStrategyDecisionIntervalTv(cfg.promptStrategyDecisionIntervalTv)
-      : promptStrategiesStore.getDecisionIntervalTvForStrategyId(cfg.promptStrategy);
+      : await promptStrategiesStore.getDecisionIntervalTvForStrategyId(cfg.promptStrategy);
   const sym = tvSymbol || cfg.defaultSymbol;
   const feed = inferFeed(sym);
 
@@ -92,7 +93,7 @@ async function routeMarket(cfg, tvSymbol) {
 }
 
 async function rpcChartCaptureTest(tvSymbol) {
-  const cfg = loadAppConfig();
+  const cfg = await loadAppConfig();
   const sym =
     typeof tvSymbol === "string" && tvSymbol.trim()
       ? tvSymbol.trim()
@@ -110,38 +111,38 @@ const rpcHandlers = {
   },
   "config:save": async (_payload) => {
     const payload = _payload ?? {};
-    const next = saveMergedConfigPayload(payload);
+    const next = await saveMergedConfigPayload(payload);
     await routeMarket(next, next.defaultSymbol);
     void runBackgroundEquitySample();
     return next;
   },
   "config:reset": async () => {
-    const next = resetAppConfig();
+    const next = await resetAppConfig();
     await routeMarket(next, next.defaultSymbol);
     void runBackgroundEquitySample();
     return next;
   },
   "market:set-context": async (tvSymbol) => {
-    await routeMarket(loadAppConfig(), tvSymbol);
+    await routeMarket(await loadAppConfig(), tvSymbol);
     return undefined;
   },
-  "okx:swap-position": async (tvSymbol) => getOkxSwapPositionSnapshot(loadAppConfig(), tvSymbol),
-  "dashboard:get": async () => getDashboardSnapshot(loadAppConfig()),
+  "okx:swap-position": async (tvSymbol) => getOkxSwapPositionSnapshot(await loadAppConfig(), tvSymbol),
+  "dashboard:get": async () => getDashboardSnapshot(await loadAppConfig()),
   "agent-bar-turns:list-page": async (args) => listAgentBarTurnsPage(args ?? {}),
   "agent-bar-turns:get-chart": async (barCloseId) => getAgentBarTurnChart(barCloseId),
   "agent-bar-turns:get-session-messages": async (barCloseId) => getAgentSessionMessages(barCloseId),
   "prompt-strategies:list": async () => promptStrategiesStore.listStrategiesMeta(),
   "prompt-strategies:get": async (id) => promptStrategiesStore.getStrategy(id),
   "prompt-strategies:save": async (payload) => {
-    promptStrategiesStore.saveStrategy(payload ?? {});
-    const next = loadAppConfig();
+    await promptStrategiesStore.saveStrategy(payload ?? {});
+    const next = await loadAppConfig();
     await routeMarket(next, next.defaultSymbol);
     return next;
   },
   "prompt-strategies:delete": async (id) => {
-    promptStrategiesStore.deleteStrategy(id);
-    saveMergedConfigPayload({});
-    const next = loadAppConfig();
+    await promptStrategiesStore.deleteStrategy(id);
+    await saveMergedConfigPayload({});
+    const next = await loadAppConfig();
     await routeMarket(next, next.defaultSymbol);
     return next;
   },
@@ -181,7 +182,7 @@ async function shutdown(reason = "shutdown") {
   stopBackgroundEquitySampler();
   cryptoSched.stop();
   wipeConversationStore();
-  closeDatabase();
+  await closeDatabase();
   process.exit(0);
 }
 
@@ -220,7 +221,15 @@ function createApp(distDir: string | undefined) {
   return app;
 }
 
-function main() {
+async function main() {
+  try {
+    await initDatabase();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`[Argus server] 数据库初始化失败：${msg}`);
+    process.exit(1);
+  }
+
   const PORT = Number(process.env.PORT || 8787);
   const distDir = path.join(__dirname, "..", "..", "dist", "renderer");
 
@@ -252,7 +261,7 @@ function main() {
 
   server.listen(PORT, async () => {
     console.info(`[Argus server] listening http://127.0.0.1:${PORT}`);
-    const cfg = loadAppConfig();
+    const cfg = await loadAppConfig();
     await routeMarket(cfg, cfg.defaultSymbol);
     startBackgroundEquitySampler();
   });
@@ -261,4 +270,7 @@ function main() {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
-main();
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

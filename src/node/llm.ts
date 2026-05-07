@@ -17,7 +17,7 @@ import {
 } from "../shared/strategy-fields.js";
 
 /** 交易 Agent：`resolveTradingAgentSystemPrompt` 在策略正文后附加；与用户策略库解耦。 */
-const TRADING_AGENT_TOOLS_POLICY_BLOCK = ``;
+const TRADING_AGENT_TOOLS_POLICY_BLOCK: string = ``;
 
 const TRADING_DECISION_ALLOWED_TOOLS = Object.freeze({
   hold: new Set(),

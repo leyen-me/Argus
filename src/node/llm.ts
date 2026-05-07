@@ -1433,6 +1433,7 @@ const MULTI_TIMEFRAME_PROMPT_SPECS = [
   { interval: "5", label: "5m（5 分钟，决策周期）" },
   { interval: "15", label: "15m（15 分钟）" },
   { interval: "60", label: "1H（1 小时）" },
+  { interval: "240", label: "4H（4 小时）" },
   { interval: "1D", label: "1D（日线）" },
 ];
 
@@ -1441,7 +1442,7 @@ const MULTI_TIMEFRAME_PROMPT_SPECS = [
  * @param {string} periodKey
  * @param {object} candle
  * @param {Record<string, Parameters<typeof buildRecentCandlesMarkdownSection>[0]>} recentCandlesByInterval
- * @param {readonly StrategyDecisionIntervalTv[]} [marketTimeframes] 策略「市场数据」勾选；空或未传则四周期全开（与 shared 容错一致）
+ * @param {readonly StrategyDecisionIntervalTv[]} [marketTimeframes] 策略「市场数据」勾选；空数组时对 specs 求全量（见 filterMultiTimeframeSpecsByMarketSelection）。
  * @param {readonly StrategyIndicatorId[]} [strategyIndicators] 策略「技术指标」勾选；空数组则仅 OHLC（无 Vol / 无 Turnover）
  */
 function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesByInterval, marketTimeframes, strategyIndicators) {

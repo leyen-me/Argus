@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { ChartSymbolSelect } from "@/components/chart-symbol-select";
 import { FishModeOverlay } from "@/components/app/fish-mode-overlay";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Camera, EyeOff, Loader2, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ARGUS_APP_CONFIG_CHANGED } from "@/lib/argus-config-modal-events";
+import { ARGUS_PROMPT_STRATEGIES_CHANGED } from "@/lib/argus-strategy-modal-events";
+import {
+  intervalsForTradingViewChartGrid,
+  normalizeStrategyDecisionIntervalTv,
+  type StrategyDecisionIntervalTv,
+} from "@shared/strategy-fields";
 
 export type ChartPanelProps = {
   rightPanelCollapsed?: boolean;
@@ -28,20 +35,94 @@ export type ChartPanelProps = {
 const ARGUS_TEST_CAPTURE_LOCAL = "argus:test-chart-capture-local";
 const ARGUS_TEST_CAPTURE_RESULT = "argus:test-chart-capture-result";
 
-const MULTI_TIMEFRAME_CARDS = [
-  { interval: "1D", label: "日线", containerId: "tradingview_chart_1d" },
-  { interval: "1H", label: "1 小时", containerId: "tradingview_chart_1h" },
-  { interval: "15m", label: "15 分钟", containerId: "tradingview_chart_15m" },
-  { interval: "5m", label: "5 分钟", containerId: "tradingview_chart_5m", isPrimary: true },
-];
+const CHART_CARD_UI: Record<
+  StrategyDecisionIntervalTv,
+  { interval: string; label: string; containerId: string }
+> = {
+  "1D": { interval: "1D", label: "日线", containerId: "tradingview_chart_1d" },
+  "240": { interval: "4H", label: "4 小时", containerId: "tradingview_chart_4h" },
+  "60": { interval: "1H", label: "1 小时", containerId: "tradingview_chart_1h" },
+  "15": { interval: "15m", label: "15 分钟", containerId: "tradingview_chart_15m" },
+  "5": { interval: "5m", label: "5 分钟", containerId: "tradingview_chart_5m" },
+};
+
+function chartGridStyle(count: number): CSSProperties {
+  if (count <= 1) {
+    return { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(0, 1fr)" };
+  }
+  if (count === 2) {
+    return {
+      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+      gridTemplateRows: "minmax(0, 1fr)",
+    };
+  }
+  if (count === 3) {
+    return {
+      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+      gridTemplateRows: "minmax(0, 1fr)",
+    };
+  }
+  return {
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gridTemplateRows: "repeat(2, minmax(0, 1fr))",
+  };
+}
+
+async function syncChartLayoutFromApi(): Promise<{
+  layoutDesc: StrategyDecisionIntervalTv[];
+  decisionTv: StrategyDecisionIntervalTv;
+} | null> {
+  try {
+    const api = typeof window !== "undefined" ? window.argus : undefined;
+    if (!api?.getConfig) return null;
+    const cfg = await api.getConfig();
+    if (!cfg || typeof cfg !== "object") return null;
+    const c = cfg as {
+      promptStrategyMarketTimeframes?: unknown;
+      promptStrategyDecisionIntervalTv?: unknown;
+    };
+    const layoutDesc = intervalsForTradingViewChartGrid(c.promptStrategyMarketTimeframes);
+    const decisionTv = normalizeStrategyDecisionIntervalTv(c.promptStrategyDecisionIntervalTv ?? "5");
+    return { layoutDesc, decisionTv };
+  } catch {
+    return null;
+  }
+}
 
 export function ChartPanel({
   rightPanelCollapsed = false,
   onToggleRightPanel,
 }: ChartPanelProps = {}) {
+  const [chartLayoutIntervals, setChartLayoutIntervals] = useState<StrategyDecisionIntervalTv[]>(() =>
+    intervalsForTradingViewChartGrid(undefined),
+  );
+  const [decisionIv, setDecisionIv] = useState<StrategyDecisionIntervalTv>(() =>
+    normalizeStrategyDecisionIntervalTv("5"),
+  );
   const [testBusy, setTestBusy] = useState(false);
   const [testErr, setTestErr] = useState<string | null>(null);
   const [testPreviewUrl, setTestPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function pull() {
+      const row = await syncChartLayoutFromApi();
+      if (cancelled || !row) return;
+      setChartLayoutIntervals(row.layoutDesc);
+      setDecisionIv(row.decisionTv);
+    }
+    void pull();
+    const onReload = () => {
+      void pull();
+    };
+    window.addEventListener(ARGUS_APP_CONFIG_CHANGED, onReload);
+    window.addEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, onReload);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(ARGUS_APP_CONFIG_CHANGED, onReload);
+      window.removeEventListener(ARGUS_PROMPT_STRATEGIES_CHANGED, onReload);
+    };
+  }, []);
 
   const runTestCapture = useCallback(() => {
     setTestErr(null);
@@ -53,7 +134,7 @@ export function ChartPanel({
       settled = true;
       window.removeEventListener(ARGUS_TEST_CAPTURE_RESULT, onResult);
       setTestBusy(false);
-      setTestErr("截图超时：请确认四张 TradingView 已加载完成后再试");
+      setTestErr("截图超时：请确认多图 TradingView 已加载完成后再试");
     }, 90_000);
 
     const onResult = (ev: Event) => {
@@ -72,6 +153,8 @@ export function ChartPanel({
     window.dispatchEvent(new Event(ARGUS_TEST_CAPTURE_LOCAL));
   }, []);
 
+  const gridStyle = chartGridStyle(chartLayoutIntervals.length || 1);
+
   return (
     <>
       <Card
@@ -83,12 +166,12 @@ export function ChartPanel({
         <CardHeader className="flex h-10 shrink-0 flex-row items-center justify-between gap-0 border-b border-border px-3 py-0">
           <div className="flex min-w-0 items-center gap-2">
             <CardTitle className="text-xs leading-none font-semibold tracking-wider text-muted-foreground uppercase">
-            <div className="titlebar-title">
-              <PromptStrategySelect
-                className="justify-start"
-                triggerClassName="max-w-[180px] justify-start"
-              />
-            </div>
+              <div className="titlebar-title">
+                <PromptStrategySelect
+                  className="justify-start"
+                  triggerClassName="max-w-[180px] justify-start"
+                />
+              </div>
             </CardTitle>
           </div>
           <div className="flex min-w-0 shrink flex-wrap items-center justify-end gap-1.5">
@@ -151,19 +234,23 @@ export function ChartPanel({
         ) : null}
         <CardContent className="flex min-h-0 flex-1 flex-col p-0">
           <div className="chart-wrap">
-            <div className="chart-grid">
-              {MULTI_TIMEFRAME_CARDS.map((card) => (
-                <section
-                  key={card.containerId}
-                  className={`chart-grid-card${card.isPrimary ? " chart-grid-card--primary" : ""}`}
-                >
-                  <header className="chart-grid-card-head">
-                    <span className="chart-grid-card-interval">{card.interval}</span>
-                    <span className="chart-grid-card-label">{card.label}</span>
-                  </header>
-                  <div id={card.containerId} className="tradingview-chart" />
-                </section>
-              ))}
+            <div className="chart-grid min-h-0 flex-1" style={gridStyle}>
+              {chartLayoutIntervals.map((iv) => {
+                const card = CHART_CARD_UI[iv];
+                const isPrimary = iv === decisionIv;
+                return (
+                  <section
+                    key={card.containerId}
+                    className={`chart-grid-card${isPrimary ? " chart-grid-card--primary" : ""}`}
+                  >
+                    <header className="chart-grid-card-head">
+                      <span className="chart-grid-card-interval">{card.interval}</span>
+                      <span className="chart-grid-card-label">{card.label}</span>
+                    </header>
+                    <div id={card.containerId} className="tradingview-chart" />
+                  </section>
+                );
+              })}
             </div>
             <FishModeOverlay />
           </div>
@@ -173,7 +260,7 @@ export function ChartPanel({
       <Dialog open={Boolean(testPreviewUrl)} onOpenChange={(open) => !open && setTestPreviewUrl(null)}>
         <DialogContent className="max-h-[90vh] max-w-[min(920px,96vw)] gap-3 overflow-hidden p-4">
           <DialogHeader>
-            <DialogTitle className="text-sm">截图测试结果（四周期拼图）</DialogTitle>
+            <DialogTitle className="text-sm">截图测试结果（多周期拼图）</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/30 p-2">
             {testPreviewUrl ? (

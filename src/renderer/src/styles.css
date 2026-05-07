@@ -103,8 +103,7 @@ body,
 
 .chart-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  /* grid-template-* 由内联样式按策略「市场数据」勾选数量设定 */
   gap: 8px;
   width: 100%;
   height: 100%;

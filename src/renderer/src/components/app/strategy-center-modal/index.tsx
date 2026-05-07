@@ -23,9 +23,12 @@ import {
 } from "@/lib/argus-strategy-modal-events";
 import { ARGUS_APP_CONFIG_CHANGED } from "@/lib/argus-config-modal-events";
 import {
+  STRATEGY_CHART_LAYOUT_INTERVALS_DESC,
   STRATEGY_CHART_TV_EMBED_SUPPORTED_IDS,
   STRATEGY_DECISION_INTERVAL_TV,
+  STRATEGY_DEFAULT_MARKET_TIMEFRAMES,
   STRATEGY_TOKEN_SYMBOL_OPTIONS,
+  MAX_STRATEGY_MARKET_TIMEFRAMES,
   normalizeStrategyTokenSymbol,
   type StrategyChartIndicatorId,
   type StrategyDecisionIntervalTv,
@@ -58,12 +61,13 @@ type ArgusApi = {
   getConfig?: () => Promise<unknown>;
 };
 
-const MARKET_TF_META: { id: StrategyDecisionIntervalTv; label: string }[] = [
-  { id: "5", label: "5M" },
-  { id: "15", label: "15M" },
-  { id: "60", label: "1H" },
-  { id: "1D", label: "1D" },
-];
+const TV_BUTTON_LABEL: Record<StrategyDecisionIntervalTv, string> = {
+  "5": "5M",
+  "15": "15M",
+  "60": "1H",
+  "240": "4H",
+  "1D": "1D",
+};
 
 const INDICATORS: { id: StrategyIndicatorId; label: string }[] = [
   { id: "VOL", label: "Vol" },
@@ -204,7 +208,7 @@ export function StrategyCenterModal() {
     setDraftDecisionTv(row.decisionIntervalTv);
     setDraftExtras({
       tokenSymbols: [normalizeStrategyTokenSymbol(row.extras?.tokenSymbols)],
-      marketTimeframes: [...(row.extras?.marketTimeframes ?? [...STRATEGY_DECISION_INTERVAL_TV])],
+      marketTimeframes: [...(row.extras?.marketTimeframes ?? [...STRATEGY_DEFAULT_MARKET_TIMEFRAMES])],
       indicators: [...(row.extras?.indicators ?? [])],
       chartIndicators: [...(row.extras?.chartIndicators ?? ["EM20"])],
     });
@@ -568,17 +572,17 @@ export function StrategyCenterModal() {
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {MARKET_TF_META.map((m) => (
+                    {STRATEGY_DECISION_INTERVAL_TV.map((id) => (
                       <Button
-                        key={m.id}
+                        key={id}
                         type="button"
                         size="sm"
-                        variant={draftDecisionTv === m.id ? "default" : "outline"}
+                        variant={draftDecisionTv === id ? "default" : "outline"}
                         className="h-8 min-w-[52px] px-2 text-xs"
-                        onClick={() => setDraftDecisionTv(m.id)}
+                        onClick={() => setDraftDecisionTv(id)}
                         disabled={busy}
                       >
-                        {m.label}
+                        {TV_BUTTON_LABEL[id]}
                       </Button>
                     ))}
                   </div>
@@ -590,28 +594,39 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">市场数据</Label>
                     <ConfigHelpTooltip className="size-6">
-                      与「## 多周期上下文」及模型附图顺序一致，只投喂勾选的周期
+                      与「## 多周期上下文」及模型附图顺序一致，只投喂勾选的周期；左侧 TradingView
+                      亦只显示已勾选的格子（周期从大到小从左到右排列）。至多勾选{" "}
+                      {MAX_STRATEGY_MARKET_TIMEFRAMES} 个（共 5 个周期可选）。
                     </ConfigHelpTooltip>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {MARKET_TF_META.map((m) => {
-                      const on = draftExtras.marketTimeframes.includes(m.id);
+                    {STRATEGY_CHART_LAYOUT_INTERVALS_DESC.map((id) => {
+                      const on = draftExtras.marketTimeframes.includes(id);
+                      const atCap =
+                        !on && draftExtras.marketTimeframes.length >= MAX_STRATEGY_MARKET_TIMEFRAMES;
                       return (
                         <Button
-                          key={m.id}
+                          key={id}
                           type="button"
                           size="sm"
                           variant={on ? "default" : "outline"}
                           className="h-8 min-w-[52px] px-2 text-xs"
+                          title={atCap ? `最多选择 ${MAX_STRATEGY_MARKET_TIMEFRAMES} 个周期` : undefined}
                           onClick={() =>
-                            setDraftExtras((prev) => ({
-                              ...prev,
-                              marketTimeframes: toggleInList(prev.marketTimeframes, m.id),
-                            }))
+                            setDraftExtras((prev) => {
+                              const has = prev.marketTimeframes.includes(id);
+                              if (!has && prev.marketTimeframes.length >= MAX_STRATEGY_MARKET_TIMEFRAMES) {
+                                return prev;
+                              }
+                              return {
+                                ...prev,
+                                marketTimeframes: toggleInList(prev.marketTimeframes, id),
+                              };
+                            })
                           }
-                          disabled={busy}
+                          disabled={busy || atCap}
                         >
-                          {m.label}
+                          {TV_BUTTON_LABEL[id]}
                         </Button>
                       );
                     })}

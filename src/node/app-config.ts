@@ -78,6 +78,8 @@ export type AppConfig = {
   promptStrategyDecisionIntervalTv: import("../shared/strategy-fields.js").StrategyDecisionIntervalTv;
   /** 取自当前策略 `extras.chartIndicators`，非 kv 字段。 */
   promptStrategyChartIndicators: import("../shared/strategy-fields.js").StrategyChartIndicatorId[];
+  /** 取自当前策略 `extras.marketTimeframes`，非 kv 字段；附图宫格与此一致。 */
+  promptStrategyMarketTimeframes: import("../shared/strategy-fields.js").StrategyDecisionIntervalTv[];
 };
 
 type AppSettingsSeed = Omit<
@@ -87,6 +89,7 @@ type AppSettingsSeed = Omit<
   | "systemPromptCrypto"
   | "promptStrategyDecisionIntervalTv"
   | "promptStrategyChartIndicators"
+  | "promptStrategyMarketTimeframes"
 >;
 
 /**
@@ -194,6 +197,7 @@ function defaultConfigFallback(): AppConfig {
     promptStrategySelectOptions: listPromptStrategySelectOptions(),
     promptStrategyDecisionIntervalTv: promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy),
     promptStrategyChartIndicators: promptStrategiesStore.getChartIndicatorsForStrategyId(promptStrategy),
+    promptStrategyMarketTimeframes: promptStrategiesStore.getMarketTimeframesForStrategyId(promptStrategy),
     ...loadSystemPromptsFromDisk(promptStrategy),
   };
 }
@@ -208,6 +212,7 @@ function stripSystemPromptsForPersistence(cfg) {
     systemPromptCrypto: _c,
     promptStrategyDecisionIntervalTv: _p,
     promptStrategyChartIndicators: _pci,
+    promptStrategyMarketTimeframes: _pmt,
     promptStrategySelectOptions: _pso,
     symbols: _s,
     defaultSymbol: _d,
@@ -610,6 +615,8 @@ function normalizeConfig(raw: unknown): AppConfig {
     promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy);
   const promptStrategyChartIndicators =
     promptStrategiesStore.getChartIndicatorsForStrategyId(promptStrategy);
+  const promptStrategyMarketTimeframes =
+    promptStrategiesStore.getMarketTimeframesForStrategyId(promptStrategy);
 
   return {
     symbols,
@@ -623,6 +630,7 @@ function normalizeConfig(raw: unknown): AppConfig {
     promptStrategySelectOptions: listPromptStrategySelectOptions(),
     promptStrategyDecisionIntervalTv,
     promptStrategyChartIndicators,
+    promptStrategyMarketTimeframes,
     systemPromptCrypto,
     llmRequestTimeoutMs,
     llmReasoningEnabled,

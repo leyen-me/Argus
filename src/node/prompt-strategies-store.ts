@@ -1,9 +1,10 @@
 import * as localDb from "./local-db/index.js";
 import {
-  STRATEGY_DECISION_INTERVAL_TV,
+  STRATEGY_DEFAULT_MARKET_TIMEFRAMES,
   STRATEGY_INDICATOR_ORDER,
   defaultStrategyExtras,
   normalizeStrategyDecisionIntervalTv,
+  normalizeStrategyMarketTimeframes,
   normalizeStrategyTokenSymbol,
   okxTvSymbolFromStrategyToken,
   parseStrategyExtrasJson,
@@ -158,10 +159,10 @@ function getOkxTvSymbolForStrategyId(strategyId: unknown): string {
 function getMarketTimeframesForStrategyId(strategyId: unknown): StrategyDecisionIntervalTv[] {
   seedFromDiskIfEmpty();
   if (typeof strategyId !== "string" || !strategyId.trim()) {
-    return [...STRATEGY_DECISION_INTERVAL_TV];
+    return [...STRATEGY_DEFAULT_MARKET_TIMEFRAMES];
   }
   const row = getStrategy(strategyId.trim());
-  return row ? [...row.extras.marketTimeframes] : [...STRATEGY_DECISION_INTERVAL_TV];
+  return row ? [...row.extras.marketTimeframes] : [...STRATEGY_DEFAULT_MARKET_TIMEFRAMES];
 }
 
 /**
@@ -199,7 +200,9 @@ function applyExtrasPatch(base: StrategyExtrasV1, patch: Partial<StrategyExtrasV
   return {
     tokenSymbols: patch.tokenSymbols !== undefined ? [...patch.tokenSymbols] : [...base.tokenSymbols],
     marketTimeframes:
-      patch.marketTimeframes !== undefined ? [...patch.marketTimeframes] : [...base.marketTimeframes],
+      patch.marketTimeframes !== undefined
+        ? normalizeStrategyMarketTimeframes(patch.marketTimeframes)
+        : [...base.marketTimeframes],
     indicators: patch.indicators !== undefined ? [...patch.indicators] : [...base.indicators],
     chartIndicators: patch.chartIndicators !== undefined ? [...patch.chartIndicators] : [...base.chartIndicators],
   };

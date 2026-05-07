@@ -1,7 +1,13 @@
 /* global TradingView */
 import { CountUp } from "countup.js";
-import { canonTradingViewInterval, sortMultiTimeframeSpecsSmallestFirst } from "@shared/strategy-fields";
-import type { StrategyChartIndicatorId } from "@shared/strategy-fields";
+import {
+  canonTradingViewInterval,
+  intervalsForTradingViewChartGrid,
+  sortMultiTimeframeSpecsSmallestFirst,
+  STRATEGY_CHART_LAYOUT_INTERVALS_DESC,
+  STRATEGY_DEFAULT_MARKET_TIMEFRAMES,
+} from "@shared/strategy-fields";
+import type { StrategyChartIndicatorId, StrategyDecisionIntervalTv } from "@shared/strategy-fields";
 import { tradingViewStudiesFromChartIndicators } from "@shared/tradingview-chart-studies";
 import { formatPromptStrategyDisplayLabel } from "@shared/prompt-strategy-display-label";
 import { splitLegacyAssistantAndToolText } from "@/lib/agent-session-display";
@@ -10,32 +16,35 @@ import { ARGUS_LLM_SESSION_DETAIL_OPEN } from "@/lib/argus-llm-session-detail-ev
 
 const DEFAULT_STRATEGY_CHART_INDICATORS: StrategyChartIndicatorId[] = ["EM20"];
 const TV_LAYOUT_RERENDER_MIN_DELTA_PX = 24;
-const MULTI_TIMEFRAME_SPECS = [
-  {
-    interval: "1D",
-    label: "1D",
-    caption: "日线",
-    containerId: "tradingview_chart_1d",
-  },
-  {
-    interval: "60",
-    label: "1H",
-    caption: "1 小时",
-    containerId: "tradingview_chart_1h",
-  },
-  {
-    interval: "15",
-    label: "15m",
-    caption: "15 分钟",
-    containerId: "tradingview_chart_15m",
-  },
-  {
-    interval: "5",
-    label: "5m",
-    caption: "5 分钟",
-    containerId: "tradingview_chart_5m",
-  },
-];
+
+type TvEmbedChartSpec = {
+  interval: string;
+  label: string;
+  caption: string;
+  containerId: string;
+};
+
+/** 各周期嵌入容器：与 ChartPanel `#tradingview_*` id 对齐。 */
+const TV_CHART_EMBED_BY_IV: Record<StrategyDecisionIntervalTv, TvEmbedChartSpec> = {
+  "1D": { interval: "1D", label: "1D", caption: "日线", containerId: "tradingview_chart_1d" },
+  "240": { interval: "240", label: "4H", caption: "4 小时", containerId: "tradingview_chart_4h" },
+  "60": { interval: "60", label: "1H", caption: "1 小时", containerId: "tradingview_chart_1h" },
+  "15": { interval: "15", label: "15m", caption: "15 分钟", containerId: "tradingview_chart_15m" },
+  "5": { interval: "5", label: "5m", caption: "5 分钟", containerId: "tradingview_chart_5m" },
+};
+
+/** 卸载 widget 时需清空的所有可能容器（含当前策略未勾选的格子）。 */
+const ALL_TV_EMBED_CONTAINER_SPECS = STRATEGY_CHART_LAYOUT_INTERVALS_DESC.map(
+  (iv) => TV_CHART_EMBED_BY_IV[iv],
+);
+
+function tvSpecsForLayoutIntervals(layoutDesc: StrategyDecisionIntervalTv[]): TvEmbedChartSpec[] {
+  return layoutDesc.map((iv) => TV_CHART_EMBED_BY_IV[iv]).filter(Boolean);
+}
+
+/** 与当前策略「市场数据」勾选一致的可视化周期列表（大到小）；供 widget 挂载与截图。 */
+let rendererActiveTvSpecs = tvSpecsForLayoutIntervals(intervalsForTradingViewChartGrid(undefined));
+
 let tvWidgets = new Map();
 let tvWidgetRenderTimer = 0;
 let tvWidgetRenderFrameA = 0;
@@ -73,7 +82,8 @@ function cancelPendingTradingViewRender() {
 }
 
 function areTradingViewContainersReady() {
-  return MULTI_TIMEFRAME_SPECS.every((spec) => {
+  if (!rendererActiveTvSpecs.length) return false;
+  return rendererActiveTvSpecs.every((spec) => {
     const el = document.getElementById(spec.containerId);
     return el instanceof HTMLElement && el.clientWidth > 0 && el.clientHeight > 0;
   });
@@ -100,6 +110,10 @@ function scheduleTradingViewWidget(
   };
   const seq = ++tvWidgetRenderSeq;
   cancelPendingTradingViewRender();
+
+  if (rendererCfgSnapshotForTradingViewLayout) {
+    refreshRendererTradingViewLayoutFromCfg(rendererCfgSnapshotForTradingViewLayout);
+  }
 
   const render = () => {
     tvWidgetRenderFrameA = window.requestAnimationFrame(() => {
@@ -208,6 +222,17 @@ async function captureTradingViewPng(interval = "5") {
   return { mimeType: "image/png", dataUrl, base64 };
 }
 
+/** 当前附图布局下用于探测「任一子图已可截图」的周期（最小可见周期）。 */
+function probeChartCaptureReadyInterval(): string {
+  const specs =
+    rendererActiveTvSpecs.length > 0
+      ? rendererActiveTvSpecs
+      : tvSpecsForLayoutIntervals(intervalsForTradingViewChartGrid(undefined));
+  if (!specs.length) return String(chartIntervalCanonical || chartInterval || "5");
+  const sorted = sortMultiTimeframeSpecsSmallestFirst(specs);
+  return String(sorted[0]?.interval ?? chartIntervalCanonical ?? chartInterval ?? "5");
+}
+
 function loadImageElement(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -221,7 +246,10 @@ function loadImageElement(dataUrl: string): Promise<HTMLImageElement> {
  * @param {string[] | undefined} selectedIntervals TradingView interval，如 `5`/`1D`；空或未传截取全部
  */
 function resolveMultiTimeframeSpecsForCapture(selectedIntervals: string[] | undefined) {
-  const all = MULTI_TIMEFRAME_SPECS;
+  const all =
+    rendererActiveTvSpecs.length > 0
+      ? rendererActiveTvSpecs
+      : tvSpecsForLayoutIntervals(intervalsForTradingViewChartGrid(undefined));
   if (!Array.isArray(selectedIntervals) || selectedIntervals.length === 0) {
     return sortMultiTimeframeSpecsSmallestFirst(all);
   }
@@ -232,7 +260,7 @@ function resolveMultiTimeframeSpecsForCapture(selectedIntervals: string[] | unde
 }
 
 /**
- * @param {string[] | undefined} selectedIntervals 策略勾选的多周期；未传则截四宫格全部
+ * @param {string[] | undefined} selectedIntervals 策略勾选的多周期；未传则截取全部嵌入图
  */
 async function captureMultiTimeframeCharts(selectedIntervals?: string[]) {
   const specs = resolveMultiTimeframeSpecsForCapture(selectedIntervals);
@@ -344,9 +372,36 @@ const FALLBACK_APP_CONFIG = {
   strategyRuntimeById: {},
   promptStrategyDecisionIntervalTv: "5",
   promptStrategyChartIndicators: [...DEFAULT_STRATEGY_CHART_INDICATORS],
+  promptStrategyMarketTimeframes: [...STRATEGY_DEFAULT_MARKET_TIMEFRAMES],
 };
 
 type RendererAppConfig = typeof FALLBACK_APP_CONFIG;
+
+let rendererCfgSnapshotForTradingViewLayout: RendererAppConfig | null = null;
+
+/** 附图宫格展示的周期应与配置中当前策略的「市场数据」勾选一致（大到小已在 intervalsForTradingViewChartGrid 中体现）。 */
+function refreshRendererTradingViewLayoutFromCfg(cfg: RendererAppConfig) {
+  rendererCfgSnapshotForTradingViewLayout = cfg;
+  const layout = intervalsForTradingViewChartGrid(cfg.promptStrategyMarketTimeframes);
+  rendererActiveTvSpecs = tvSpecsForLayoutIntervals(
+    layout.length ? layout : intervalsForTradingViewChartGrid(undefined),
+  );
+}
+
+/** React 附图宫格数量与配置对齐后再挂载 widget，避免 `#tradingview_*` 容器不一致。 */
+function refreshTradingViewMarketLayoutThenCreateWidgets(sym, cfg, chartIndicators) {
+  refreshRendererTradingViewLayoutFromCfg(cfg);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      createTradingViewWidget(sym, chartInterval, {
+        chartIndicators:
+          chartIndicators ??
+          cfg.promptStrategyChartIndicators ??
+          FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+      });
+    });
+  });
+}
 
 function asRendererAppConfig(raw: unknown): RendererAppConfig {
   return raw as RendererAppConfig;
@@ -1605,10 +1660,11 @@ async function persistPromptStrategyPreference(promptStrategy) {
     applyPromptStrategySelect(saved);
     applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
     applySymbolSelect(saved);
-    createTradingViewWidget(saved.defaultSymbol, chartInterval, {
-      chartIndicators:
-        saved.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
-    });
+    refreshTradingViewMarketLayoutThenCreateWidgets(
+      saved.defaultSymbol,
+      saved,
+      saved.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+    );
     if (typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(saved.defaultSymbol);
     }
@@ -1730,10 +1786,11 @@ async function applyMarketUiFromLoadedConfig(prefetched?: unknown) {
     applyPromptStrategySelect(cfg);
     applyChartIntervalSelect(cfg.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
     const sym = cfg.defaultSymbol || FALLBACK_APP_CONFIG.defaultSymbol;
-    createTradingViewWidget(sym, chartInterval, {
-      chartIndicators:
-        cfg.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
-    });
+    refreshTradingViewMarketLayoutThenCreateWidgets(
+      sym,
+      cfg,
+      cfg.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+    );
     if (window.argus && typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(sym);
     }
@@ -1819,9 +1876,11 @@ function initConfigCenter() {
           applyChartIntervalSelect(
             FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv ?? "5",
           );
-          createTradingViewWidget(FALLBACK_APP_CONFIG.defaultSymbol, chartInterval, {
-            chartIndicators: FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
-          });
+          refreshTradingViewMarketLayoutThenCreateWidgets(
+            FALLBACK_APP_CONFIG.defaultSymbol,
+            FALLBACK_APP_CONFIG,
+            FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+          );
           if (typeof window.argus.setMarketContext === "function") {
             window.argus.setMarketContext(FALLBACK_APP_CONFIG.defaultSymbol);
           }
@@ -1834,10 +1893,11 @@ function initConfigCenter() {
           fillConfigModalFields(saved);
           applySymbolSelect(saved);
           applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
-          createTradingViewWidget(saved.defaultSymbol, chartInterval, {
-            chartIndicators:
-              saved.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
-          });
+          refreshTradingViewMarketLayoutThenCreateWidgets(
+            saved.defaultSymbol,
+            saved,
+            saved.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+          );
           if (typeof window.argus.setMarketContext === "function") {
             window.argus.setMarketContext(saved.defaultSymbol);
           }
@@ -1884,10 +1944,11 @@ function initConfigCenter() {
         if (!window.argus || typeof window.argus.saveConfig !== "function") {
           const cfg = await loadAppConfig();
           applySymbolSelect(cfg);
-          createTradingViewWidget(cfg.defaultSymbol, chartInterval, {
-            chartIndicators:
-              cfg.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
-          });
+          refreshTradingViewMarketLayoutThenCreateWidgets(
+            cfg.defaultSymbol,
+            cfg,
+            cfg.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+          );
           closeModal();
           refreshExchangeContextBarFromCache();
           void refreshOkxPositionBar();
@@ -1913,10 +1974,11 @@ function initConfigCenter() {
           );
           applySymbolSelect(saved);
           applyChartIntervalSelect(saved.promptStrategyDecisionIntervalTv ?? FALLBACK_APP_CONFIG.promptStrategyDecisionIntervalTv);
-          createTradingViewWidget(saved.defaultSymbol, chartInterval, {
-            chartIndicators:
-              saved.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
-          });
+          refreshTradingViewMarketLayoutThenCreateWidgets(
+            saved.defaultSymbol,
+            saved,
+            saved.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+          );
           if (typeof window.argus.setMarketContext === "function") {
             window.argus.setMarketContext(saved.defaultSymbol);
           }
@@ -1964,7 +2026,7 @@ function destroyWidget() {
     }
   }
   tvWidgets = new Map();
-  for (const spec of MULTI_TIMEFRAME_SPECS) {
+  for (const spec of ALL_TV_EMBED_CONTAINER_SPECS) {
     const el = document.getElementById(spec.containerId);
     if (el) el.innerHTML = "";
   }
@@ -1973,8 +2035,14 @@ function destroyWidget() {
 function createTradingViewWidgetNow(symbol, _interval) {
   destroyWidget();
 
+  const targets =
+    rendererActiveTvSpecs.length > 0
+      ? rendererActiveTvSpecs
+      : tvSpecsForLayoutIntervals(intervalsForTradingViewChartGrid(undefined));
+  if (!targets.length) return;
+
   if (typeof TradingView === "undefined" || !TradingView.widget) {
-    for (const spec of MULTI_TIMEFRAME_SPECS) {
+    for (const spec of targets) {
       const el = document.getElementById(spec.containerId);
       if (el) {
         el.innerHTML =
@@ -1998,7 +2066,7 @@ function createTradingViewWidgetNow(symbol, _interval) {
    * 另：save_image 为 false 时可关闭保存图片；show_popup_button 控制弹出大图等。
    * enabled_features / disabled_features 会传给 iframe，主要给 Charting Library 用，免费 embed 是否生效因版本而异。
    */
-  for (const spec of MULTI_TIMEFRAME_SPECS) {
+  for (const spec of targets) {
     const widget = new TradingView.widget({
       autosize: true,
       symbol: tvSymbol,
@@ -2215,7 +2283,7 @@ function initChartCaptureBridge() {
         const readyDeadline = Date.now() + 18000;
         while (Date.now() < readyDeadline) {
           try {
-            await captureTradingViewPng("5");
+            await captureTradingViewPng(probeChartCaptureReadyInterval());
             break;
           } catch {
             await new Promise((r) => setTimeout(r, 400));
@@ -2896,10 +2964,11 @@ export function initArgusApp() {
     );
     applyPromptStrategySelect(cfg);
     const sym = cfg.defaultSymbol || cfg.symbols[0]?.value || "OKX:BTCUSDT";
-    createTradingViewWidget(sym, chartInterval, {
-      chartIndicators:
-        cfg.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
-    });
+    refreshTradingViewMarketLayoutThenCreateWidgets(
+      sym,
+      cfg,
+      cfg.promptStrategyChartIndicators ?? FALLBACK_APP_CONFIG.promptStrategyChartIndicators,
+    );
     if (window.argus && typeof window.argus.setMarketContext === "function") {
       window.argus.setMarketContext(sym);
     }

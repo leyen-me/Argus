@@ -1,16 +1,34 @@
 /**
  * 策略维度的决策周期与扩展字段（前后端共用，避免散落魔法字符串）。
- * TradingView / OKX 周期写法：`5`、`15`、`60`、`1D`。
+ * TradingView / OKX 周期写法：`5`、`15`、`60`、`240`（4H）、`1D`。
  */
 
-export const STRATEGY_DECISION_INTERVAL_TV = ["5", "15", "60", "1D"] as const;
+export const STRATEGY_DECISION_INTERVAL_TV = ["5", "15", "60", "240", "1D"] as const;
 export type StrategyDecisionIntervalTv = (typeof STRATEGY_DECISION_INTERVAL_TV)[number];
+
+/** 「市场数据」多选最多条数（5 个周期里最多勾选 4 个用于投喂上下文）。 */
+export const MAX_STRATEGY_MARKET_TIMEFRAMES = 4;
+
+/**
+ * 默认投喂 / 缺省勾选的周期（至多 {@link MAX_STRATEGY_MARKET_TIMEFRAMES} 个）；升级库后仍与旧版四周期面一致。
+ */
+export const STRATEGY_DEFAULT_MARKET_TIMEFRAMES: readonly StrategyDecisionIntervalTv[] = ["5", "15", "60", "1D"];
+
+/** 左侧嵌入多图 DOM 顺序：周期从大到小、从左到右（先上排后下排）。 */
+export const STRATEGY_CHART_LAYOUT_INTERVALS_DESC: readonly StrategyDecisionIntervalTv[] = [
+  "1D",
+  "240",
+  "60",
+  "15",
+  "5",
+];
 
 /** 送入 LLM 的附图 / K 线多周期（小周期在前、大周期在后，与提示词 `## 多周期上下文` 一致）。 */
 export const MULTI_TIMEFRAME_CAPTURE_SPECS = [
   { interval: "5", label: "5m" },
   { interval: "15", label: "15m" },
   { interval: "60", label: "1H" },
+  { interval: "240", label: "4H" },
   { interval: "1D", label: "1D" },
 ] as const;
 
@@ -99,7 +117,7 @@ export type StrategyExtrasV1 = {
 export function defaultStrategyExtras(): StrategyExtrasV1 {
   return {
     tokenSymbols: ["BTC"],
-    marketTimeframes: [...STRATEGY_DECISION_INTERVAL_TV],
+    marketTimeframes: [...STRATEGY_DEFAULT_MARKET_TIMEFRAMES],
     indicators: [],
     chartIndicators: ["EM20"],
   };
@@ -119,6 +137,8 @@ export function decisionIntervalLabel(tv: StrategyDecisionIntervalTv): string {
       return "15 分钟";
     case "60":
       return "1 小时";
+    case "240":
+      return "4 小时";
     case "1D":
       return "日线";
     default:
@@ -133,6 +153,8 @@ export function decisionIntervalExplain(tv: StrategyDecisionIntervalTv): string 
       return "15 分钟";
     case "60":
       return "1 小时";
+    case "240":
+      return "4 小时";
     case "1D":
       return "日线";
     default:
@@ -167,11 +189,32 @@ export function orderStrategyChartIndicators(
 }
 
 export function normalizeStrategyMarketTimeframes(raw: unknown): StrategyDecisionIntervalTv[] {
-  if (!Array.isArray(raw)) return [...STRATEGY_DECISION_INTERVAL_TV];
-  const out = raw
+  if (!Array.isArray(raw)) return [...STRATEGY_DEFAULT_MARKET_TIMEFRAMES];
+  let out = raw
     .map((x) => normalizeStrategyDecisionIntervalTv(x))
     .filter((x, i, a) => a.indexOf(x) === i);
-  return out.length ? out : [...STRATEGY_DECISION_INTERVAL_TV];
+  if (!out.length) return [...STRATEGY_DEFAULT_MARKET_TIMEFRAMES];
+  if (out.length > MAX_STRATEGY_MARKET_TIMEFRAMES) {
+    const asc = [...out].sort(
+      (a, b) =>
+        (TV_INTERVAL_RANK_SMALL_FIRST[a] ?? 99) - (TV_INTERVAL_RANK_SMALL_FIRST[b] ?? 99),
+    );
+    out = asc.slice(-MAX_STRATEGY_MARKET_TIMEFRAMES);
+  }
+  return sortMultiTimeframeSpecsSmallestFirst(out.map((interval) => ({ interval }))).map((s) => s.interval as StrategyDecisionIntervalTv);
+}
+
+/** 在「周期从大到小」的固定次序中筛出已勾选项，供左侧附图宫格 DOM 顺序使用。 */
+export function sortMarketTimeframesForChartGridDesc(
+  selected: readonly StrategyDecisionIntervalTv[],
+): StrategyDecisionIntervalTv[] {
+  const set = new Set(selected);
+  return STRATEGY_CHART_LAYOUT_INTERVALS_DESC.filter((id) => set.has(id));
+}
+
+/** 从策略 `extras.marketTimeframes` 或配置字段推导左侧应挂载的附图周期序列（大到小）。 */
+export function intervalsForTradingViewChartGrid(marketTimeframesField: unknown): StrategyDecisionIntervalTv[] {
+  return sortMarketTimeframesForChartGridDesc(normalizeStrategyMarketTimeframes(marketTimeframesField));
 }
 
 export function parseStrategyExtrasJson(raw: unknown): StrategyExtrasV1 {
@@ -230,7 +273,8 @@ const TV_INTERVAL_RANK_SMALL_FIRST: Record<string, number> = {
   "5": 0,
   "15": 1,
   "60": 2,
-  "1D": 3,
+  "240": 3,
+  "1D": 4,
 };
 
 /**

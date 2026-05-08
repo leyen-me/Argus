@@ -48,6 +48,8 @@ export type AppConfig = {
   promptStrategySelectOptions: { value: string; label: string }[];
   systemPromptCrypto: string;
   llmRequestTimeoutMs: number;
+  llmMaxRetries: number;
+  llmRetryBaseDelayMs: number;
   llmReasoningEnabled: boolean;
   barCloseAgentAutoEnabled: boolean;
   tradeNotifyEmailEnabled: boolean;
@@ -105,6 +107,8 @@ const APP_SETTINGS_SEED: AppSettingsSeed = Object.freeze({
   openaiModel: "qwen3.5-plus",
   openaiApiKey: "",
   llmRequestTimeoutMs: 300_000,
+  llmMaxRetries: 2,
+  llmRetryBaseDelayMs: 1_500,
   llmReasoningEnabled: false,
   /** 右侧面板「K 线收盘自动 Agent」总开关；关闭时不调用 LLM（仍推送收盘 payload）。 */
   barCloseAgentAutoEnabled: true,
@@ -485,7 +489,7 @@ function normalizeConfig(raw: unknown): AppConfig {
   const base = defaultConfigFallback();
   if (!raw || typeof raw !== "object") return base;
   const r = raw as Record<string, unknown>;
-  let symbols = listOkxStrategySymbolOptions();
+  const symbols = listOkxStrategySymbolOptions();
 
   let interval = typeof r.interval === "string" ? r.interval.trim() : base.interval;
   if (!ALLOWED_INTERVAL.has(interval)) interval = base.interval;
@@ -513,6 +517,18 @@ function normalizeConfig(raw: unknown): AppConfig {
   let llmRequestTimeoutMs = base.llmRequestTimeoutMs;
   const tt = Number(r.llmRequestTimeoutMs);
   if (Number.isFinite(tt) && tt > 0) llmRequestTimeoutMs = Math.floor(tt);
+
+  let llmMaxRetries = base.llmMaxRetries;
+  const retryCount = Number(r.llmMaxRetries);
+  if (Number.isFinite(retryCount) && retryCount >= 0) {
+    llmMaxRetries = Math.min(10, Math.floor(retryCount));
+  }
+
+  let llmRetryBaseDelayMs = base.llmRetryBaseDelayMs;
+  const retryDelay = Number(r.llmRetryBaseDelayMs);
+  if (Number.isFinite(retryDelay) && retryDelay > 0) {
+    llmRetryBaseDelayMs = Math.min(60_000, Math.floor(retryDelay));
+  }
 
   let llmReasoningEnabled = base.llmReasoningEnabled;
   if (r.llmReasoningEnabled === true) llmReasoningEnabled = true;
@@ -633,6 +649,8 @@ function normalizeConfig(raw: unknown): AppConfig {
     promptStrategyMarketTimeframes,
     systemPromptCrypto,
     llmRequestTimeoutMs,
+    llmMaxRetries,
+    llmRetryBaseDelayMs,
     llmReasoningEnabled,
     barCloseAgentAutoEnabled,
     tradeNotifyEmailEnabled,

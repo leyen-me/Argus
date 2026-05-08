@@ -48,7 +48,36 @@ export function ConfigModalLlmSection() {
           spellCheck={false}
           autoComplete="off"
         />
+        <Label htmlFor="config-llm-max-retries" className="text-muted-foreground sm:pt-0.5">
+          重试次数
+        </Label>
+        <Input
+          type="number"
+          id="config-llm-max-retries"
+          className="config-in config-openai-input h-8"
+          min={0}
+          max={10}
+          step={1}
+          placeholder="2"
+          autoComplete="off"
+        />
+        <Label htmlFor="config-llm-retry-base-delay-ms" className="text-muted-foreground sm:pt-0.5">
+          重试间隔(ms)
+        </Label>
+        <Input
+          type="number"
+          id="config-llm-retry-base-delay-ms"
+          className="config-in config-openai-input h-8"
+          min={100}
+          max={60000}
+          step={100}
+          placeholder="1500"
+          autoComplete="off"
+        />
       </div>
+      <p className="m-0 text-[11px] leading-5 text-muted-foreground/90">
+        超时、429、5xx 和部分网络错误会按指数退避自动重试；流式响应一旦已经开始输出，为避免重复内容，不会中途重试。
+      </p>
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/80 bg-muted/20 px-3 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <input

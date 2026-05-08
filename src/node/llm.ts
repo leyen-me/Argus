@@ -12,7 +12,6 @@ import {
   filterMultiTimeframeSpecsByMarketSelection,
   orderStrategyIndicatorsForPrompt,
   STRATEGY_INDICATOR_ORDER,
-  type StrategyDecisionIntervalTv,
   type StrategyIndicatorId,
 } from "../shared/strategy-fields.js";
 
@@ -79,12 +78,29 @@ function composeSystemPrompt(
 }
 
 const DEFAULT_LLM_TIMEOUT_MS = 300_000;
+const DEFAULT_LLM_MAX_RETRIES = 2;
+const DEFAULT_LLM_RETRY_BASE_DELAY_MS = 1_500;
+const MAX_LLM_RETRY_DELAY_MS = 30_000;
 
 /** @param {object | null | undefined} cfg */
 function llmRequestTimeoutMs(cfg) {
   let ms = Number(cfg?.llmRequestTimeoutMs);
   if (!Number.isFinite(ms) || ms <= 0) ms = DEFAULT_LLM_TIMEOUT_MS;
   return Math.floor(ms);
+}
+
+/** @param {object | null | undefined} cfg */
+function llmMaxRetries(cfg) {
+  let retries = Number(cfg?.llmMaxRetries);
+  if (!Number.isFinite(retries) || retries < 0) retries = DEFAULT_LLM_MAX_RETRIES;
+  return Math.min(10, Math.floor(retries));
+}
+
+/** @param {object | null | undefined} cfg */
+function llmRetryBaseDelayMs(cfg) {
+  let ms = Number(cfg?.llmRetryBaseDelayMs);
+  if (!Number.isFinite(ms) || ms <= 0) ms = DEFAULT_LLM_RETRY_BASE_DELAY_MS;
+  return Math.min(60_000, Math.floor(ms));
 }
 
 /** @param {object | null | undefined} cfg */
@@ -96,6 +112,74 @@ function llmAbortSignal(cfg) {
   const ac = new AbortController();
   setTimeout(() => ac.abort(), ms);
   return ac.signal;
+}
+
+/** @param {object | null | undefined} cfg
+ * @param {number} attemptIndex 0-based retry index */
+function llmRetryDelayMs(cfg, attemptIndex) {
+  const base = llmRetryBaseDelayMs(cfg);
+  return Math.min(MAX_LLM_RETRY_DELAY_MS, base * 2 ** Math.max(0, attemptIndex));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** @param {unknown} e */
+function isRetryableLlmError(e) {
+  if (e instanceof APIUserAbortError) return true;
+  if (e && typeof e === "object" && (e.name === "AbortError" || e.code === "ABORT_ERR")) {
+    return true;
+  }
+  if (e instanceof APIError) {
+    const status = Number(e.status ?? 0);
+    return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+  }
+  const code =
+    e && typeof e === "object" && "code" in e && e.code != null ? String(e.code).toUpperCase() : "";
+  if (
+    code === "ETIMEDOUT" ||
+    code === "ECONNRESET" ||
+    code === "ECONNREFUSED" ||
+    code === "EPIPE" ||
+    code === "UND_ERR_CONNECT_TIMEOUT"
+  ) {
+    return true;
+  }
+  const msg = e && typeof e === "object" && "message" in e ? String(e.message) : String(e ?? "");
+  return /timed out|timeout|fetch failed|network error|socket hang up|connection reset/i.test(msg);
+}
+
+async function withLlmRetries<T>(
+  cfg,
+  run: (attempt: number) => Promise<T>,
+  opts: { shouldRetry?: (error: unknown, attempt: number) => boolean } = {},
+): Promise<T> {
+  const maxRetries = llmMaxRetries(cfg);
+  let lastError: unknown = new Error("LLM 请求失败：未知错误");
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await run(attempt);
+    } catch (e) {
+      lastError = e;
+      const canRetry =
+        attempt < maxRetries &&
+        isRetryableLlmError(e) &&
+        (typeof opts.shouldRetry === "function" ? opts.shouldRetry(e, attempt) : true);
+      if (!canRetry) throw e;
+      await sleep(llmRetryDelayMs(cfg, attempt));
+    }
+  }
+  throw lastError;
+}
+
+function createLlmClient(apiKey: string, baseURL: string, timeout: number) {
+  return new OpenAI({
+    apiKey,
+    baseURL,
+    timeout,
+    maxRetries: 0,
+  });
 }
 
 /** OpenRouter 专用 `reasoning`；阿里云 OpenAI 兼容链（DashScope、`*.maas.aliyuncs.com` 等）用 `enable_thinking`。 */
@@ -523,54 +607,57 @@ async function streamOpenAIChat(messages, options, onEvent) {
   }
 
   const apiKey = resolveOpenAiApiKey(cfg);
-  const signal = llmAbortSignal(cfg);
-  const client = new OpenAI({
-    apiKey,
-    baseURL: built.baseURL,
-    timeout: llmRequestTimeoutMs(cfg),
-    maxRetries: 0,
-  });
+  const client = createLlmClient(apiKey, built.baseURL, llmRequestTimeoutMs(cfg));
 
   let fullText = "";
   let fullReasoning = "";
   const wantReasoning = !!(cfg && cfg.llmReasoningEnabled === true);
 
   try {
-    const stream = await client.chat.completions.create(
-      built.body as unknown as ChatCompletionCreateParamsStreaming,
-      { signal },
-    );
-    for await (const chunk of stream) {
-      const delta = chunk.choices?.[0]?.delta;
-      const d =
-        delta && typeof delta === "object" ? /** @type {Record<string, unknown>} */ (delta) : {};
-      const contentPiece = deltaContentToString(d.content);
+    await withLlmRetries(
+      cfg,
+      async () => {
+        const signal = llmAbortSignal(cfg);
+        const stream = await client.chat.completions.create(
+          built.body as unknown as ChatCompletionCreateParamsStreaming,
+          { signal },
+        );
+        for await (const chunk of stream) {
+          const delta = chunk.choices?.[0]?.delta;
+          const d =
+            delta && typeof delta === "object" ? /** @type {Record<string, unknown>} */ (delta) : {};
+          const contentPiece = deltaContentToString(d.content);
 
-      if (wantReasoning) {
-        const rawReasoning = appendReasoningFromDelta(d);
-        if (contentPiece) fullText += contentPiece;
-        if (rawReasoning) fullReasoning = mergeReasoningChunk(fullReasoning, rawReasoning);
-        if (contentPiece || rawReasoning) {
-          onEvent({
-            type: "delta",
-            piece: contentPiece,
-            full: fullText,
-            reasoningFull: fullReasoning,
-          });
+          if (wantReasoning) {
+            const rawReasoning = appendReasoningFromDelta(d);
+            if (contentPiece) fullText += contentPiece;
+            if (rawReasoning) fullReasoning = mergeReasoningChunk(fullReasoning, rawReasoning);
+            if (contentPiece || rawReasoning) {
+              onEvent({
+                type: "delta",
+                piece: contentPiece,
+                full: fullText,
+                reasoningFull: fullReasoning,
+              });
+            }
+          } else {
+            /** 未开深度思考时：正文只认 delta.content，不把 reasoning 通道合并进助手气泡（避免满屏「思考腔」）。 */
+            if (contentPiece) {
+              fullText += contentPiece;
+              onEvent({
+                type: "delta",
+                piece: contentPiece,
+                full: fullText,
+                reasoningFull: "",
+              });
+            }
+          }
         }
-      } else {
-        /** 未开深度思考时：正文只认 delta.content，不把 reasoning 通道合并进助手气泡（避免满屏「思考腔」）。 */
-        if (contentPiece) {
-          fullText += contentPiece;
-          onEvent({
-            type: "delta",
-            piece: contentPiece,
-            full: fullText,
-            reasoningFull: "",
-          });
-        }
-      }
-    }
+      },
+      {
+        shouldRetry: () => fullText.trim().length === 0 && fullReasoning.trim().length === 0,
+      },
+    );
   } catch (e) {
     return mapLlmSdkError(e, cfg);
   }
@@ -600,19 +687,16 @@ async function callOpenAIChat(userText: string, options: Record<string, unknown>
   }
 
   const apiKey = resolveOpenAiApiKey(cfg);
-  const signal = llmAbortSignal(cfg);
-  const client = new OpenAI({
-    apiKey,
-    baseURL: built.baseURL,
-    timeout: llmRequestTimeoutMs(cfg),
-    maxRetries: 0,
-  });
+  const client = createLlmClient(apiKey, built.baseURL, llmRequestTimeoutMs(cfg));
 
   try {
-    const completion = await client.chat.completions.create(
-      built.body as unknown as ChatCompletionCreateParamsNonStreaming,
-      { signal },
-    );
+    const completion = await withLlmRetries(cfg, async () => {
+      const signal = llmAbortSignal(cfg);
+      return client.chat.completions.create(
+        built.body as unknown as ChatCompletionCreateParamsNonStreaming,
+        { signal },
+      );
+    });
     const rawMsg = completion?.choices?.[0]?.message?.content;
     const text = messageContentToString(rawMsg).trim();
     if (!text) {
@@ -648,7 +732,7 @@ const SUMMARY_LLM_MAX_MS = 60_000;
  * @param {object} param1
  * @param {{ appConfig: object, baseUrl?: string, model?: string }} param1.options
  * @param {import("openai").OpenAI} param1.client
- * @param {AbortSignal} param1.signal
+ * @param {() => AbortSignal} param1.signalFactory
  * @param {number} param1.maxTokens
  */
 async function runCardSummaryCompletion(
@@ -656,11 +740,11 @@ async function runCardSummaryCompletion(
   opts: {
     options: Record<string, unknown>;
     client: OpenAI;
-    signal: AbortSignal;
+    signalFactory: () => AbortSignal;
     maxTokens: number;
   },
 ) {
-  const { options, client, signal, maxTokens } = opts;
+  const { options, client, signalFactory, maxTokens } = opts;
   const built = buildChatCompletionRequestFromMessages(messages, {
     ...options,
     llmReasoningForThisRequest: false,
@@ -675,10 +759,13 @@ async function runCardSummaryCompletion(
   if (isAliyunCompatibleThinkingBaseUrl(built.baseURL)) {
     body.enable_thinking = false;
   }
-  const completion = await client.chat.completions.create(
-    body as unknown as ChatCompletionCreateParamsNonStreaming,
-    { signal },
-  );
+  const completion = await withLlmRetries(options.appConfig, async () => {
+    const signal = signalFactory();
+    return client.chat.completions.create(
+      body as unknown as ChatCompletionCreateParamsNonStreaming,
+      { signal },
+    );
+  });
   const rawMsg = completion?.choices?.[0]?.message?.content;
   return messageContentToString(rawMsg).trim();
 }
@@ -744,10 +831,10 @@ function buildCardSummarySourceFromAgentThread(messagesOut) {
  * @param {string} longLine
  * @param {{ appConfig: object, baseUrl?: string, model?: string }} options
  * @param {import("openai").OpenAI} client
- * @param {AbortSignal} signal
+ * @param {() => AbortSignal} signalFactory
  * @returns {Promise<string>}
  */
-async function compressCardLineForTightLimit(longLine, options, client, signal) {
+async function compressCardLineForTightLimit(longLine, options, client, signalFactory) {
   const line = normalizeOneLineCardText(longLine);
   if (!line) return "";
   if (line.length <= CARD_SUMMARY_MAX_OUT_CHARS) return line;
@@ -763,7 +850,7 @@ async function compressCardLineForTightLimit(longLine, options, client, signal) 
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      { options, client, signal, maxTokens: CARD_SUMMARY_TIGHTEN_MAX_TOKENS },
+      { options, client, signalFactory, maxTokens: CARD_SUMMARY_TIGHTEN_MAX_TOKENS },
     );
     const out = normalizeOneLineCardText(t);
     const hard = (s) =>
@@ -813,10 +900,10 @@ async function summarizeAgentAnalysisForCard(
     `**整句总长度必须不超过 ${CARD_SUMMARY_MAX_OUT_CHARS} 个字符**（含标点、数字）；禁止第二句与换行、列表、Markdown、引号；仅用一条连续语句（可含一个分号）。`,
   ].join("");
   const user = `以下是本轮分析，请直接输出**一句**摘要（操作；依据）：\n\n${cut}`;
-  const signal =
+  const signalFactory = () =>
     typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
       ? AbortSignal.timeout(SUMMARY_LLM_MAX_MS)
-      : llmAbortSignal(cfg);
+      : llmAbortSignal({ llmRequestTimeoutMs: SUMMARY_LLM_MAX_MS });
   const initBuilt = buildChatCompletionRequestFromMessages(
     [{ role: "user", content: "x" }],
     { ...options, llmReasoningForThisRequest: false },
@@ -825,26 +912,25 @@ async function summarizeAgentAnalysisForCard(
   if (initBuilt.error) {
     return { ok: false };
   }
-  const client = new OpenAI({
-    apiKey: resolveOpenAiApiKey(cfg),
-    baseURL: initBuilt.baseURL,
-    timeout: Math.min(SUMMARY_LLM_MAX_MS + 5_000, llmRequestTimeoutMs(cfg)),
-    maxRetries: 0,
-  });
+  const client = createLlmClient(
+    resolveOpenAiApiKey(cfg),
+    initBuilt.baseURL,
+    Math.min(SUMMARY_LLM_MAX_MS + 5_000, llmRequestTimeoutMs(cfg)),
+  );
   try {
     const first = await runCardSummaryCompletion(
       [
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      { options, client, signal, maxTokens: CARD_SUMMARY_FIRST_MAX_TOKENS },
+      { options, client, signalFactory, maxTokens: CARD_SUMMARY_FIRST_MAX_TOKENS },
     );
     let oneLine = normalizeOneLineCardText(first);
     if (!oneLine) {
       return { ok: false };
     }
     if (oneLine.length > CARD_SUMMARY_MAX_OUT_CHARS) {
-      oneLine = await compressCardLineForTightLimit(oneLine, options, client, signal);
+      oneLine = await compressCardLineForTightLimit(oneLine, options, client, signalFactory);
     }
     if (!oneLine) {
       return { ok: false };
@@ -1508,7 +1594,6 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
     return { ok: false, text: "LLM 未启用。", toolTrace: [], messagesOut: messages, reasoningText: "" };
   }
   const apiKey = resolveOpenAiApiKey(cfg);
-  const signal = llmAbortSignal(cfg);
   const probe = buildChatCompletionRequestFromMessages(messages, options, false);
   if (probe.error) {
     return { ok: false, text: probe.error, toolTrace: [], messagesOut: messages, reasoningText: "" };
@@ -1519,12 +1604,7 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
   const maxSteps = Math.min(16, Math.max(1, Number(agentOpts.maxSteps) || 8));
   const onStep = typeof agentOpts.onStep === "function" ? agentOpts.onStep : null;
 
-  const client = new OpenAI({
-    apiKey,
-    baseURL: probe.baseURL,
-    timeout: llmRequestTimeoutMs(cfg),
-    maxRetries: 0,
-  });
+  const client = createLlmClient(apiKey, probe.baseURL, llmRequestTimeoutMs(cfg));
 
   const thread = [...messages];
   const toolTrace: Array<{ name: string; args: Record<string, unknown>; result: unknown }> = [];
@@ -1537,10 +1617,13 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
       if (built.error) {
         return { ok: false, text: built.error, toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() };
       }
-      const completion = await client.chat.completions.create(
-        { ...built.body, tools, tool_choice: "auto" } as unknown as ChatCompletionCreateParamsNonStreaming,
-        { signal },
-      );
+      const completion = await withLlmRetries(cfg, async () => {
+        const signal = llmAbortSignal(cfg);
+        return client.chat.completions.create(
+          { ...built.body, tools, tool_choice: "auto" } as unknown as ChatCompletionCreateParamsNonStreaming,
+          { signal },
+        );
+      });
       const choice = completion?.choices?.[0];
       const msg = choice?.message;
       if (!msg) {

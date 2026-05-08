@@ -352,6 +352,8 @@ const FALLBACK_APP_CONFIG = {
   openaiApiKey: "",
   systemPromptCrypto: FALLBACK_SYSTEM_PROMPT_CRYPTO,
   llmRequestTimeoutMs: 300000,
+  llmMaxRetries: 2,
+  llmRetryBaseDelayMs: 1500,
   llmReasoningEnabled: false,
   barCloseAgentAutoEnabled: true,
   tradeNotifyEmailEnabled: false,
@@ -1742,8 +1744,16 @@ const ARGUS_PROMPT_STRATEGIES_CHANGED = "argus:prompt-strategies-changed";
 function fillConfigModalFields(cfg) {
   const openaiUrlEl = document.getElementById("config-openai-base-url");
   const openaiModelEl = document.getElementById("config-openai-model");
+  const llmMaxRetriesEl = document.getElementById("config-llm-max-retries");
+  const llmRetryBaseDelayEl = document.getElementById("config-llm-retry-base-delay-ms");
   if (openaiUrlEl) openaiUrlEl.value = cfg.openaiBaseUrl || FALLBACK_APP_CONFIG.openaiBaseUrl;
   if (openaiModelEl) openaiModelEl.value = cfg.openaiModel || FALLBACK_APP_CONFIG.openaiModel;
+  if (llmMaxRetriesEl) llmMaxRetriesEl.value = String(cfg.llmMaxRetries ?? FALLBACK_APP_CONFIG.llmMaxRetries);
+  if (llmRetryBaseDelayEl) {
+    llmRetryBaseDelayEl.value = String(
+      cfg.llmRetryBaseDelayMs ?? FALLBACK_APP_CONFIG.llmRetryBaseDelayMs,
+    );
+  }
   const openaiKeyEl = document.getElementById("config-openai-api-key");
   if (openaiKeyEl) openaiKeyEl.value = cfg.openaiApiKey ?? FALLBACK_APP_CONFIG.openaiApiKey;
   const reasoningEl = document.getElementById("config-llm-reasoning");
@@ -1917,9 +1927,15 @@ function initConfigCenter() {
         const openaiUrlEl = document.getElementById("config-openai-base-url");
         const openaiModelEl = document.getElementById("config-openai-model");
         const openaiKeyEl = document.getElementById("config-openai-api-key");
+        const llmMaxRetriesEl = document.getElementById("config-llm-max-retries");
+        const llmRetryBaseDelayEl = document.getElementById("config-llm-retry-base-delay-ms");
         const openaiBaseUrl = openaiUrlEl?.value?.trim() ?? "";
         const openaiModel = openaiModelEl?.value?.trim() ?? "";
         const openaiApiKey = openaiKeyEl?.value?.trim() ?? "";
+        const llmMaxRetries = Number(llmMaxRetriesEl?.value ?? FALLBACK_APP_CONFIG.llmMaxRetries);
+        const llmRetryBaseDelayMs = Number(
+          llmRetryBaseDelayEl?.value ?? FALLBACK_APP_CONFIG.llmRetryBaseDelayMs,
+        );
         const reasoningEl = document.getElementById("config-llm-reasoning");
         const llmReasoningEnabled = reasoningEl?.checked === true;
         const tradeNotifyEl = document.getElementById("config-trade-notify-email");
@@ -1960,6 +1976,8 @@ function initConfigCenter() {
               openaiBaseUrl,
               openaiModel,
               openaiApiKey,
+              llmMaxRetries,
+              llmRetryBaseDelayMs,
               llmReasoningEnabled,
               tradeNotifyEmailEnabled,
               smtpUser,

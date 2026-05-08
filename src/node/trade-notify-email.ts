@@ -23,21 +23,6 @@ function resolveNotifyTo(cfg) {
   return user;
 }
 
-/**
- * @param {{ state: string }} prev
- * @param {{ state: string }} next
- */
-function isNotablePositionChange(prev, next) {
-  if (!prev || !next) return false;
-  const ps = String(prev.state || "");
-  const ns = String(next.state || "");
-  const opened =
-    (ns === "HOLDING_LONG" || ns === "HOLDING_SHORT") && ps !== ns;
-  const closedFromHolding =
-    (ps === "HOLDING_LONG" || ps === "HOLDING_SHORT") && ns === "COOLDOWN";
-  return opened || closedFromHolding;
-}
-
 function buildPlainBody(detail) {
   const lines = [
     "Argus 交易通知：",
@@ -81,11 +66,8 @@ async function notifyTradePositionIfNeeded(cfg, detail) {
   const to = resolveNotifyTo(cfg);
   if (!to) return;
 
-  let shouldSend = false;
-  if (detail.hardExit) shouldSend = true;
-  else if (detail.prevState && detail.nextState && isNotablePositionChange(detail.prevState, detail.nextState)) {
-    shouldSend = true;
-  }
+  // 不依赖交易状态机：只要有明确的“工具动作”或硬触发，就通知。
+  const shouldSend = Boolean(detail?.hardExit || String(detail?.transition || "").trim());
   if (!shouldSend) return;
 
   const host = typeof cfg.smtpHost === "string" && cfg.smtpHost.trim() ? cfg.smtpHost.trim() : "smtp.qq.com";
@@ -110,4 +92,4 @@ async function notifyTradePositionIfNeeded(cfg, detail) {
   });
 }
 
-export { notifyTradePositionIfNeeded, isNotablePositionChange };
+export { notifyTradePositionIfNeeded };

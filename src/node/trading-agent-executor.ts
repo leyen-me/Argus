@@ -129,17 +129,12 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
             return { ok: false, message: ex.message || "开仓失败" };
           }
           const resolvedOpenOrderType = ex.orderType || orderType;
-          const shouldNotifyOpen =
-            resolvedOpenOrderType === "market" || (ex.position && ex.position.hasPosition === true);
-          if (shouldNotifyOpen) {
-            scheduleTradeNotify({
-              tvSymbol,
-              prevState: { state: "COOLDOWN" },
-              nextState: { state: side === "long" ? "HOLDING_LONG" : "HOLDING_SHORT" },
-              transition: "开仓",
-              atIso: new Date().toISOString(),
-            });
-          }
+          // 不依赖交易状态机：只要开仓工具执行成功就通知（市价/限价都会发）。
+          scheduleTradeNotify({
+            tvSymbol,
+            transition: resolvedOpenOrderType === "limit" ? "开仓（限价单已提交）" : "开仓",
+            atIso: new Date().toISOString(),
+          });
           sendOkxStatus({ ok: true, message: `Agent 开仓 ${orderType} ordId=${ex.ordId || ""}` });
           return {
             ok: true,
@@ -163,15 +158,12 @@ function createTradingToolExecutor(ctx, deps = TRADING_EXECUTOR_DEFAULT_DEPS) {
             sendOkxStatus({ ok: false, message: ex.message || "平仓失败" });
             return { ok: false, message: ex.message || "平仓失败" };
           }
-          if (ex.preCloseHoldingState) {
-            scheduleTradeNotify({
-              tvSymbol,
-              prevState: { state: ex.preCloseHoldingState },
-              nextState: { state: "COOLDOWN" },
-              transition: "平仓",
-              atIso: new Date().toISOString(),
-            });
-          }
+          // 不依赖交易状态机：只要平仓工具执行成功就通知（市价/限价都会发）。
+          scheduleTradeNotify({
+            tvSymbol,
+            transition: orderType === "limit" ? "平仓（限价单已提交）" : "平仓",
+            atIso: new Date().toISOString(),
+          });
           sendOkxStatus({ ok: true, message: `Agent 平仓 ${orderType} ordId=${ex.ordId || ""}` });
           const closedSide =
             ex.preCloseHoldingState === "HOLDING_SHORT"

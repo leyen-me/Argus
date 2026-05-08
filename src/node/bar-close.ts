@@ -1,16 +1,14 @@
 /**
- * K 线收盘后：请求渲染进程截取左侧 TradingView，与行情数据组装为统一 payload（供后续多模态 LLM + OKX Agent）。
+ * K 线收盘后：将行情文本上下文组装为 payload，供收盘 LLM Agent + OKX 工具调用（不向模型附带 TradingView 截图；左侧图表仅用于人机查看）。
  */
 import crypto from "node:crypto";
 import { publish } from "./runtime-bus.js";
-import { requestChartCaptureFromBrowser, type BrowserChartCaptureOk } from "./chart-capture-browser-bridge.js";
 import { loadAppConfig, type AppConfig } from "./app-config.js";
 import { conversationKey } from "./llm-context.js";
 import {
   isLlmEnabled,
   buildMultiTimeframeUserPrompt,
   runTradingAgentTurn,
-  buildMultimodalUserContent,
   resolveSystemPrompt,
   resolveTradingAgentSystemPrompt,
   RECENT_CANDLES_FETCH_LIMIT,
@@ -468,19 +466,6 @@ function formatToolCallPreview(toolCalls) {
 }
 
 /**
- * @param {string} tvSymbol
- * @param {number} [timeoutMs]
- * @param {string[] | undefined} [marketTimeframes]
- */
-async function requestChartCapture(
-  tvSymbol: string,
-  timeoutMs = 45000,
-  marketTimeframes?: string[],
-): Promise<BrowserChartCaptureOk> {
-  return requestChartCaptureFromBrowser(tvSymbol, timeoutMs, marketTimeframes);
-}
-
-/**
  * @param {{
  *   source: "okx_ws",
  *   tvSymbol: string,
@@ -498,20 +483,9 @@ async function emitBarClose(ctx) {
     marketTfs,
   );
 
-  let chartImage: PrimaryChartImage | null = null;
-  let chartImages: MultiTimeframeChartImage[] = [];
-  let chartCaptureError: string | null = null;
-  try {
-    const capturePack = await requestChartCapture(ctx.tvSymbol, 45000, marketTfs);
-    chartImage = {
-      mimeType: capturePack.mimeType,
-      base64: capturePack.base64,
-      dataUrl: capturePack.dataUrl,
-    };
-    chartImages = Array.isArray(capturePack.charts) ? capturePack.charts : [];
-  } catch (e) {
-    chartCaptureError = e instanceof Error ? e.message : String(e);
-  }
+  const chartImage: PrimaryChartImage | null = null;
+  const chartImages: MultiTimeframeChartImage[] = [];
+  const chartCaptureError: string | null = null;
   const decisionIvCanon = canonTradingViewInterval(cfg.promptStrategyDecisionIntervalTv ?? "5");
   const ctxIvCanon = canonTradingViewInterval(ctx.interval);
   const barCloseId = crypto.randomUUID();
@@ -595,27 +569,9 @@ async function emitBarClose(ctx) {
     return;
   }
 
-  const orderedChartImages = multiCaptureSpecs.map((spec) => {
-    const found = chartImages.find((item) => String(item.interval) === spec.interval);
-    if (!found?.base64) return null;
-    return {
-      ...found,
-      label: spec.label,
-    };
-  }).filter(Boolean);
-
-  if (
-    chartCaptureError ||
-    !chartImage?.base64 ||
-    ctxIvCanon !== decisionIvCanon ||
-    orderedChartImages.length !== multiCaptureSpecs.length
-  ) {
+  if (ctxIvCanon !== decisionIvCanon) {
     finishSkipped(
-      chartCaptureError
-        ? `未调用 LLM：图表截图失败（${chartCaptureError}）。`
-        : ctxIvCanon !== decisionIvCanon
-          ? `未调用 LLM：当前触发周期不是 ${decisionIntervalExplain(cfg.promptStrategyDecisionIntervalTv ?? "5")}。`
-          : "未调用 LLM：多周期图表截图不完整。",
+      `未调用 LLM：当前触发周期不是 ${decisionIntervalExplain(cfg.promptStrategyDecisionIntervalTv ?? "5")}。`,
     );
     return;
   }
@@ -642,15 +598,10 @@ async function emitBarClose(ctx) {
   }
 
   const systemPrompt = resolveTradingAgentSystemPrompt(cfg);
-  const currentUserContent = buildMultimodalUserContent(
-    llmUserText,
-    orderedChartImages,
-    chartImage.mimeType || "image/png",
-  );
-  /** 每根 K 线独立单轮：不传历史 messages，仅 system + 本轮 user（含完整 OKX 快照与图）。 */
+  // 每根 K 线独立单轮：本轮 user 仅文本（OHLC/K 线与 OKX 上下文），不向模型附带 TradingView 截图。
   const messages = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: currentUserContent },
+    { role: "user", content: llmUserText },
   ];
 
   llm.streaming = true;
@@ -749,8 +700,8 @@ async function emitBarClose(ctx) {
         textForLlm,
         llmUserFullText: llmUserText,
         exchangeContext: exchangeCtx,
-        chartMime: chartImage?.mimeType ?? null,
-        chartBase64: chartImage?.base64 ?? null,
+        chartMime: null,
+        chartBase64: null,
         chartCaptureError,
         assistantText: agentResult.text,
         cardSummary: llm.cardSummary,
@@ -791,8 +742,8 @@ async function emitBarClose(ctx) {
         textForLlm,
         llmUserFullText: llmUserText,
         exchangeContext: exchangeCtx,
-        chartMime: chartImage?.mimeType ?? null,
-        chartBase64: chartImage?.base64 ?? null,
+        chartMime: null,
+        chartBase64: null,
         chartCaptureError,
         assistantText: null,
         toolTrace: llm.toolTrace,
@@ -818,4 +769,4 @@ async function emitBarClose(ctx) {
   }
 }
 
-export { emitBarClose, requestChartCapture };
+export { emitBarClose };

@@ -125,6 +125,32 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** @param {unknown} e
+ * @param {number} retryCount */
+function withLlmRetryCount(e, retryCount) {
+  if (e && typeof e === "object") {
+    const out = /** @type {Record<string, unknown>} */ (e);
+    out.__argusRetryCount = retryCount;
+    return e;
+  }
+  return { message: String(e ?? ""), __argusRetryCount: retryCount };
+}
+
+/** @param {unknown} e */
+function llmRetryCountFromError(e) {
+  if (!e || typeof e !== "object" || !("__argusRetryCount" in e)) return 0;
+  const n = Number(e.__argusRetryCount);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+/** @param {string} message
+ * @param {unknown} e */
+function appendLlmRetrySuffix(message, e) {
+  const retryCount = llmRetryCountFromError(e);
+  if (retryCount <= 0) return message;
+  return `${message}（已重试 ${retryCount} 轮）`;
+}
+
 /** @param {unknown} e */
 function isRetryableLlmError(e) {
   if (e instanceof APIUserAbortError) return true;
@@ -153,10 +179,20 @@ function isRetryableLlmError(e) {
 async function withLlmRetries<T>(
   cfg,
   run: (attempt: number) => Promise<T>,
-  opts: { shouldRetry?: (error: unknown, attempt: number) => boolean } = {},
+  opts: {
+    shouldRetry?: (error: unknown, attempt: number) => boolean;
+    onRetry?: (ev: {
+      error: unknown;
+      retryCount: number;
+      maxRetries: number;
+      nextAttempt: number;
+      delayMs: number;
+    }) => void;
+  } = {},
 ): Promise<T> {
   const maxRetries = llmMaxRetries(cfg);
   let lastError: unknown = new Error("LLM 请求失败：未知错误");
+  let retryCount = 0;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await run(attempt);
@@ -166,11 +202,20 @@ async function withLlmRetries<T>(
         attempt < maxRetries &&
         isRetryableLlmError(e) &&
         (typeof opts.shouldRetry === "function" ? opts.shouldRetry(e, attempt) : true);
-      if (!canRetry) throw e;
-      await sleep(llmRetryDelayMs(cfg, attempt));
+      if (!canRetry) throw withLlmRetryCount(e, retryCount);
+      retryCount += 1;
+      const delayMs = llmRetryDelayMs(cfg, attempt);
+      opts.onRetry?.({
+        error: e,
+        retryCount,
+        maxRetries,
+        nextAttempt: attempt + 1,
+        delayMs,
+      });
+      await sleep(delayMs);
     }
   }
-  throw lastError;
+  throw withLlmRetryCount(lastError, retryCount);
 }
 
 function createLlmClient(apiKey: string, baseURL: string, timeout: number) {
@@ -210,8 +255,10 @@ function threadAlreadyHasAssistantOrTool(messages) {
 /** @param {unknown} e
  * @param {object | null | undefined} cfg */
 function mapLlmSdkError(e, _cfg) {
-  const timeoutMsg =
-    "LLM 请求超时（可在应用设置里改 llmRequestTimeoutMs，单位毫秒）";
+  const timeoutMsg = appendLlmRetrySuffix(
+    "LLM 请求超时（可在应用设置里改 llmRequestTimeoutMs，单位毫秒）",
+    e,
+  );
   if (e instanceof APIUserAbortError) {
     return { ok: false, text: timeoutMsg };
   }
@@ -219,10 +266,10 @@ function mapLlmSdkError(e, _cfg) {
     return { ok: false, text: timeoutMsg };
   }
   if (e instanceof APIError) {
-    return { ok: false, text: `LLM 请求错误：${e.message}` };
+    return { ok: false, text: appendLlmRetrySuffix(`LLM 请求错误：${e.message}`, e) };
   }
   const msg = e && typeof e === "object" && "message" in e ? String(e.message) : String(e);
-  return { ok: false, text: `LLM 请求失败：${msg}` };
+  return { ok: false, text: appendLlmRetrySuffix(`LLM 请求失败：${msg}`, e) };
 }
 
 /**
@@ -1586,6 +1633,7 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
  *   executeTool: (name: string, args: object) => Promise<object>,
  *   maxSteps?: number,
  *   onStep?: (ev: { step: number, toolCalls?: unknown[], assistantPreview?: string, reasoningPreview?: string }) => void,
+ *   onRetry?: (ev: { error: unknown, retryCount: number, maxRetries: number, nextAttempt: number, delayMs: number }) => void,
  * }} agentOpts
  */
 async function runTradingAgentTurn(messages, options, agentOpts) {
@@ -1603,6 +1651,7 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
   const executeTool = agentOpts.executeTool;
   const maxSteps = Math.min(16, Math.max(1, Number(agentOpts.maxSteps) || 8));
   const onStep = typeof agentOpts.onStep === "function" ? agentOpts.onStep : null;
+  const onRetry = typeof agentOpts.onRetry === "function" ? agentOpts.onRetry : null;
 
   const client = createLlmClient(apiKey, probe.baseURL, llmRequestTimeoutMs(cfg));
 
@@ -1617,13 +1666,17 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
       if (built.error) {
         return { ok: false, text: built.error, toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() };
       }
-      const completion = await withLlmRetries(cfg, async () => {
-        const signal = llmAbortSignal(cfg);
-        return client.chat.completions.create(
-          { ...built.body, tools, tool_choice: "auto" } as unknown as ChatCompletionCreateParamsNonStreaming,
-          { signal },
-        );
-      });
+      const completion = await withLlmRetries(
+        cfg,
+        async () => {
+          const signal = llmAbortSignal(cfg);
+          return client.chat.completions.create(
+            { ...built.body, tools, tool_choice: "auto" } as unknown as ChatCompletionCreateParamsNonStreaming,
+            { signal },
+          );
+        },
+        { onRetry },
+      );
       const choice = completion?.choices?.[0];
       const msg = choice?.message;
       if (!msg) {

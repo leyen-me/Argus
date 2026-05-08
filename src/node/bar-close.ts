@@ -678,6 +678,20 @@ async function emitBarClose(ctx) {
     tools: toolsForTurn,
     executeTool,
     maxSteps: 8,
+    onRetry: ({ retryCount, maxRetries, delayMs, error }) => {
+      const rawMessage =
+        error && typeof error === "object" && "message" in error ? String(error.message || "") : String(error || "");
+      const reason = /timed out|timeout/i.test(rawMessage)
+        ? "请求超时"
+        : /429/.test(rawMessage)
+          ? "请求过于频繁"
+          : "请求失败";
+      const delaySec = delayMs >= 1000 ? (delayMs / 1000).toFixed(delayMs % 1000 === 0 ? 0 : 1) : null;
+      const delayText = delaySec ? `，${delaySec} 秒后继续` : "";
+      publish("market-status", {
+        text: `LLM ${reason}，正在第 ${retryCount}/${maxRetries} 轮重试${delayText}…`,
+      });
+    },
     onStep: ({ toolCalls, assistantPreview, reasoningPreview }) => {
       let changed = false;
       if (assistantPreview) {

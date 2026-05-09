@@ -24,13 +24,13 @@ pnpm install
 pnpm dev
 ```
 
-浏览器打开 **http://127.0.0.1:5173**（Vite）。API 与 WebSocket 由 **8787** 端口的后端提供。
+浏览器打开 **http://127.0.0.1:5173**（Vite）。API 与 WebSocket 由 **8080** 端口的后端提供。
 
 **收盘截图**：由「当前打开的 Argus 网页」内的 **TradingView Widget**（`imageCanvas` / 四宫格拼图）完成，结果经 WebSocket 回传服务端。**请保持该标签页打开并已连接**（即正常使用 `pnpm dev` 打开的界面）；服务端推送 `request-chart-capture` 后由页面截图并上报。
 
 ### 常见问题
 
-若终端出现 **`ws proxy error: connect ECONNREFUSED 127.0.0.1:8787`**，或 RPC 报错：**说明未启动 Node 后端**。请使用 **`pnpm dev`**（前后端一起），或另开终端 **`pnpm run server:dev`**。
+若终端出现 **`ws proxy error: connect ECONNREFUSED 127.0.0.1:8080`**，或 RPC 报错：**说明未启动 Node 后端**。请使用 **`pnpm dev`**（前后端一起）。
 
 若启动报 **数据库初始化失败**：检查 MySQL 是否已启动、账号能否登录、`MYSQL_DATABASE` 是否已创建，以及用户是否有建表权限（首次启动会执行迁移 SQL）。
 
@@ -49,7 +49,7 @@ pnpm start
 
 | 变量 | 说明 |
 |------|------|
-| `PORT` | HTTP/WS 端口，默认 `8787` |
+| `PORT` | HTTP/WS 端口，默认 `8080` |
 | `ARGUS_USER_DATA` | 对话 JSON 等用户目录，默认 `%USERPROFILE%\.argus` |
 | `MYSQL_*` | 见上文数据库配置 |
 

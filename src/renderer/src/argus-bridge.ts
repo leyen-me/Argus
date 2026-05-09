@@ -118,7 +118,7 @@ function subscribeChannel(channel: string, cb: (payload: unknown) => void) {
 }
 
 const BACKEND_HINT =
-  "请先启动 Argus Node 服务端（默认监听 8787）。推荐使用「pnpm dev」同时启动后端与 Vite；若只跑了前端，请在另一终端执行「pnpm run server:dev」。";
+  "请先启动 Argus Node 服务端（默认监听 8080）。推荐使用「pnpm dev」同时启动后端与 Vite。";
 
 async function rpc(method: string, args: unknown[] = []) {
   let res: Response;
@@ -206,7 +206,7 @@ export function installArgusBridge() {
     submitChartCaptureResult: (result: unknown) => {
       const ws = socketRef;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.warn("[argus-bridge] WebSocket 未连接，无法回传截图（请保持 pnpm dev 后端在 8787 运行）");
+        console.warn("[argus-bridge] WebSocket 未连接，无法回传截图（请保持 pnpm dev 后端在 8080 运行）");
         return;
       }
       const payload =

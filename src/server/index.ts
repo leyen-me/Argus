@@ -240,7 +240,7 @@ async function main() {
     process.exit(1);
   }
 
-  const PORT = Number(process.env.PORT || 8787);
+  const PORT = Number(process.env.PORT || 8080);
   const HOST = process.env.HOST || "0.0.0.0";
   const distDir = path.join(__dirname, "..", "..", "dist");
 

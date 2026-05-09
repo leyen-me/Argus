@@ -1,11 +1,7 @@
 node_modules
 out
 dist
+dist-server
 
 .env
 .env.local
-
-# 历史本地 SQLite 工件（已不再使用，可删除本地文件）
-argus.sqlite
-argus.sqlite-wal
-argus.sqlite-shm

@@ -2,6 +2,7 @@
  * Argus HTTP API + WebSocket 推送（替代 Electron IPC）。
  */
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import express from "express";
 import http from "node:http";
 import path from "node:path";
@@ -18,7 +19,8 @@ import { getOkxSwapPositionSnapshot } from "../node/okx-perp.js";
 import { BACKGROUND_EQUITY_SAMPLE_INTERVAL_MS, getDashboardSnapshot, sampleDashboardEquityOnce, } from "../node/dashboard-service.js";
 import { listAgentBarTurnsPage, getAgentBarTurnChart, getAgentSessionMessages, } from "../node/agent-bar-turns-store.js";
 import { publish, subscribe } from "../node/runtime-bus.js";
-import { ingestChartCaptureResult, requestChartCaptureFromBrowser, } from "../node/chart-capture-browser-bridge.js";
+import { captureClientSnapshot, ingestChartCaptureResult, registerCaptureClient, requestChartCaptureFromBrowser, unregisterCaptureClient, } from "../node/chart-capture-browser-bridge.js";
+import { closeHeadlessCaptureService, ensureHeadlessCaptureReady, startHeadlessCaptureService, } from "../node/headless-browser-service.js";
 import { normalizeStrategyDecisionIntervalTv } from "../shared/strategy-fields.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const wsClients = [];
@@ -72,7 +74,16 @@ async function rpcChartCaptureTest(tvSymbol) {
     const sym = typeof tvSymbol === "string" && tvSymbol.trim()
         ? tvSymbol.trim()
         : String(cfg.defaultSymbol || "").trim() || "OKX:BTCUSDT";
-    return requestChartCaptureFromBrowser(sym, 45000);
+    try {
+        await ensureHeadlessCaptureReady();
+    }
+    catch {
+        /* fallback to any connected interactive page */
+    }
+    return requestChartCaptureFromBrowser(sym, 45000, cfg.promptStrategyMarketTimeframes, {
+        preferredRole: "headless_capture",
+        allowRoleFallback: true,
+    });
 }
 /** @type {Record<string, (...args: unknown[]) => unknown | Promise<unknown>>} */
 const rpcHandlers = {
@@ -130,8 +141,21 @@ const rpcHandlers = {
 };
 function broadcastWs(envelope) {
     const raw = JSON.stringify(envelope);
+    let targetRole;
+    if (envelope && typeof envelope === "object") {
+        const env = envelope;
+        if (env.channel === "request-chart-capture" && env.payload && typeof env.payload === "object") {
+            const payload = env.payload;
+            targetRole = payload.targetRole === "headless_capture" ? "headless_capture" : undefined;
+            if (!targetRole && payload.targetRole === "interactive") {
+                targetRole = "interactive";
+            }
+        }
+    }
     for (const ws of wsClients) {
         if (ws.readyState === 1) {
+            if (targetRole && ws.argusClientRole !== targetRole)
+                continue;
             try {
                 ws.send(raw);
             }
@@ -142,6 +166,14 @@ function broadcastWs(envelope) {
     }
 }
 subscribe((env) => broadcastWs(env));
+function removeWsClient(ws) {
+    const i = wsClients.indexOf(ws);
+    if (i >= 0)
+        wsClients.splice(i, 1);
+    if (ws.argusClientId) {
+        unregisterCaptureClient(ws.argusClientId);
+    }
+}
 function safeRpcArgs(args) {
     if (args == null)
         return [];
@@ -156,6 +188,7 @@ async function shutdown(reason = "shutdown") {
         cryptoSched.stop();
         wipeConversationStore();
         try {
+            await closeHeadlessCaptureService();
             await closeDatabase();
             process.exit(0);
         }
@@ -215,11 +248,18 @@ async function main() {
     const app = createApp(distDir);
     const server = http.createServer(app);
     const wss = new WebSocketServer({ server, path: "/ws" });
-    wss.on("connection", (ws) => {
+    wss.on("connection", (rawWs) => {
+        const ws = rawWs;
+        ws.argusClientId = randomUUID();
+        ws.argusClientRole = registerCaptureClient(ws.argusClientId, "interactive");
         wsClients.push(ws);
         ws.on("message", (raw) => {
             try {
                 const msg = JSON.parse(raw.toString());
+                if (msg && msg.type === "register-client") {
+                    ws.argusClientRole = registerCaptureClient(ws.argusClientId || randomUUID(), msg.role);
+                    return;
+                }
                 if (msg && msg.type === "chart-capture-result") {
                     ingestChartCaptureResult(msg);
                 }
@@ -229,14 +269,10 @@ async function main() {
             }
         });
         ws.on("close", () => {
-            const i = wsClients.indexOf(ws);
-            if (i >= 0)
-                wsClients.splice(i, 1);
+            removeWsClient(ws);
         });
         ws.on("error", () => {
-            const i = wsClients.indexOf(ws);
-            if (i >= 0)
-                wsClients.splice(i, 1);
+            removeWsClient(ws);
         });
     });
     server.listen(PORT, HOST, async () => {
@@ -244,6 +280,11 @@ async function main() {
         const cfg = await loadAppConfig();
         await routeMarket(cfg, cfg.defaultSymbol);
         startBackgroundEquitySampler();
+        void startHeadlessCaptureService({ port: PORT }).catch((error) => {
+            const msg = error instanceof Error ? error.message : String(error);
+            const snapshot = captureClientSnapshot();
+            console.error(`[Argus headless] 启动失败：${msg}（headless=${snapshot.headlessConnected}, interactive=${snapshot.interactiveConnected}）`);
+        });
     });
     process.on("SIGINT", () => void shutdown("SIGINT"));
     process.on("SIGTERM", () => void shutdown("SIGTERM"));

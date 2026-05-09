@@ -27,6 +27,7 @@ export interface MarketBarClosePayload {
 export type ChartCaptureRequestPayload = {
   requestId?: string;
   tvSymbol?: string;
+  targetRole?: "interactive" | "headless_capture";
   /** 策略「市场数据」勾选周期；缺省则截取全部多周期图 */
   marketTimeframes?: string[];
 };
@@ -160,6 +161,21 @@ let wsReconnectDelayMs = 2500;
 /** 当前 WebSocket（用于浏览器侧 TradingView 截图结果回传） */
 let socketRef: WebSocket | null = null;
 
+function resolveWsClientRole(): "interactive" | "headless_capture" {
+  const raw = new URLSearchParams(window.location.search).get("argus_client_role");
+  return raw === "headless_capture" ? "headless_capture" : "interactive";
+}
+
+function registerWsClient(ws: WebSocket) {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  ws.send(
+    JSON.stringify({
+      type: "register-client",
+      role: resolveWsClientRole(),
+    }),
+  );
+}
+
 function connectWsLoop() {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${proto}//${window.location.host}/ws`;
@@ -167,6 +183,7 @@ function connectWsLoop() {
   socketRef = ws;
   ws.onopen = () => {
     wsReconnectDelayMs = 2500;
+    registerWsClient(ws);
   };
   ws.onmessage = (ev) => {
     try {

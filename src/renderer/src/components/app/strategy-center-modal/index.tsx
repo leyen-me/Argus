@@ -593,7 +593,7 @@ export function StrategyCenterModal() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Label className="text-foreground">市场数据</Label>
                     <ConfigHelpTooltip className="size-6">
-                      与「## 市场数据多周期上下文」送进模型的顺序一致，只投喂勾选的周期（文本表，不含图表截图）；左侧 TradingView
+                      与「## 市场数据多周期上下文」送进模型的顺序一致，只投喂勾选的周期；截图链路可用时会附带对应图表截图，失败则自动退回文本表。左侧 TradingView
                       亦只显示已勾选的格子（周期从小到大从左到右排列）。至多勾选{" "}
                       {MAX_STRATEGY_MARKET_TIMEFRAMES} 个（共 5 个周期可选）。
                     </ConfigHelpTooltip>

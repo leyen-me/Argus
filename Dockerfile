@@ -4,6 +4,7 @@ FROM node:20-bookworm-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+ENV PLAYWRIGHT_BROWSERS_PATH="/ms-playwright"
 
 RUN corepack enable
 
@@ -28,15 +29,16 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --prod --frozen-lockfile
+RUN npx playwright install --with-deps chromium
 
-FROM node:20-bookworm-slim AS runner
+FROM prod-deps AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=8080
+ENV HEADLESS_CAPTURE_DISABLE_SANDBOX=true
 
-COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server

@@ -1,5 +1,5 @@
 /**
- * K 线收盘后：将行情文本上下文组装为 payload，供收盘 LLM Agent + OKX 工具调用（不向模型附带 TradingView 截图；左侧图表仅用于人机查看）。
+ * K 线收盘后：将行情文本上下文组装为 payload，供收盘 LLM Agent + OKX 工具调用。
  */
 import crypto from "node:crypto";
 import { publish } from "./runtime-bus.js";
@@ -8,6 +8,8 @@ import { conversationKey } from "./llm-context.js";
 import {
   isLlmEnabled,
   buildMultiTimeframeUserPrompt,
+  buildMultimodalUserContent,
+  buildUserTextForHistory,
   runTradingAgentTurn,
   resolveSystemPrompt,
   resolveTradingAgentSystemPrompt,
@@ -16,6 +18,7 @@ import {
   mdTable,
   summarizeAgentAnalysisForCard,
 } from "./llm.js";
+import { requestChartCaptureFromBrowser } from "./chart-capture-browser-bridge.js";
 import {
   getOkxExchangeContextForBar,
   isOkxExchangeContextReadyForBarAgent,
@@ -26,6 +29,7 @@ import {
 import { buildTradingAgentToolsForContext } from "./trading-agent-tools.js";
 import { createTradingToolExecutor } from "./trading-agent-executor.js";
 import { persistAgentBarTurn, listRecentAgentMemories } from "./agent-bar-turns-store.js";
+import { ensureHeadlessCaptureReady, headlessCaptureRequestTimeoutMs } from "./headless-browser-service.js";
 import * as promptStrategiesStore from "./prompt-strategies-store.js";
 import {
   MULTI_TIMEFRAME_CAPTURE_SPECS,
@@ -465,6 +469,18 @@ function formatToolCallPreview(toolCalls) {
     .join("\n");
 }
 
+async function requestChartCapture(tvSymbol: string, marketTimeframes?: string[]) {
+  try {
+    await ensureHeadlessCaptureReady();
+  } catch {
+    /* fallback to any already-connected interactive page */
+  }
+  return requestChartCaptureFromBrowser(tvSymbol, headlessCaptureRequestTimeoutMs(), marketTimeframes, {
+    preferredRole: "headless_capture",
+    allowRoleFallback: true,
+  });
+}
+
 /**
  * @param {{
  *   source: "okx_ws",
@@ -483,9 +499,9 @@ async function emitBarClose(ctx) {
     marketTfs,
   );
 
-  const chartImage: PrimaryChartImage | null = null;
-  const chartImages: MultiTimeframeChartImage[] = [];
-  const chartCaptureError: string | null = null;
+  let chartImage: PrimaryChartImage | null = null;
+  let chartImages: MultiTimeframeChartImage[] = [];
+  let chartCaptureError: string | null = null;
   const decisionIvCanon = canonTradingViewInterval(cfg.promptStrategyDecisionIntervalTv ?? "5");
   const ctxIvCanon = canonTradingViewInterval(ctx.interval);
   const barCloseId = crypto.randomUUID();
@@ -535,6 +551,71 @@ async function emitBarClose(ctx) {
     strategyIndicators,
   );
   const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx, positionsHistory, recentAgentMemories);
+  const systemPrompt = resolveTradingAgentSystemPrompt(cfg);
+  const intervalSkipReason =
+    ctxIvCanon !== decisionIvCanon
+      ? `未调用 LLM：当前触发周期不是 ${decisionIntervalExplain(cfg.promptStrategyDecisionIntervalTv ?? "5")}。`
+      : null;
+  const exchangeSkipReason = isOkxExchangeContextReadyForBarAgent(exchangeCtx)
+    ? null
+    : describeOkxExchangeContextGateFailure(exchangeCtx);
+  const autoAgentSkipReason =
+    cfg.barCloseAgentAutoEnabled === false ? "未调用 LLM：右侧面板已关闭「K 线收盘自动 Agent」。" : null;
+  const execSkipReason = describeBarCloseStrategyExecutionSkipReason(cfg);
+  const promptSkipReason = String(resolveSystemPrompt(cfg) || "").trim()
+    ? null
+    : "未调用 LLM：请在「策略中心」创建策略并填写系统提示词；无策略则不运行 Agent。";
+  const shouldAttemptChartCapture =
+    llm.enabled &&
+    !intervalSkipReason &&
+    !exchangeSkipReason &&
+    !autoAgentSkipReason &&
+    !execSkipReason &&
+    !promptSkipReason;
+
+  if (shouldAttemptChartCapture) {
+    try {
+      const capturePack = await requestChartCapture(ctx.tvSymbol, marketTfs);
+      chartImage = {
+        mimeType: capturePack.mimeType,
+        base64: capturePack.base64,
+        dataUrl: capturePack.dataUrl,
+      };
+      chartImages = Array.isArray(capturePack.charts) ? capturePack.charts : [];
+    } catch (e) {
+      chartCaptureError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  const orderedChartImages = multiCaptureSpecs
+    .map((spec) => {
+      const found = chartImages.find((item) => String(item.interval) === spec.interval);
+      if (!found?.base64) return null;
+      return {
+        ...found,
+        label: found.label || spec.label,
+      };
+    })
+    .filter(Boolean) as MultiTimeframeChartImage[];
+  const hasExpectedMultiChartImages =
+    multiCaptureSpecs.length > 0 ? orderedChartImages.length === multiCaptureSpecs.length : true;
+  if (!chartCaptureError && multiCaptureSpecs.length > 0 && !hasExpectedMultiChartImages) {
+    chartCaptureError = "多周期图表截图不完整。";
+  }
+  const multimodalImageInput =
+    orderedChartImages.length > 0
+      ? orderedChartImages
+      : chartImage?.base64
+        ? chartImage.base64
+        : null;
+  if (shouldAttemptChartCapture && !chartCaptureError && !multimodalImageInput) {
+    chartCaptureError = "图表截图为空。";
+  }
+  const canUseMultimodal =
+    !chartCaptureError &&
+    !!multimodalImageInput &&
+    (orderedChartImages.length > 0 ? hasExpectedMultiChartImages : !!chartImage?.base64);
+  const llmUserFullText = buildUserTextForHistory(llmUserText, canUseMultimodal);
 
   const payloadBase = {
     kind: "bar_close",
@@ -550,7 +631,7 @@ async function emitBarClose(ctx) {
     chartCaptureError,
     textForLlm,
     exchangeContext: exchangeCtx,
-    fullUserPromptForDisplay: llmUserText,
+    fullUserPromptForDisplay: llmUserFullText,
     llm,
   };
 
@@ -569,39 +650,42 @@ async function emitBarClose(ctx) {
     return;
   }
 
-  if (ctxIvCanon !== decisionIvCanon) {
-    finishSkipped(
-      `未调用 LLM：当前触发周期不是 ${decisionIntervalExplain(cfg.promptStrategyDecisionIntervalTv ?? "5")}。`,
-    );
+  if (intervalSkipReason) {
+    finishSkipped(intervalSkipReason);
     return;
   }
 
-  if (!isOkxExchangeContextReadyForBarAgent(exchangeCtx)) {
-    finishSkipped(describeOkxExchangeContextGateFailure(exchangeCtx));
+  if (exchangeSkipReason) {
+    finishSkipped(exchangeSkipReason);
     return;
   }
 
-  if (cfg.barCloseAgentAutoEnabled === false) {
-    finishSkipped("未调用 LLM：右侧面板已关闭「K 线收盘自动 Agent」。");
+  if (autoAgentSkipReason) {
+    finishSkipped(autoAgentSkipReason);
     return;
   }
 
-  const execSkipReason = describeBarCloseStrategyExecutionSkipReason(cfg);
   if (execSkipReason) {
     finishSkipped(execSkipReason);
     return;
   }
 
-  if (!String(resolveSystemPrompt(cfg) || "").trim()) {
-    finishSkipped("未调用 LLM：请在「策略中心」创建策略并填写系统提示词；无策略则不运行 Agent。");
+  if (promptSkipReason) {
+    finishSkipped(promptSkipReason);
     return;
   }
 
-  const systemPrompt = resolveTradingAgentSystemPrompt(cfg);
-  // 每根 K 线独立单轮：本轮 user 仅文本（OHLC/K 线与 OKX 上下文），不向模型附带 TradingView 截图。
+  const currentUserContent = canUseMultimodal
+    ? buildMultimodalUserContent(
+        llmUserText,
+        multimodalImageInput as string | MultiTimeframeChartImage[],
+        chartImage?.mimeType || "image/png",
+      )
+    : llmUserText;
+  // 每根 K 线独立单轮：优先走带图的多模态输入，截图失败时自动回退到纯文本。
   const messages = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: llmUserText },
+    { role: "user", content: currentUserContent },
   ];
 
   llm.streaming = true;
@@ -698,10 +782,10 @@ async function emitBarClose(ctx) {
         periodLabel: ctx.periodLabel,
         capturedAt: payloadBase.capturedAt,
         textForLlm,
-        llmUserFullText: llmUserText,
+        llmUserFullText,
         exchangeContext: exchangeCtx,
-        chartMime: null,
-        chartBase64: null,
+        chartMime: chartImage?.mimeType ?? null,
+        chartBase64: chartImage?.base64 ?? null,
         chartCaptureError,
         assistantText: agentResult.text,
         cardSummary: llm.cardSummary,
@@ -740,10 +824,10 @@ async function emitBarClose(ctx) {
         periodLabel: ctx.periodLabel,
         capturedAt: payloadBase.capturedAt,
         textForLlm,
-        llmUserFullText: llmUserText,
+        llmUserFullText,
         exchangeContext: exchangeCtx,
-        chartMime: null,
-        chartBase64: null,
+        chartMime: chartImage?.mimeType ?? null,
+        chartBase64: chartImage?.base64 ?? null,
         chartCaptureError,
         assistantText: null,
         toolTrace: llm.toolTrace,

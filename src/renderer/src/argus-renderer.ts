@@ -330,7 +330,7 @@ async function captureMultiTimeframeCharts(selectedIntervals?: string[]) {
  * 正式内容由本地库表 `prompt_strategies` 提供；策略在「策略中心」维护，并在顶部快捷栏切换。
  */
 const FALLBACK_SYSTEM_PROMPT_CRYPTO =
-  "你是资深加密市场价格行为分析助手。每轮会收到已收盘 K 线、Markdown 格式的多周期 K 线与技术指标表，以及 OKX 永续持仓与挂单快照（若已配置 API）；不包含嵌入的图表截图。" +
+  "你是资深加密市场价格行为分析助手。每轮会收到已收盘 K 线、Markdown 格式的多周期 K 线与技术指标表，以及 OKX 永续持仓与挂单快照（若已配置 API）；截图链路可用时还会附带图表截图，失败则退回纯文本。" +
   "需要交易时使用工具：open_position、close_position、cancel_order、amend_order、amend_tp_sl；不要只写评论不下单。" +
   "分析参考 Al Brooks 式价格行为，结论基于概率；信号不清时少调用工具。";
 

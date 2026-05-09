@@ -17,11 +17,11 @@ import {
 /** 交易 Agent：`resolveTradingAgentSystemPrompt` 在策略正文后附加；与用户策略库解耦。 */
 const TRADING_AGENT_TOOLS_POLICY_BLOCK: string = ``;
 
-/** 收盘 Agent 发往模型的 user 为纯文本；在用户自写策略前后统一声明体裁，避免仍写「看图/附图」。 */
+/** 收盘 Agent 发往模型时优先附带图表截图；若截图失败则自动回退为纯文本。 */
 const TRADING_AGENT_INPUT_CONTEXT_APPEND =
   "### 本轮输入形式\n\n" +
-  "每回合上下文为 Markdown 文本：触发周期的已收盘 K 线、策略勾选周期在「## 市场数据多周期上下文」中的 OHLC / 技术指标表，以及可用的 OKX 账户快照。**不含**图表截图或多模态图片；" +
-  "界面 TradingView 仅作人工对照。";
+  "每回合上下文包含触发周期的已收盘 K 线、策略勾选周期在「## 市场数据多周期上下文」中的 OHLC / 技术指标表，以及可用的 OKX 账户快照；" +
+  "如截图链路可用，还会附带 TradingView 图表截图作为多模态图片输入，失败时自动退回纯文本。";
 
 const TRADING_DECISION_ALLOWED_TOOLS = Object.freeze({
   hold: new Set(),

@@ -40,7 +40,7 @@ export const promptStrategies = mysqlTable(
     body: longtext("body").notNull(),
     sortOrder: int("sort_order").notNull().default(0),
     decisionIntervalTv: varchar("decision_interval_tv", { length: 16 }).notNull().default("5"),
-    extrasJson: longtext("extras_json").notNull().default("{}"),
+    extrasJson: longtext("extras_json").notNull(),
     updatedAt: varchar("updated_at", { length: 32 }).notNull(),
   },
   (t) => ({

@@ -33,6 +33,7 @@ function readMysqlEnv(): MysqlEnv {
 let pool: mysql.Pool | null = null;
 let db: MySql2Database<typeof schema> | null = null;
 let initPromise: Promise<void> | null = null;
+let closePromise: Promise<void> | null = null;
 
 export function getMysqlEnv(): MysqlEnv {
   return readMysqlEnv();
@@ -79,10 +80,22 @@ export function initDatabase(): Promise<void> {
 }
 
 export async function closeDatabase() {
+  if (closePromise) return closePromise;
+  const poolToClose = pool;
   initPromise = null;
   db = null;
-  if (pool) {
-    await pool.end();
-    pool = null;
-  }
+  pool = null;
+  if (!poolToClose) return;
+  closePromise = poolToClose
+    .end()
+    .catch((e) => {
+      const msg = e instanceof Error ? e.message : String(e ?? "");
+      // `SIGINT` 可能被重复触发；连接池已关闭时静默跳过即可。
+      if (/closed state/i.test(msg)) return;
+      throw e;
+    })
+    .finally(() => {
+      closePromise = null;
+    });
+  await closePromise;
 }

@@ -46,6 +46,7 @@ const wsClients: ClientWebSocket[] = [];
 
 let dashboardEquitySamplerTimer: ReturnType<typeof setInterval> | null = null;
 let dashboardEquitySamplerInFlight = false;
+let shutdownPromise: Promise<void> | null = null;
 
 async function runBackgroundEquitySample() {
   if (dashboardEquitySamplerInFlight) return;
@@ -178,12 +179,21 @@ function safeRpcArgs(args) {
 }
 
 async function shutdown(reason = "shutdown") {
-  console.info(`[Argus server] ${reason}`);
-  stopBackgroundEquitySampler();
-  cryptoSched.stop();
-  wipeConversationStore();
-  await closeDatabase();
-  process.exit(0);
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    console.info(`[Argus server] ${reason}`);
+    stopBackgroundEquitySampler();
+    cryptoSched.stop();
+    wipeConversationStore();
+    try {
+      await closeDatabase();
+      process.exit(0);
+    } catch (e) {
+      console.error(e);
+      process.exit(1);
+    }
+  })();
+  return shutdownPromise;
 }
 
 function createApp(distDir: string | undefined) {

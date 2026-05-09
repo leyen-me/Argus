@@ -7,7 +7,6 @@ import type {
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
-import { loadSystemPromptsFromDisk } from "./app-config.js";
 import {
   filterMultiTimeframeSpecsByMarketSelection,
   orderStrategyIndicatorsForPrompt,
@@ -46,8 +45,8 @@ function isLlmEnabled(cfg) {
  * @param {object | null | undefined} cfg loadAppConfig() 结果（须含 systemPromptCrypto，来自库表 prompt_strategies）
  */
 function resolveSystemPrompt(cfg?: { systemPromptCrypto?: string } | null) {
-  const p = cfg ?? loadSystemPromptsFromDisk();
-  return p.systemPromptCrypto;
+  if (!cfg || typeof cfg.systemPromptCrypto !== "string") return "";
+  return cfg.systemPromptCrypto;
 }
 
 /** 程序在策略正文后追加的工具与执行段落。 */

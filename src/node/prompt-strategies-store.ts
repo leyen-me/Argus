@@ -1,4 +1,7 @@
-import * as localDb from "./local-db/index.js";
+import { asc, eq, max } from "drizzle-orm";
+
+import { getDb } from "./db/client.js";
+import { promptStrategies } from "./db/schema.js";
 import {
   STRATEGY_DEFAULT_MARKET_TIMEFRAMES,
   STRATEGY_INDICATOR_ORDER,
@@ -27,9 +30,9 @@ function isValidPromptStrategyId(id: string): boolean {
   return LEGACY_STRATEGY_ID_RE.test(id) || STRATEGY_UUID_V4_RE.test(id);
 }
 
-/** 仅占打开数据库 Side Effect；不向 `prompt_strategies` 写入任何种子行。 */
-function seedFromDiskIfEmpty() {
-  localDb.getDatabase();
+/** 仅占打开数据库 Side Effect；MySQL 下无额外种子写入 */
+async function seedFromDiskIfEmpty(): Promise<void> {
+  getDb();
 }
 
 function normalizeBody(raw: unknown, fallback: string): string {
@@ -38,29 +41,30 @@ function normalizeBody(raw: unknown, fallback: string): string {
   return t.length ? t : fallback;
 }
 
-/** @returns {string[]} */
-function listStrategyIds() {
-  seedFromDiskIfEmpty();
-  const rows = localDb
-    .getDatabase()
-    .prepare(
-      `SELECT id FROM prompt_strategies ORDER BY sort_order ASC, id ASC`,
-    )
-    .all() as { id: string }[];
+async function listStrategyIds(): Promise<string[]> {
+  await seedFromDiskIfEmpty();
+  const db = getDb();
+  const rows = await db
+    .select({ id: promptStrategies.id })
+    .from(promptStrategies)
+    .orderBy(asc(promptStrategies.sortOrder), asc(promptStrategies.id));
   return rows.map((r) => r.id);
 }
 
 /**
  * @param {string} strategyId id 为空或表中无此行 / 正文为空时返回 ""
  */
-function getStrategyBody(strategyId) {
-  seedFromDiskIfEmpty();
+async function getStrategyBody(strategyId: unknown): Promise<string> {
+  await seedFromDiskIfEmpty();
   if (typeof strategyId !== "string" || !strategyId.trim()) return "";
   const id = strategyId.trim();
-  const row = localDb
-    .getDatabase()
-    .prepare(`SELECT body FROM prompt_strategies WHERE id = ?`)
-    .get(id) as { body?: string } | undefined;
+  const db = getDb();
+  const rows = await db
+    .select({ body: promptStrategies.body })
+    .from(promptStrategies)
+    .where(eq(promptStrategies.id, id))
+    .limit(1);
+  const row = rows[0];
   if (row && typeof row.body === "string" && row.body.trim()) {
     return row.body.trim();
   }
@@ -68,18 +72,18 @@ function getStrategyBody(strategyId) {
 }
 
 /** @returns {{ id: string, label: string, sort_order: number }[]} */
-function listStrategiesMeta() {
-  seedFromDiskIfEmpty();
-  return localDb
-    .getDatabase()
-    .prepare(
-      `SELECT id, label, sort_order FROM prompt_strategies ORDER BY sort_order ASC, id ASC`,
-    )
-    .all();
+async function listStrategiesMeta(): Promise<{ id: string; label: string; sort_order: number }[]> {
+  await seedFromDiskIfEmpty();
+  const db = getDb();
+  return await db
+    .select({
+      id: promptStrategies.id,
+      label: promptStrategies.label,
+      sort_order: promptStrategies.sortOrder,
+    })
+    .from(promptStrategies)
+    .orderBy(asc(promptStrategies.sortOrder), asc(promptStrategies.id));
 }
-
-/** @typedef {import("../shared/strategy-fields.js").StrategyDecisionIntervalTv} StrategyDecisionIntervalTv */
-/** @typedef {import("../shared/strategy-fields.js").StrategyExtrasV1} StrategyExtrasV1 */
 
 type StrategyRowNormalized = {
   id: string;
@@ -92,15 +96,10 @@ type StrategyRowNormalized = {
 
 /**
  * SQLite 列（snake_case）→ UI / API camelCase。
- * @param {Record<string, unknown>} row
- * @returns {StrategyRowNormalized}
  */
 function mapStrategyRow(row: Record<string, unknown> | undefined): StrategyRowNormalized | null {
   if (!row || typeof row.id !== "string" || !row.id.trim()) return null;
-  const extrasSrc =
-    typeof row.extras_json === "string"
-      ? row.extras_json
-      : "{}";
+  const extrasSrc = typeof row.extras_json === "string" ? row.extras_json : "{}";
   return {
     id: row.id.trim(),
     label: typeof row.label === "string" ? row.label : "",
@@ -111,91 +110,74 @@ function mapStrategyRow(row: Record<string, unknown> | undefined): StrategyRowNo
   };
 }
 
-/** @param {string} id */
-function getStrategy(id): StrategyRowNormalized | null {
-  seedFromDiskIfEmpty();
-  const row = localDb
-    .getDatabase()
-    .prepare(
-      `SELECT id, label, body, sort_order, decision_interval_tv, extras_json FROM prompt_strategies WHERE id = ?`,
-    )
-    .get(id) as Record<string, unknown> | undefined;
-  return row ? mapStrategyRow(row) : null;
+async function getStrategy(id: unknown): Promise<StrategyRowNormalized | null> {
+  await seedFromDiskIfEmpty();
+  if (typeof id !== "string" || !id.trim()) return null;
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: promptStrategies.id,
+      label: promptStrategies.label,
+      body: promptStrategies.body,
+      sort_order: promptStrategies.sortOrder,
+      decision_interval_tv: promptStrategies.decisionIntervalTv,
+      extras_json: promptStrategies.extrasJson,
+    })
+    .from(promptStrategies)
+    .where(eq(promptStrategies.id, id.trim()))
+    .limit(1);
+  const row = rows[0];
+  return row ? mapStrategyRow(row as Record<string, unknown>) : null;
 }
 
-/**
- * @param {unknown} strategyId
- * @returns {StrategyDecisionIntervalTv}
- */
-function getDecisionIntervalTvForStrategyId(strategyId: unknown): StrategyDecisionIntervalTv {
-  seedFromDiskIfEmpty();
+async function getDecisionIntervalTvForStrategyId(strategyId: unknown): Promise<StrategyDecisionIntervalTv> {
+  await seedFromDiskIfEmpty();
   if (typeof strategyId !== "string" || !strategyId.trim()) return "5";
-  const row = getStrategy(strategyId.trim());
+  const row = await getStrategy(strategyId.trim());
   return row ? row.decisionIntervalTv : "5";
 }
 
-/**
- * 当前策略在「策略中心」绑定的代币 → OKX 图表 / 行情代码（如 OKX:BTCUSDT）。
- * @param {unknown} strategyId
- * @returns {string}
- */
-function getOkxTvSymbolForStrategyId(strategyId: unknown): string {
-  seedFromDiskIfEmpty();
+async function getOkxTvSymbolForStrategyId(strategyId: unknown): Promise<string> {
+  await seedFromDiskIfEmpty();
   if (typeof strategyId !== "string" || !strategyId.trim()) {
     return okxTvSymbolFromStrategyToken(normalizeStrategyTokenSymbol(undefined));
   }
-  const row = getStrategy(strategyId.trim());
+  const row = await getStrategy(strategyId.trim());
   const token = row
     ? normalizeStrategyTokenSymbol(row.extras.tokenSymbols)
     : normalizeStrategyTokenSymbol(undefined);
   return okxTvSymbolFromStrategyToken(token);
 }
 
-/**
- * 策略在「市场数据」中勾选的多周期（与提示词 `## 多周期上下文` 一致）。
- * @param {unknown} strategyId
- * @returns {StrategyDecisionIntervalTv[]}
- */
-function getMarketTimeframesForStrategyId(strategyId: unknown): StrategyDecisionIntervalTv[] {
-  seedFromDiskIfEmpty();
+async function getMarketTimeframesForStrategyId(strategyId: unknown): Promise<StrategyDecisionIntervalTv[]> {
+  await seedFromDiskIfEmpty();
   if (typeof strategyId !== "string" || !strategyId.trim()) {
     return [...STRATEGY_DEFAULT_MARKET_TIMEFRAMES];
   }
-  const row = getStrategy(strategyId.trim());
+  const row = await getStrategy(strategyId.trim());
   return row ? [...row.extras.marketTimeframes] : [...STRATEGY_DEFAULT_MARKET_TIMEFRAMES];
 }
 
-/**
- * 策略在「技术指标」中的勾选（与最近 K 线表列一致；无策略 id 或未入库时默认 EMA20）。
- * @param {unknown} strategyId
- * @returns {StrategyIndicatorId[]}
- */
-function getIndicatorsForStrategyId(strategyId: unknown): StrategyIndicatorId[] {
-  seedFromDiskIfEmpty();
+async function getIndicatorsForStrategyId(strategyId: unknown): Promise<StrategyIndicatorId[]> {
+  await seedFromDiskIfEmpty();
   if (typeof strategyId !== "string" || !strategyId.trim()) {
     return ["EM20"];
   }
-  const row = getStrategy(strategyId.trim());
+  const row = await getStrategy(strategyId.trim());
   const raw = row ? [...row.extras.indicators] : ["EM20"];
-  return STRATEGY_INDICATOR_ORDER.filter((id) => raw.includes(id));
+  return STRATEGY_INDICATOR_ORDER.filter((x) => raw.includes(x));
 }
 
-/**
- * 策略「图表指标」：驱动左侧 TradingView 预置 studies；无策略 id 时与旧行为一致（仅 EMA20）。
- * @param {unknown} strategyId
- * @returns {StrategyChartIndicatorId[]}
- */
-function getChartIndicatorsForStrategyId(strategyId: unknown): StrategyChartIndicatorId[] {
-  seedFromDiskIfEmpty();
+async function getChartIndicatorsForStrategyId(strategyId: unknown): Promise<StrategyChartIndicatorId[]> {
+  await seedFromDiskIfEmpty();
   if (typeof strategyId !== "string" || !strategyId.trim()) {
     return orderStrategyChartIndicators(["EM20"]);
   }
-  const row = getStrategy(strategyId.trim());
+  const row = await getStrategy(strategyId.trim());
   if (!row) return orderStrategyChartIndicators(["EM20"]);
   return orderStrategyChartIndicators(row.extras.chartIndicators);
 }
 
-/** @param {Partial<StrategyExtrasV1>} patch */
 function applyExtrasPatch(base: StrategyExtrasV1, patch: Partial<StrategyExtrasV1>): StrategyExtrasV1 {
   return {
     tokenSymbols: patch.tokenSymbols !== undefined ? [...patch.tokenSymbols] : [...base.tokenSymbols],
@@ -208,23 +190,14 @@ function applyExtrasPatch(base: StrategyExtrasV1, patch: Partial<StrategyExtrasV
   };
 }
 
-/**
- * @param {{
- *   id: string;
- *   label?: string;
- *   body: string;
- *   decisionIntervalTv?: unknown;
- *   extras?: Partial<StrategyExtrasV1>;
- * }} payload
- */
-function saveStrategy(payload: {
+async function saveStrategy(payload: {
   id: string;
   label?: string;
   body: string;
   decisionIntervalTv?: unknown;
   extras?: Partial<StrategyExtrasV1>;
-}) {
-  seedFromDiskIfEmpty();
+}): Promise<StrategyRowNormalized | null> {
+  await seedFromDiskIfEmpty();
   const id = typeof payload?.id === "string" ? payload.id.trim() : "";
   if (!isValidPromptStrategyId(id)) {
     throw new Error("策略 ID 须为字母开头的字母数字/下划线/连字符（≤64），或为标准 UUID v4。");
@@ -234,10 +207,19 @@ function saveStrategy(payload: {
   let label = typeof payload?.label === "string" ? payload.label.trim() : "";
   if (!label) label = id;
 
-  const db = localDb.getDatabase();
-  const existingRow = db
-    .prepare(`SELECT id, extras_json, decision_interval_tv FROM prompt_strategies WHERE id = ?`)
-    .get(id) as { id: string; extras_json?: string; decision_interval_tv?: string } | undefined;
+  const db = getDb();
+  const existingRows = await db
+    .select({
+      id: promptStrategies.id,
+      extras_json: promptStrategies.extrasJson,
+      decision_interval_tv: promptStrategies.decisionIntervalTv,
+    })
+    .from(promptStrategies)
+    .where(eq(promptStrategies.id, id))
+    .limit(1);
+  const existingRow = existingRows[0] as
+    | { id: string; extras_json: string; decision_interval_tv: string }
+    | undefined;
 
   const existingExtras = parseStrategyExtrasJson(existingRow?.extras_json);
 
@@ -253,39 +235,50 @@ function saveStrategy(payload: {
       : existingExtras,
   );
 
+  const updatedAt = new Date().toISOString();
+
   if (existingRow) {
-    db.prepare(
-      `UPDATE prompt_strategies SET label = ?, body = ?, decision_interval_tv = ?, extras_json = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(label, body, decisionIv, extrasMerged, id);
+    await db
+      .update(promptStrategies)
+      .set({
+        label,
+        body,
+        decisionIntervalTv: decisionIv,
+        extrasJson: extrasMerged,
+        updatedAt,
+      })
+      .where(eq(promptStrategies.id, id));
   } else {
     const extrasNew = stringifyStrategyExtras(
       payload.extras && typeof payload.extras === "object"
         ? applyExtrasPatch(defaultStrategyExtras(), payload.extras)
         : defaultStrategyExtras(),
     );
-    const maxRow = db
-      .prepare(`SELECT COALESCE(MAX(sort_order), -1) AS m FROM prompt_strategies`)
-      .get() as { m?: number } | undefined;
-    const sort_order = (maxRow?.m ?? -1) + 1;
-    db.prepare(
-      `INSERT INTO prompt_strategies (id, label, body, sort_order, decision_interval_tv, extras_json, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
-    ).run(id, label, body, sort_order, decisionIv, extrasNew);
+    const maxRows = await db.select({ m: max(promptStrategies.sortOrder) }).from(promptStrategies);
+    const maxVal = maxRows[0]?.m;
+    const sortOrder = (typeof maxVal === "number" ? maxVal : Number(maxVal) || -1) + 1;
+    await db.insert(promptStrategies).values({
+      id,
+      label,
+      body,
+      sortOrder,
+      decisionIntervalTv: decisionIv,
+      extrasJson: extrasNew,
+      updatedAt,
+    });
   }
   return getStrategy(id);
 }
 
-/**
- * @param {string} strategyId
- */
-function deleteStrategy(strategyId) {
-  seedFromDiskIfEmpty();
+async function deleteStrategy(strategyId: unknown): Promise<void> {
+  await seedFromDiskIfEmpty();
   const id = typeof strategyId === "string" ? strategyId.trim() : "";
   if (!id) throw new Error("缺少策略 ID。");
-  localDb.getDatabase().prepare(`DELETE FROM prompt_strategies WHERE id = ?`).run(id);
+  const db = getDb();
+  await db.delete(promptStrategies).where(eq(promptStrategies.id, id));
 }
 
-function validateStrategyId(id) {
+function validateStrategyId(id: unknown): boolean {
   return isValidPromptStrategyId(typeof id === "string" ? id.trim() : "");
 }
 

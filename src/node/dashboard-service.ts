@@ -75,10 +75,10 @@ function equitySamplePullLimit(segments) {
 /**
  * @param {DashboardStatsSegment[]} segments
  */
-function buildEquitySeriesForDashboard(segments) {
+async function buildEquitySeriesForDashboard(segments) {
   const normalized = normalizeStatsSegments(segments);
   if (!normalized.length) return [];
-  const raw = dashboardStore.listRecentEquitySamples(equitySamplePullLimit(normalized));
+  const raw = await dashboardStore.listRecentEquitySamples(equitySamplePullLimit(normalized));
   const filtered = filterEquitySeriesBySegments(raw, normalized);
   return capEquitySeriesTail(filtered);
 }
@@ -138,7 +138,7 @@ async function sampleDashboardEquityOnce(cfg) {
   const metrics = await okxPerp.fetchUsdtAccountMetrics(client);
   const equityUsdt = pickDisplayEquityUsdt(metrics);
   if (equityUsdt != null) {
-    dashboardStore.appendEquitySampleIfNeeded(equityUsdt);
+    await dashboardStore.appendEquitySampleIfNeeded(equityUsdt);
   }
   return { ok: true, skipped: equityUsdt == null, equityUsdt: equityUsdt ?? null };
 }
@@ -172,7 +172,7 @@ async function getDashboardSnapshot(cfg) {
 
   const metaPack = { dashboardAgentToolStatsSince };
 
-  const emptySeries = buildEquitySeriesForDashboard(statsSegments);
+  const emptySeries = await buildEquitySeriesForDashboard(statsSegments);
 
   if (!cfg || cfg.okxSwapTradingEnabled !== true) {
     return {
@@ -211,7 +211,7 @@ async function getDashboardSnapshot(cfg) {
     const availEq = metrics?.usdtAvailEq ?? null;
     const marginUsedUsdt = pickMarginUsedUsdt(equityUsdt, availEq, metrics);
 
-    const equitySeries = buildEquitySeriesForDashboard(statsSegments);
+    const equitySeries = await buildEquitySeriesForDashboard(statsSegments);
 
     let pnlVsBaseline: number | null = null;
     const statsEquityTail = equitySeries.length ? equitySeries[equitySeries.length - 1]?.equity : null;
@@ -259,7 +259,7 @@ async function getDashboardSnapshot(cfg) {
       ok: false,
       message: msg,
       baselineEquityUsdt,
-      equitySeries: buildEquitySeriesForDashboard(statsSegments),
+      equitySeries: await buildEquitySeriesForDashboard(statsSegments),
       ...metaPack,
     };
   }

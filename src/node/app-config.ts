@@ -6,10 +6,10 @@ import { listOkxStrategySymbolOptions } from "../shared/strategy-fields.js";
 import { formatPromptStrategyDisplayLabel } from "../shared/prompt-strategy-display-label.js";
 
 /**
- * 应用可序列化设置保存在仓库根目录 `argus.sqlite`（`local-db`）的 kv `app/settings` 中。
+ * 应用可序列化设置保存在 MySQL `kv_store` 的 `app/settings` 中。
  * 首次启动或库中无记录时：用 {@link APP_SETTINGS_SEED} 经 `normalizeConfig` 后写入。
  *
- * 系统提示词正文存于 SQLite 表 `prompt_strategies`（界面「策略中心」管理）；`app/settings` 仅保存当前选用的 `promptStrategy` id。
+ * 系统提示词正文存于表 `prompt_strategies`（界面「策略中心」管理）；`app/settings` 仅保存当前选用的 `promptStrategy` id。
  */
 const DEFAULT_PROMPT_STRATEGY = promptStrategiesStore.DEFAULT_PROMPT_STRATEGY;
 
@@ -147,16 +147,16 @@ function normalizeSystemPromptField(raw, fallback) {
 }
 
 /**
- * @returns {string[]}
+ * @returns {Promise<string[]>}
  */
-function listPromptStrategies() {
-  promptStrategiesStore.seedFromDiskIfEmpty();
+async function listPromptStrategies(): Promise<string[]> {
+  await promptStrategiesStore.seedFromDiskIfEmpty();
   return promptStrategiesStore.listStrategyIds();
 }
 
-function listPromptStrategySelectOptions(): { value: string; label: string }[] {
-  promptStrategiesStore.seedFromDiskIfEmpty();
-  const rows = promptStrategiesStore.listStrategiesMeta() as { id: string; label: string }[];
+async function listPromptStrategySelectOptions(): Promise<{ value: string; label: string }[]> {
+  await promptStrategiesStore.seedFromDiskIfEmpty();
+  const rows = await promptStrategiesStore.listStrategiesMeta();
   return rows.map((row) => ({
     value: row.id,
     label: formatPromptStrategyDisplayLabel(row.id, row.label),
@@ -165,11 +165,10 @@ function listPromptStrategySelectOptions(): { value: string; label: string }[] {
 
 /**
  * @param {string | undefined} preferred 首选策略 id
- * @returns {string}
  */
-function resolvePromptStrategyId(preferred) {
-  promptStrategiesStore.seedFromDiskIfEmpty();
-  const available = promptStrategiesStore.listStrategyIds();
+async function resolvePromptStrategyId(preferred: string | undefined): Promise<string> {
+  await promptStrategiesStore.seedFromDiskIfEmpty();
+  const available = await promptStrategiesStore.listStrategyIds();
   if (!available.length) return "";
   const raw = typeof preferred === "string" && preferred.trim() ? preferred.trim() : "";
   if (raw && available.includes(raw)) return raw;
@@ -180,29 +179,32 @@ function resolvePromptStrategyId(preferred) {
 /**
  * 从本地库 `prompt_strategies` 读取当前策略的系统提示词（每次 `loadAppConfig` / 规范化时重新查询）。
  */
-function loadSystemPromptsFromDisk(strategyId?: string) {
-  const id = resolvePromptStrategyId(strategyId);
+async function loadSystemPromptsFromDisk(strategyId?: string) {
+  const id = await resolvePromptStrategyId(strategyId);
   return {
     systemPromptCrypto: normalizeSystemPromptField(
-      promptStrategiesStore.getStrategyBody(id),
+      await promptStrategiesStore.getStrategyBody(id),
       EMPTY_SYSTEM_PROMPT_FALLBACK,
     ),
   };
 }
 
-function defaultConfigFallback(): AppConfig {
-  const promptStrategy = resolvePromptStrategyId(
+async function defaultConfigFallback(): Promise<AppConfig> {
+  const promptStrategy = await resolvePromptStrategyId(
     typeof APP_SETTINGS_SEED.promptStrategy === "string" ? APP_SETTINGS_SEED.promptStrategy : undefined,
   );
   return {
     ...APP_SETTINGS_SEED,
     promptStrategy,
-    promptStrategies: listPromptStrategies(),
-    promptStrategySelectOptions: listPromptStrategySelectOptions(),
-    promptStrategyDecisionIntervalTv: promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy),
-    promptStrategyChartIndicators: promptStrategiesStore.getChartIndicatorsForStrategyId(promptStrategy),
-    promptStrategyMarketTimeframes: promptStrategiesStore.getMarketTimeframesForStrategyId(promptStrategy),
-    ...loadSystemPromptsFromDisk(promptStrategy),
+    promptStrategies: await listPromptStrategies(),
+    promptStrategySelectOptions: await listPromptStrategySelectOptions(),
+    promptStrategyDecisionIntervalTv:
+      await promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy),
+    promptStrategyChartIndicators:
+      await promptStrategiesStore.getChartIndicatorsForStrategyId(promptStrategy),
+    promptStrategyMarketTimeframes:
+      await promptStrategiesStore.getMarketTimeframesForStrategyId(promptStrategy),
+    ...(await loadSystemPromptsFromDisk(promptStrategy)),
   };
 }
 
@@ -225,21 +227,21 @@ function stripSystemPromptsForPersistence(cfg) {
   return rest;
 }
 
-function persistLoadedConfig(normalizedCfg) {
+async function persistLoadedConfig(normalizedCfg) {
   const payload = stripSystemPromptsForPersistence(normalizedCfg);
-  localDb.kvSet(
+  await localDb.kvSet(
     localDb.KV_NS_APP,
     localDb.KV_KEY_SETTINGS,
     `${JSON.stringify(payload, null, 2)}\n`,
   );
 }
 
-/** @returns {string} 本地 SQLite 数据库路径（仓库根目录 argus.sqlite，与 src 同级） */
+/** @returns {string} MySQL 连接摘要 `host:port/database`（历史 API 名保留为 databasePath） */
 function databasePath() {
   return localDb.databasePath();
 }
 
-/** @deprecated 历史名 configPath；现为 SQLite 库路径，与 {@link databasePath} 相同 */
+/** @deprecated 历史名 configPath；与 {@link databasePath} 相同 */
 function configPath() {
   return databasePath();
 }
@@ -252,29 +254,27 @@ function userConfigPath() {
 /**
  * 确保 kv 中已有应用设置：否则用代码种子写入。
  */
-function ensurePersistedConfig() {
-  localDb.getDatabase();
-  if (localDb.kvHas(localDb.KV_NS_APP, localDb.KV_KEY_SETTINGS)) return;
+async function ensurePersistedConfig() {
+  await promptStrategiesStore.seedFromDiskIfEmpty();
+  if (await localDb.kvHas(localDb.KV_NS_APP, localDb.KV_KEY_SETTINGS)) return;
 
-  const initial = buildInitialConfigFromSeed();
-  persistLoadedConfig(initial);
+  const initial = await buildInitialConfigFromSeed();
+  await persistLoadedConfig(initial);
 }
 
 /**
  * 与首次启动 /「恢复默认」一致：`APP_SETTINGS_SEED` 经 `normalizeConfig`。
- * @returns {ReturnType<typeof normalizeConfig>}
  */
-function buildInitialConfigFromSeed() {
+async function buildInitialConfigFromSeed(): Promise<AppConfig> {
   return normalizeConfig({ ...APP_SETTINGS_SEED });
 }
 
 /**
- * 将应用设置重置为模板/内置默认值（覆盖写入 SQLite），并返回规范化后的完整配置（含当前磁盘上的系统提示词）。
- * @returns {ReturnType<typeof normalizeConfig>}
+ * 将应用设置重置为模板/内置默认值（覆盖写入 MySQL），并返回规范化后的完整配置（含当前磁盘上的系统提示词）。
  */
-function resetAppConfig() {
-  const initial = buildInitialConfigFromSeed();
-  persistLoadedConfig(initial);
+async function resetAppConfig(): Promise<AppConfig> {
+  const initial = await buildInitialConfigFromSeed();
+  await persistLoadedConfig(initial);
   return initial;
 }
 
@@ -485,8 +485,8 @@ function migrateStrategyRuntimeFromLegacyDashboard(
   return out;
 }
 
-function normalizeConfig(raw: unknown): AppConfig {
-  const base = defaultConfigFallback();
+async function normalizeConfig(raw: unknown): Promise<AppConfig> {
+  const base = await defaultConfigFallback();
   if (!raw || typeof raw !== "object") return base;
   const r = raw as Record<string, unknown>;
   const symbols = listOkxStrategySymbolOptions();
@@ -503,16 +503,16 @@ function normalizeConfig(raw: unknown): AppConfig {
   const openaiApiKey =
     typeof r.openaiApiKey === "string" ? r.openaiApiKey.trim() : base.openaiApiKey;
 
-  const promptStrategy = resolvePromptStrategyId(
+  const promptStrategy = await resolvePromptStrategyId(
     typeof r.promptStrategy === "string" && r.promptStrategy.trim()
       ? r.promptStrategy.trim()
       : base.promptStrategy,
   );
 
-  let defaultSymbol = promptStrategiesStore.getOkxTvSymbolForStrategyId(promptStrategy);
+  let defaultSymbol = await promptStrategiesStore.getOkxTvSymbolForStrategyId(promptStrategy);
   if (!symbols.some((s) => s.value === defaultSymbol)) defaultSymbol = symbols[0]?.value ?? "OKX:BTCUSDT";
 
-  const { systemPromptCrypto } = loadSystemPromptsFromDisk(promptStrategy);
+  const { systemPromptCrypto } = await loadSystemPromptsFromDisk(promptStrategy);
 
   let llmRequestTimeoutMs = base.llmRequestTimeoutMs;
   const tt = Number(r.llmRequestTimeoutMs);
@@ -628,11 +628,11 @@ function normalizeConfig(raw: unknown): AppConfig {
     : migrateStrategyRuntimeFromLegacyDashboard(promptStrategy, dashboardStrategyRanges);
 
   const promptStrategyDecisionIntervalTv =
-    promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy);
+    await promptStrategiesStore.getDecisionIntervalTvForStrategyId(promptStrategy);
   const promptStrategyChartIndicators =
-    promptStrategiesStore.getChartIndicatorsForStrategyId(promptStrategy);
+    await promptStrategiesStore.getChartIndicatorsForStrategyId(promptStrategy);
   const promptStrategyMarketTimeframes =
-    promptStrategiesStore.getMarketTimeframesForStrategyId(promptStrategy);
+    await promptStrategiesStore.getMarketTimeframesForStrategyId(promptStrategy);
 
   return {
     symbols,
@@ -642,8 +642,8 @@ function normalizeConfig(raw: unknown): AppConfig {
     openaiModel,
     openaiApiKey,
     promptStrategy,
-    promptStrategies: listPromptStrategies(),
-    promptStrategySelectOptions: listPromptStrategySelectOptions(),
+    promptStrategies: await listPromptStrategies(),
+    promptStrategySelectOptions: await listPromptStrategySelectOptions(),
     promptStrategyDecisionIntervalTv,
     promptStrategyChartIndicators,
     promptStrategyMarketTimeframes,
@@ -672,34 +672,32 @@ function normalizeConfig(raw: unknown): AppConfig {
   };
 }
 
-function loadAppConfig() {
-  ensurePersistedConfig();
-  const rawStr = localDb.kvGet(localDb.KV_NS_APP, localDb.KV_KEY_SETTINGS);
+async function loadAppConfig(): Promise<AppConfig> {
+  await ensurePersistedConfig();
+  const rawStr = await localDb.kvGet(localDb.KV_NS_APP, localDb.KV_KEY_SETTINGS);
   if (typeof rawStr !== "string" || !rawStr.trim()) {
-    const repaired = normalizeConfig(defaultConfigFallback());
-    persistLoadedConfig(repaired);
+    const repaired = await normalizeConfig(await defaultConfigFallback());
+    await persistLoadedConfig(repaired);
     return repaired;
   }
   try {
     const raw: unknown = JSON.parse(rawStr);
-    return normalizeConfig(raw);
+    return await normalizeConfig(raw);
   } catch {
-    const repaired = normalizeConfig(defaultConfigFallback());
-    persistLoadedConfig(repaired);
+    const repaired = await normalizeConfig(await defaultConfigFallback());
+    await persistLoadedConfig(repaired);
     return repaired;
   }
 }
 
 /**
  * 合并 partial 到当前配置、规范化并持久化（主进程保存配置用）。
- * @param {Record<string, unknown>} payload
- * @returns {ReturnType<typeof normalizeConfig>}
  */
-function saveMergedConfigPayload(payload: Record<string, unknown>) {
-  const current = loadAppConfig();
+async function saveMergedConfigPayload(payload: Record<string, unknown>): Promise<AppConfig> {
+  const current = await loadAppConfig();
   const merged = { ...current, ...payload };
-  const next = normalizeConfig(merged);
-  persistLoadedConfig(next);
+  const next = await normalizeConfig(merged);
+  await persistLoadedConfig(next);
   return next;
 }
 

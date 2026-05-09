@@ -475,9 +475,9 @@ function formatToolCallPreview(toolCalls) {
  * }} ctx
  */
 async function emitBarClose(ctx) {
-  const cfg = loadAppConfig();
-  const marketTfs = promptStrategiesStore.getMarketTimeframesForStrategyId(cfg.promptStrategy);
-  const strategyIndicators = promptStrategiesStore.getIndicatorsForStrategyId(cfg.promptStrategy);
+  const cfg = await loadAppConfig();
+  const marketTfs = await promptStrategiesStore.getMarketTimeframesForStrategyId(cfg.promptStrategy);
+  const strategyIndicators = await promptStrategiesStore.getIndicatorsForStrategyId(cfg.promptStrategy);
   const multiCaptureSpecs = filterMultiTimeframeSpecsByMarketSelection(
     MULTI_TIMEFRAME_CAPTURE_SPECS,
     marketTfs,
@@ -523,7 +523,7 @@ async function emitBarClose(ctx) {
       ]),
     ),
     fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10, sessionSinceMs),
-    Promise.resolve(listRecentAgentMemories({ tvSymbol: ctx.tvSymbol, interval: ctx.interval, limit: 6 })),
+    listRecentAgentMemories({ tvSymbol: ctx.tvSymbol, interval: ctx.interval, limit: 6 }),
   ]);
   const recentCandles = Object.fromEntries(recentCandlesPack);
   const textForLlm = buildMultiTimeframeUserPrompt(
@@ -691,7 +691,7 @@ async function emitBarClose(ctx) {
     }
     payloadBase.exchangeContext = exchangeAfter;
     try {
-      persistAgentBarTurn({
+      await persistAgentBarTurn({
         barCloseId,
         tvSymbol: ctx.tvSymbol,
         interval: ctx.interval,
@@ -733,7 +733,7 @@ async function emitBarClose(ctx) {
     llm.toolTrace = Array.isArray(agentResult.toolTrace) ? agentResult.toolTrace : [];
     llm.streaming = false;
     try {
-      persistAgentBarTurn({
+      await persistAgentBarTurn({
         barCloseId,
         tvSymbol: ctx.tvSymbol,
         interval: ctx.interval,

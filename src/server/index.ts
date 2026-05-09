@@ -242,7 +242,7 @@ async function main() {
 
   const PORT = Number(process.env.PORT || 8787);
   const HOST = process.env.HOST || "0.0.0.0";
-  const distDir = path.join(__dirname, "..", "..", "dist", "renderer");
+  const distDir = path.join(__dirname, "..", "..", "dist");
 
   const app = createApp(distDir);
   const server = http.createServer(app);

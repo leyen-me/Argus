@@ -6,7 +6,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   root: "src/renderer",
   build: {
-    outDir: path.resolve(process.cwd(), "dist/renderer"),
+    outDir: path.resolve(process.cwd(), "dist"),
     emptyOutDir: true,
   },
   resolve: {

@@ -14,7 +14,17 @@ import { initArgusApp } from "./argus-renderer";
 
 const RIGHT_PANEL_COLLAPSED_KEY = "argus.ui.rightPanelCollapsed";
 
+function isHeadlessCapturePage(): boolean {
+  try {
+    const role = new URLSearchParams(window.location.search).get("argus_client_role");
+    return role === "headless_capture";
+  } catch {
+    return false;
+  }
+}
+
 function readStoredRightPanelCollapsed(): boolean {
+  if (isHeadlessCapturePage()) return true;
   try {
     const v = window.localStorage.getItem(RIGHT_PANEL_COLLAPSED_KEY);
     if (v === "1" || v === "true") return true;
@@ -29,18 +39,20 @@ export default function App() {
   /** `null`：尚未收到配置同步；`0`：已同步且无策略；`>0`：已有策略 */
   const [strategyOptionCount, setStrategyOptionCount] = useState<number | null>(null);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(readStoredRightPanelCollapsed);
+  const headlessCapturePage = isHeadlessCapturePage();
 
   useEffect(() => {
     void initArgusApp();
   }, []);
 
   useEffect(() => {
+    if (headlessCapturePage) return;
     try {
       window.localStorage.setItem(RIGHT_PANEL_COLLAPSED_KEY, rightPanelCollapsed ? "1" : "0");
     } catch {
       /* ignore */
     }
-  }, [rightPanelCollapsed]);
+  }, [headlessCapturePage, rightPanelCollapsed]);
 
   useEffect(() => {
     const onSync = (e: Event) => {

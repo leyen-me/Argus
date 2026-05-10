@@ -7,6 +7,33 @@ info:
     surface is `POST /api/rpc`; resource-style endpoints are planned as a
     facade over the same application services.
 paths:
+  /healthz:
+    get:
+      summary: Check process health.
+      operationId: getHealth
+      responses:
+        "200":
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                properties:
+                  ok:
+                    const: true
+  /metrics:
+    get:
+      summary: Export Prometheus-compatible process and RPC metrics.
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus text exposition.
+          content:
+            text/plain:
+              schema:
+                type: string
   /api/rpc:
     post:
       summary: Execute a backward-compatible RPC method.

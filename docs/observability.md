@@ -27,8 +27,13 @@ HTTP 请求会读取或生成 `X-Request-Id`：
 
 ## 指标与追踪
 
-当前阶段已建立日志和 requestId 基础。后续可按 `docs/refactor-plan/04-observability.md` 引入：
+当前阶段已提供 `GET /metrics`，以 Prometheus text exposition 格式导出：
 
-- Prometheus `/metrics`
+- `argus_process_uptime_seconds`
+- `argus_rpc_requests_total`
+- `argus_rpc_duration_seconds_total`
+
+后续可按 `docs/refactor-plan/04-observability.md` 继续引入：
+
 - OpenTelemetry trace/span
 - OKX、LLM、Capture、DB 的耗时与错误指标

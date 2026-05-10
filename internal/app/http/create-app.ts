@@ -4,6 +4,7 @@ import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import type { ArgusRpcHandlerMap } from "../../../pkg/public-api/rpc-contract.js";
 import type { Logger } from "../../infrastructure/logging/logger.js";
+import { renderPrometheusMetrics } from "../../infrastructure/metrics/metrics.js";
 import { requestContextMiddleware } from "./request-context.js";
 import { createRpcRouter } from "./rpc-router.js";
 
@@ -18,6 +19,12 @@ export function createArgusApp(options: CreateArgusAppOptions) {
   const app = express();
   app.use(express.json({ limit: "4mb" }));
   app.use(requestContextMiddleware(options.logger));
+  app.get("/healthz", (_req: Request, res: Response) => {
+    res.json({ ok: true });
+  });
+  app.get("/metrics", (_req: Request, res: Response) => {
+    res.type("text/plain; version=0.0.4; charset=utf-8").send(renderPrometheusMetrics());
+  });
   app.use("/api", createRpcRouter(options.rpcHandlers, options.logger));
 
   if (options.distDir && fs.existsSync(options.distDir)) {

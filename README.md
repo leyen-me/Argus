@@ -29,6 +29,11 @@ src/renderer                         # Vite + React 前端
 - WebSocket：`/ws`
 - 浏览器 bridge：`window.argus`
 
+运维辅助端点：
+
+- 健康检查：`GET /healthz`
+- Prometheus 文本指标：`GET /metrics`
+
 更详细的重构设计见 [`docs/refactor-plan/`](docs/refactor-plan/)。
 
 ## 快速开始
@@ -80,6 +85,10 @@ pnpm dev
 - 共享 TypeScript 契约：[`pkg/public-api`](pkg/public-api)
 
 RPC 响应保持旧版 `{ ok, result/error }` 兼容格式，并新增可选 `requestId`、`code`、`details` 字段，旧客户端可安全忽略。
+
+## 可观测性
+
+服务端新协议层输出 JSON 结构化日志，并为 HTTP 请求注入 `X-Request-Id`。`/metrics` 当前导出进程 uptime、RPC 请求计数与 RPC 总耗时，后续可继续扩展 OKX、LLM、截图和 DB 指标。
 
 ## 收盘截图链路
 

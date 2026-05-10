@@ -7,6 +7,7 @@ import {
 } from "../../../pkg/public-api/rpc-contract.js";
 import { AppError, statusCodeForAppError, toAppError } from "../../pkg/errors/app-error.js";
 import type { Logger } from "../../infrastructure/logging/logger.js";
+import { recordRpcRequest } from "../../infrastructure/metrics/metrics.js";
 import { getRequestContext } from "./request-context.js";
 
 function safeRpcArgs(args: unknown): unknown[] {
@@ -48,16 +49,25 @@ export function createRpcRouter(handlers: ArgusRpcHandlerMap, rootLogger: Logger
       }
 
       const result = await handler(...args);
+      const durationMs = Date.now() - startedAt;
+      recordRpcRequest({ method, status: "ok", durationMs });
       res.json({ ok: true, result, requestId: context.requestId });
       logger.info("rpc request completed", {
         requestId: context.requestId,
         method,
         status: "ok",
-        durationMs: Date.now() - startedAt,
+        durationMs,
       });
     } catch (error) {
       const appError = toAppError(error);
       const statusCode = statusCodeForAppError(appError);
+      const durationMs = Date.now() - startedAt;
+      recordRpcRequest({
+        method: method || String(rawMethod ?? ""),
+        status: "error",
+        code: appError.code,
+        durationMs,
+      });
       res.status(statusCode).json({
         ok: false,
         error: appError.message,
@@ -70,7 +80,7 @@ export function createRpcRouter(handlers: ArgusRpcHandlerMap, rootLogger: Logger
         method: method || String(rawMethod ?? ""),
         status: "error",
         statusCode,
-        durationMs: Date.now() - startedAt,
+        durationMs,
         error: {
           code: appError.code,
           message: appError.message,

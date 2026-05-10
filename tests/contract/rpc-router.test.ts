@@ -59,4 +59,17 @@ describe("HTTP RPC contract", () => {
       requestId: "bad-request",
     });
   });
+
+  it("exposes health and Prometheus-compatible metrics endpoints", async () => {
+    const app = createArgusApp({
+      rpcHandlers: createTestHandlers(),
+      logger: rootLogger,
+    });
+
+    await request(app).get("/healthz").expect(200, { ok: true });
+    const res = await request(app).get("/metrics").expect(200);
+
+    expect(res.text).toContain("# HELP argus_process_uptime_seconds");
+    expect(res.text).toContain("# TYPE argus_rpc_requests_total counter");
+  });
 });

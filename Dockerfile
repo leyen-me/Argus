@@ -20,6 +20,8 @@ WORKDIR /app
 COPY tsconfig.json tsconfig.node.json tsconfig.server.json ./
 COPY vite.config.ts drizzle.config.ts components.json ./
 COPY src ./src
+COPY internal ./internal
+COPY pkg ./pkg
 COPY drizzle ./drizzle
 
 RUN pnpm build
@@ -48,4 +50,4 @@ EXPOSE 8080
 
 USER node
 
-CMD ["node", "dist-server/server/index.js"]
+CMD ["node", "dist-server/src/server/index.js"]

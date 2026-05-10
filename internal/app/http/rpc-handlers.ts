@@ -48,7 +48,10 @@ export function createRpcHandlers(logger?: Logger): ArgusRpcHandlerMap {
       return undefined;
     },
     "config:save": async (_payload) => {
-      const payload = _payload ?? {};
+      const payload =
+        _payload && typeof _payload === "object" && !Array.isArray(_payload)
+          ? (_payload as Record<string, unknown>)
+          : {};
       const next = await saveMergedConfigPayload(payload);
       await routeMarket(next, next.defaultSymbol);
       void runBackgroundEquitySample(logger?.child({ module: "dashboard.sampler" }));
@@ -67,14 +70,21 @@ export function createRpcHandlers(logger?: Logger): ArgusRpcHandlerMap {
     "okx:swap-position": async (tvSymbol) =>
       getOkxSwapPositionSnapshot(await loadAppConfig(), tvSymbol),
     "dashboard:get": async () => getDashboardSnapshot(await loadAppConfig()),
-    "agent-bar-turns:list-page": async (args) => listAgentBarTurnsPage(args ?? {}),
+    "agent-bar-turns:list-page": async (args) =>
+      listAgentBarTurnsPage(
+        args && typeof args === "object" && !Array.isArray(args)
+          ? (args as Record<string, unknown>)
+          : {},
+      ),
     "agent-bar-turns:get-chart": async (barCloseId) => getAgentBarTurnChart(barCloseId),
     "agent-bar-turns:get-session-messages": async (barCloseId) =>
       getAgentSessionMessages(barCloseId),
     "prompt-strategies:list": async () => promptStrategiesStore.listStrategiesMeta(),
     "prompt-strategies:get": async (id) => promptStrategiesStore.getStrategy(id),
     "prompt-strategies:save": async (payload) => {
-      await promptStrategiesStore.saveStrategy(payload ?? {});
+      await promptStrategiesStore.saveStrategy(
+        (payload ?? {}) as Parameters<typeof promptStrategiesStore.saveStrategy>[0],
+      );
       const next = await loadAppConfig();
       await routeMarket(next, next.defaultSymbol);
       return next;

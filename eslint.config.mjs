@@ -59,7 +59,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/server/**/*.ts", "src/node/**/*.ts", "internal/**/*.ts", "pkg/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
+    files: [
+      "src/server/**/*.ts",
+      "src/node/**/*.ts",
+      "internal/**/*.ts",
+      "pkg/**/*.ts",
+      "tests/**/*.ts",
+      "scripts/**/*.ts",
+      "vitest.config.ts",
+    ],
     languageOptions: {
       globals: {
         ...globals.node,

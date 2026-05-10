@@ -8,7 +8,7 @@ import { rootLogger } from "../../internal/infrastructure/logging/logger.js";
 function createTestHandlers(overrides: Partial<ArgusRpcHandlerMap> = {}): ArgusRpcHandlerMap {
   const handlers = Object.fromEntries(ARGUS_RPC_METHODS.map((method) => [method, vi.fn()]));
   return {
-    ...(handlers as ArgusRpcHandlerMap),
+    ...(handlers as unknown as ArgusRpcHandlerMap),
     ...overrides,
   };
 }

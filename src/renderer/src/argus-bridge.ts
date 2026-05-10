@@ -1,102 +1,25 @@
 /** Web 模式：HTTP RPC + WebSocket，对齐 Electron preload 的 `window.argus` API */
 
-/** 与 vite-env.d.ts 全局 `ArgusBarCloseLlmState` / `window.argusLastBarClose.llm` 对齐 */
-interface MarketBarCloseLlmPayload {
-  analysisText?: string | null;
-  cardSummary?: string | null;
-  toolTrace?: unknown[];
-  reasoningText?: string;
-  streaming?: boolean;
-  error?: string | null;
-  skippedReason?: string | null;
-  enabled?: boolean;
-}
+import type {
+  ArgusBridge,
+  ChartCaptureRequestPayload,
+  LlmStreamDeltaPayload,
+  LlmStreamEndPayload,
+  LlmStreamErrorPayload,
+  MarketBarClosePayload,
+  MarketStatusPayload,
+  OkxSwapStatusPayload,
+} from "@public-api/index";
 
-/** `market-bar-close` 与服务端、全局 `ArgusLastBarClose`（见 vite-env.d.ts）对齐 */
-export interface MarketBarClosePayload {
-  llm?: MarketBarCloseLlmPayload;
-  exchangeContext?: unknown;
-  barCloseId?: string;
-  conversationKey?: string;
-  chartImage?: { dataUrl?: string | null };
-  chartCaptureError?: unknown;
-  [key: string]: unknown;
-}
-
-/** `request-chart-capture` WebSocket 推送 */
-export type ChartCaptureRequestPayload = {
-  requestId?: string;
-  tvSymbol?: string;
-  targetRole?: "interactive" | "headless_capture";
-  /** 策略「市场数据」勾选周期；缺省则截取全部多周期图 */
-  marketTimeframes?: string[];
-};
-
-/** `market-status` 推送 */
-export type MarketStatusPayload = {
-  text?: string;
-};
-
-/** `llm-stream-delta` 推送 */
-export type LlmStreamDeltaPayload = {
-  barCloseId: string;
-  full?: string | null;
-  reasoningFull?: string | null;
-  toolFull?: string | null;
-};
-
-/** `llm-stream-end` 推送 */
-export type LlmStreamEndPayload = {
-  barCloseId: string;
-  analysisText?: string | null;
-  cardSummary?: string | null;
-  reasoningText?: string | null;
-  toolTrace?: unknown[];
-  conversationKey?: string;
-  exchangeContext?: unknown;
-};
-
-/** `llm-stream-error` 推送 */
-export type LlmStreamErrorPayload = {
-  barCloseId: string;
-  message?: string | null;
-  toolTrace?: unknown[];
-};
-
-/** `okx-swap-status` 推送 */
-export type OkxSwapStatusPayload = {
-  ok?: boolean;
-  message?: string;
-  tvSymbol?: string;
-  position?: Record<string, unknown>;
-  simulated?: boolean;
-};
-
-export type ArgusBridge = {
-  onMarketBarClose: (callback: (payload: MarketBarClosePayload) => void) => void;
-  onChartCaptureRequest: (callback: (payload: ChartCaptureRequestPayload) => void) => void;
-  submitChartCaptureResult: (result: unknown) => void;
-  onMarketStatus: (callback: (payload: MarketStatusPayload) => void) => void;
-  onLlmStreamDelta: (callback: (payload: LlmStreamDeltaPayload) => void) => void;
-  onLlmStreamEnd: (callback: (payload: LlmStreamEndPayload) => void) => void;
-  onLlmStreamError: (callback: (payload: LlmStreamErrorPayload) => void) => void;
-  onOkxSwapStatus: (callback: (payload: OkxSwapStatusPayload) => void) => void;
-  setMarketContext: (tvSymbol: string) => Promise<unknown>;
-  requestAnalysis: (payload: unknown) => Promise<unknown>;
-  getConfig: () => Promise<unknown>;
-  saveConfig: (config: unknown) => Promise<unknown>;
-  resetConfig: () => Promise<unknown>;
-  getConfigPath: () => Promise<unknown>;
-  openDevTools: () => Promise<unknown>;
-  getOkxSwapPosition: (tvSymbol: string) => Promise<unknown>;
-  getDashboard: () => Promise<unknown>;
-  listAgentBarTurnsPage: (args: unknown) => Promise<unknown>;
-  getAgentBarTurnChart: (barCloseId: string) => Promise<unknown>;
-  getAgentSessionMessages: (barCloseId: string) => Promise<unknown>;
-  listPromptStrategiesMeta: () => Promise<unknown>;
-  getPromptStrategy: (id: string) => Promise<unknown>;
-  savePromptStrategy: (payload: unknown) => Promise<unknown>;
-  deletePromptStrategy: (id: string) => Promise<unknown>;
+export type {
+  ArgusBridge,
+  ChartCaptureRequestPayload,
+  LlmStreamDeltaPayload,
+  LlmStreamEndPayload,
+  LlmStreamErrorPayload,
+  MarketBarClosePayload,
+  MarketStatusPayload,
+  OkxSwapStatusPayload,
 };
 
 const listeners = new Map<string, Set<(payload: unknown) => void>>();

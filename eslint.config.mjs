@@ -6,7 +6,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**"],
+    ignores: ["dist/**", "dist-server/**", "node_modules/**", "coverage/**"],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
@@ -59,7 +59,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/server/**/*.ts", "src/node/**/*.ts", "scripts/**/*.ts"],
+    files: ["src/server/**/*.ts", "src/node/**/*.ts", "internal/**/*.ts", "pkg/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
     languageOptions: {
       globals: {
         ...globals.node,

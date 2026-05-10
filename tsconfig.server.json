@@ -3,9 +3,9 @@
   "compilerOptions": {
     "noEmit": false,
     "outDir": "./dist-server",
-    "rootDir": "./src",
+    "rootDir": ".",
     "sourceMap": true,
     "declaration": false
   },
-  "include": ["src/server/**/*.ts", "src/node/**/*.ts", "src/shared/**/*.ts"]
+  "include": ["src/server/**/*.ts", "src/node/**/*.ts", "src/shared/**/*.ts", "internal/**/*.ts", "pkg/**/*.ts"]
 }

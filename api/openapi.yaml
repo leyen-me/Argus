@@ -1,0 +1,119 @@
+openapi: 3.1.0
+info:
+  title: Argus API
+  version: 1.0.0
+  description: |
+    Backward-compatible HTTP API for the Argus web client. The shipped v1
+    surface is `POST /api/rpc`; resource-style endpoints are planned as a
+    facade over the same application services.
+paths:
+  /api/rpc:
+    post:
+      summary: Execute a backward-compatible RPC method.
+      operationId: executeRpc
+      parameters:
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RpcRequest"
+      responses:
+        "200":
+          description: RPC method completed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RpcSuccessResponse"
+        "400":
+          description: Unknown or malformed RPC request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RpcErrorResponse"
+        "500":
+          description: Handler failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RpcErrorResponse"
+components:
+  schemas:
+    RpcMethod:
+      type: string
+      enum:
+        - config:get
+        - config:path
+        - devtools:open
+        - config:save
+        - config:reset
+        - market:set-context
+        - okx:swap-position
+        - dashboard:get
+        - agent-bar-turns:list-page
+        - agent-bar-turns:get-chart
+        - agent-bar-turns:get-session-messages
+        - prompt-strategies:list
+        - prompt-strategies:get
+        - prompt-strategies:save
+        - prompt-strategies:delete
+        - llm-request-analysis
+        - chartCaptureTest
+        - chart-capture:test
+    RpcRequest:
+      type: object
+      required:
+        - method
+      properties:
+        method:
+          $ref: "#/components/schemas/RpcMethod"
+        args:
+          type: array
+          items: {}
+        requestId:
+          type: string
+    RpcSuccessResponse:
+      type: object
+      required:
+        - ok
+        - result
+      properties:
+        ok:
+          const: true
+        result: {}
+        requestId:
+          type: string
+    RpcErrorCode:
+      type: string
+      enum:
+        - BAD_REQUEST
+        - UNAUTHORIZED
+        - FORBIDDEN
+        - NOT_FOUND
+        - CONFLICT
+        - VALIDATION_FAILED
+        - UPSTREAM_UNAVAILABLE
+        - TIMEOUT
+        - RATE_LIMITED
+        - DATABASE_ERROR
+        - INTERNAL
+    RpcErrorResponse:
+      type: object
+      required:
+        - ok
+        - error
+      properties:
+        ok:
+          const: false
+        error:
+          type: string
+        code:
+          $ref: "#/components/schemas/RpcErrorCode"
+        details: {}
+        requestId:
+          type: string

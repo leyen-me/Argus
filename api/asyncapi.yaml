@@ -1,0 +1,125 @@
+asyncapi: 3.0.0
+info:
+  title: Argus WebSocket API
+  version: 1.0.0
+  description: Backward-compatible `/ws` channel contract for browser clients.
+servers:
+  local:
+    host: 127.0.0.1:8080
+    pathname: /ws
+    protocol: ws
+channels:
+  argusEvents:
+    address: /ws
+    messages:
+      marketBarClose:
+        $ref: "#/components/messages/MarketBarClose"
+      marketStatus:
+        $ref: "#/components/messages/MarketStatus"
+      requestChartCapture:
+        $ref: "#/components/messages/RequestChartCapture"
+      llmStreamDelta:
+        $ref: "#/components/messages/LlmStreamDelta"
+      llmStreamEnd:
+        $ref: "#/components/messages/LlmStreamEnd"
+      llmStreamError:
+        $ref: "#/components/messages/LlmStreamError"
+      okxSwapStatus:
+        $ref: "#/components/messages/OkxSwapStatus"
+operations:
+  receiveArgusEvents:
+    action: receive
+    channel:
+      $ref: "#/channels/argusEvents"
+  sendClientMessages:
+    action: send
+    channel:
+      $ref: "#/channels/argusEvents"
+components:
+  messages:
+    MarketBarClose:
+      payload:
+        $ref: "#/components/schemas/WsEnvelope"
+    MarketStatus:
+      payload:
+        $ref: "#/components/schemas/WsEnvelope"
+    RequestChartCapture:
+      payload:
+        $ref: "#/components/schemas/WsEnvelope"
+    LlmStreamDelta:
+      payload:
+        $ref: "#/components/schemas/WsEnvelope"
+    LlmStreamEnd:
+      payload:
+        $ref: "#/components/schemas/WsEnvelope"
+    LlmStreamError:
+      payload:
+        $ref: "#/components/schemas/WsEnvelope"
+    OkxSwapStatus:
+      payload:
+        $ref: "#/components/schemas/WsEnvelope"
+  schemas:
+    WsChannel:
+      type: string
+      enum:
+        - market-bar-close
+        - market-status
+        - request-chart-capture
+        - llm-stream-delta
+        - llm-stream-end
+        - llm-stream-error
+        - okx-swap-status
+    WsEnvelope:
+      type: object
+      required:
+        - channel
+        - payload
+      properties:
+        channel:
+          $ref: "#/components/schemas/WsChannel"
+        payload: {}
+        requestId:
+          type: string
+        emittedAt:
+          type: string
+          format: date-time
+    ClientMessage:
+      oneOf:
+        - $ref: "#/components/schemas/RegisterClientMessage"
+        - $ref: "#/components/schemas/ChartCaptureResultMessage"
+    RegisterClientMessage:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          const: register-client
+        role:
+          type: string
+          enum:
+            - interactive
+            - headless_capture
+        requestId:
+          type: string
+    ChartCaptureResultMessage:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          const: chart-capture-result
+        requestId:
+          type: string
+        ok:
+          type: boolean
+        error:
+          type: string
+        mimeType:
+          type: string
+        base64:
+          type: string
+        dataUrl:
+          type: string
+        charts:
+          type: array
+          items: {}

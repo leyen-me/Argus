@@ -14,6 +14,7 @@ export default defineConfig({
       "@renderer": path.resolve(process.cwd(), "src/renderer/src"),
       "@": path.resolve(process.cwd(), "src/renderer/src"),
       "@shared": path.resolve(process.cwd(), "src/shared"),
+      "@public-api": path.resolve(process.cwd(), "pkg/public-api"),
     },
   },
   plugins: [react(), tailwindcss()],

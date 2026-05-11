@@ -953,10 +953,10 @@ export function TradingDashboardCard({
         ? "暂无策略：请先到策略中心创建"
         : "切换当前使用的策略（将同步顶栏与图表）"
 
-  useEffect(() => {
-    if (!strategyPickerOpen) return
+  const openStrategyPicker = useCallback(() => {
     setPickerChoiceId(currentPromptId.trim() ? currentPromptId : null)
-  }, [strategyPickerOpen, currentPromptId])
+    setStrategyPickerOpen(true)
+  }, [currentPromptId])
 
   const pickerConfirmDisabled =
     !pickerChoiceId ||
@@ -969,10 +969,6 @@ export function TradingDashboardCard({
     const ok = await onPromptStrategyChange(pickerChoiceId)
     if (ok) setStrategyPickerOpen(false)
   }, [currentPromptId, onPromptStrategyChange, pickerChoiceId])
-
-  useEffect(() => {
-    if (execBlocksStrategySwitch) setStrategyPickerOpen(false)
-  }, [execBlocksStrategySwitch])
 
   return (
     <>
@@ -993,7 +989,7 @@ export function TradingDashboardCard({
           strategyEditDisabled={!strategyEditAccessible}
           strategyEditBusy={strategySwitchBusy}
           strategyEditTitle={strategyEditTitle}
-          onStrategyEditClick={() => setStrategyPickerOpen(true)}
+          onStrategyEditClick={openStrategyPicker}
           onStartExecution={() => void startExecution()}
           onPauseExecution={() => void pauseExecution()}
           onResumeExecution={() => void resumeExecution()}
@@ -1009,7 +1005,7 @@ export function TradingDashboardCard({
         <EquityCurveCard series={series} hasStatsSession={hasStatsSession} statsSegments={statsSegments} />
       </div>
 
-      <Dialog open={strategyPickerOpen} onOpenChange={setStrategyPickerOpen}>
+      <Dialog open={strategyPickerOpen && !execBlocksStrategySwitch} onOpenChange={setStrategyPickerOpen}>
         <AppDialogContent className="w-[min(420px,calc(100%-2rem))] sm:max-w-[420px]">
           <AppDialogHeader
             title="切换策略"

@@ -184,7 +184,9 @@ export function StrategyCenterModal() {
 
   const executionBlockingSelected =
     Boolean(selectedId) && isStrategyExecutionBlocking(strategyRuntimeById[selectedId!.trim()]);
-  const cannotDeleteSelected = executionBlockingSelected;
+  const statsRunningSelected =
+    Boolean(selectedId) && isDashboardStrategyRunningEntry(dashboardStrategyRanges[selectedId!.trim()]);
+  const cannotDeleteSelected = executionBlockingSelected || statsRunningSelected;
 
   const refreshDashboardSlicesFromServer = useCallback(async () => {
     const api = getArgus();
@@ -497,6 +499,8 @@ export function StrategyCenterModal() {
                   title={
                     executionBlockingSelected
                       ? "请先停止该策略的执行态再删除"
+                      : statsRunningSelected
+                        ? "请先结束该策略的仪表盘统计会话再删除"
                       : undefined
                   }
                 >

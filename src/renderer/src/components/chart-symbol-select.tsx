@@ -8,6 +8,7 @@ type SymbolOption = { label: string; value: string };
 type SyncDetail = { symbols: SymbolOption[]; value: string };
 
 function readSymbolSelectFromDom(): SyncDetail | null {
+  if (typeof document === "undefined") return null;
   const sel = document.getElementById("symbol-select");
   if (!(sel instanceof HTMLSelectElement)) return null;
   const symbols: SymbolOption[] = [...sel.options].map((o) => ({
@@ -24,8 +25,8 @@ function readSymbolSelectFromDom(): SyncDetail | null {
  * 仍保留隐藏 `#symbol-select` 供 argus-renderer 命令式读写。
  */
 export function ChartSymbolSelect() {
-  const [options, setOptions] = useState<SymbolOption[]>([]);
-  const [value, setValue] = useState("");
+  const [options, setOptions] = useState<SymbolOption[]>(() => readSymbolSelectFromDom()?.symbols ?? []);
+  const [value, setValue] = useState(() => readSymbolSelectFromDom()?.value ?? "");
 
   useEffect(() => {
     const onSync = (e: Event) => {
@@ -36,11 +37,6 @@ export function ChartSymbolSelect() {
       setValue(String(d.value ?? d.symbols[0]?.value ?? ""));
     };
     window.addEventListener(ARGUS_SYMBOL_SELECT_SYNC, onSync);
-    const dom = readSymbolSelectFromDom();
-    if (dom) {
-      setOptions(dom.symbols);
-      setValue(dom.value);
-    }
     return () => window.removeEventListener(ARGUS_SYMBOL_SELECT_SYNC, onSync);
   }, []);
 
@@ -56,14 +52,14 @@ export function ChartSymbolSelect() {
       <select id="symbol-select" className="sr-only" tabIndex={-1} title="交易对（随当前策略）" />
       {options.length === 0 ? (
         <div
-          className="inline-flex h-7 max-w-[min(240px,42vw)] items-center rounded-lg border border-border bg-background px-2.5 text-sm text-muted-foreground"
+          className="inline-flex h-7 max-w-[min(240px,42vw)] items-center rounded-sm border border-border bg-background px-2.5 text-sm text-muted-foreground"
           aria-hidden
         >
           加载品种…
         </div>
       ) : (
         <div
-          className="inline-flex h-7 max-w-[min(240px,42vw)] items-center rounded-lg border border-border bg-muted/30 px-2.5 text-sm text-foreground"
+          className="inline-flex h-7 max-w-[min(240px,42vw)] items-center rounded-sm border border-border bg-muted/30 px-2.5 text-sm text-foreground"
           title={`${currentLabel}（在策略中心修改）`}
           aria-label={`当前标的 ${currentLabel}，请在策略中心切换策略或代币`}
         >

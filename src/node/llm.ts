@@ -1360,25 +1360,25 @@ function compactPromptUtcFromIso(timeIso: string): string {
 }
 
 /** 最近 K 线表：仅 OHLC（Vol/Turnover 不再默认附带） */
-const PROMPT_RECENT_KLINE_BASE_HEADERS = ["UTC", "O", "H", "L", "C"] as const;
+const PROMPT_RECENT_KLINE_BASE_HEADERS = ["开盘 UTC", "O", "H", "L", "C"] as const;
 
 /** 触发 K 线表：标的 + 周期 + OHLC；Vol 仅当策略勾选 {@link StrategyIndicatorId} `VOL` */
 function promptTriggerKlineHeaders(orderedIds: readonly StrategyIndicatorId[]): string[] {
-  const h = ["标的", "周期", "UTC", "O", "H", "L", "C"];
+  const h = ["标的", "周期", "开盘 UTC", "O", "H", "L", "C"];
   if (orderedIds.includes("VOL")) h.push("Vol");
   return h;
 }
 
 /** 与表头一致：仅解释当前表里真实出现的列（触发表无技术指标列）。 */
 function promptTriggerKlineColumnGlossary(orderedIds: readonly StrategyIndicatorId[]): string {
-  const parts = ["标的=合约代码", "周期=本根K线周期", "UTC=月-日 时:分(UTC)", "O/H/L/C=开/高/低/收"];
+  const parts = ["标的=合约代码", "周期=本根K线周期", "开盘 UTC=月-日 时:分(UTC)", "O/H/L/C=开/高/低/收"];
   if (orderedIds.includes("VOL")) parts.push("Vol=成交量(K/M/B为数量缩写)");
   return `列说明：${parts.join("；")}。`;
 }
 
 /** 最近 K 线表：OHLC + 勾选的指标列释义（MACD 柱用 Hist，避免与 High 缩写 H 冲突）。 */
 function promptRecentKlineColumnGlossary(orderedIds: readonly StrategyIndicatorId[]): string {
-  const parts = ["UTC=月-日 时:分(UTC)", "O/H/L/C=开/高/低/收"];
+  const parts = ["开盘 UTC=月-日 时:分(UTC)", "O/H/L/C=开/高/低/收"];
   const set = new Set(orderedIds);
   for (const id of STRATEGY_INDICATOR_ORDER) {
     if (!set.has(id)) continue;

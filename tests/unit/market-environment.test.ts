@@ -34,7 +34,7 @@ describe("market environment prompt", () => {
               price: 500.12,
               changePct: -0.5,
               changeAbs: -2.51,
-              source: "Yahoo Finance",
+              source: "Longbridge",
               updatedAt: "2026-05-10T20:00:00.000Z",
             },
           ],
@@ -50,11 +50,11 @@ describe("market environment prompt", () => {
           title: "### 黄金",
           rows: [
             {
-              label: "黄金期货 GC=F",
+              label: "黄金 ETF GLD",
               price: null,
               changePct: null,
               changeAbs: null,
-              source: "Yahoo Finance",
+              source: "Longbridge",
               updatedAt: null,
               error: "无数据",
             },
@@ -70,9 +70,9 @@ describe("market environment prompt", () => {
     expect(text.indexOf("### 恐慌指数")).toBeLessThan(text.indexOf("### 黄金"));
     expect(text).toContain("| 标的 | 最新价 | 今日涨跌 | 数据源 | 更新时间 |");
     expect(text).toContain("| BTC/USDT | 102,000 | +2.00%（+2,000） | OKX SWAP | 05-11 04:47 |");
-    expect(text).toContain("| SPY | 500.12 | -0.50%（-2.51） | Yahoo Finance | 05-10 20:00 |");
+    expect(text).toContain("| SPY | 500.12 | -0.50%（-2.51） | Longbridge | 05-10 20:00 |");
     expect(text).toContain("（拉取失败：HTTP 429）");
-    expect(text).toContain("| 黄金期货 GC=F（无数据） | — | — | Yahoo Finance | — |");
+    expect(text).toContain("| 黄金 ETF GLD（无数据） | — | — | Longbridge | — |");
   });
 
   it("deduplicates default crypto symbols with the current trading symbol", () => {

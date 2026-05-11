@@ -6,7 +6,17 @@ import { tvSymbolToSwapInstId } from "./okx-perp.js";
 const OKX_REST = "https://www.okx.com";
 const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
 
-const DEFAULT_CRYPTO_SYMBOLS = ["OKX:BTCUSDT", "OKX:ETHUSDT", "OKX:SOLUSDT", "OKX:DOGEUSDT"];
+const DEFAULT_CRYPTO_SYMBOLS = [
+  "OKX:BTCUSDT",
+  "OKX:ETHUSDT",
+  "OKX:SOLUSDT",
+  "OKX:DOGEUSDT",
+  "OKX:OKBUSDT",
+  "OKX:BNBUSDT",
+  "OKX:ZECUSDT",
+  "OKX:XRPUSDT",
+  "OKX:TRUMPUSDT",
+];
 
 const YAHOO_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";

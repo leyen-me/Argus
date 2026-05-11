@@ -81,14 +81,24 @@ describe("market environment prompt", () => {
       "ETH-USDT-SWAP",
       "SOL-USDT-SWAP",
       "DOGE-USDT-SWAP",
+      "OKB-USDT-SWAP",
+      "BNB-USDT-SWAP",
+      "ZEC-USDT-SWAP",
+      "XRP-USDT-SWAP",
+      "TRUMP-USDT-SWAP",
     ]);
 
-    expect(okxInstIdsForPrompt("OKX:XRPUSDT")).toEqual([
+    expect(okxInstIdsForPrompt("OKX:ADAUSDT")).toEqual([
       "BTC-USDT-SWAP",
       "ETH-USDT-SWAP",
       "SOL-USDT-SWAP",
       "DOGE-USDT-SWAP",
+      "OKB-USDT-SWAP",
+      "BNB-USDT-SWAP",
+      "ZEC-USDT-SWAP",
       "XRP-USDT-SWAP",
+      "TRUMP-USDT-SWAP",
+      "ADA-USDT-SWAP",
     ]);
   });
 

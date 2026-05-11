@@ -69,9 +69,9 @@ export default function App() {
 
   return (
     <>
-      <div className="app">
+      <div className="app bg-background text-foreground">
         <TitleBar />
-        <main className="main">
+        <main className="main bg-background">
           {showStrategiesEmpty ? (
             <StrategiesEmptyState />
           ) : (
@@ -85,7 +85,7 @@ export default function App() {
                   "flex min-h-0 min-w-0 transition-[flex-basis,flex-grow,max-width,opacity] duration-200 ease-out",
                   rightPanelCollapsed
                     ? "pointer-events-none max-w-0 flex-[0_0_0] overflow-hidden opacity-0"
-                    : "flex-[0.75]",
+                    : "flex-[0.72] border-l border-border/75",
                 )}
                 aria-hidden={rightPanelCollapsed}
                 inert={rightPanelCollapsed ? true : undefined}

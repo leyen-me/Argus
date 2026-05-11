@@ -6,17 +6,13 @@ import { PromptStrategySelect } from "@/components/prompt-strategy-select";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
-  DialogContent,
   DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
+import { AppDialogBody, AppDialogContent, AppDialogHeader, PanelHeader } from "@/components/app/ui-shell";
 import { Camera, EyeOff, Loader2, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { ARGUS_APP_CONFIG_CHANGED } from "@/lib/argus-config-modal-events";
 import { ARGUS_PROMPT_STRATEGIES_CHANGED } from "@/lib/argus-strategy-modal-events";
@@ -160,21 +156,21 @@ export function ChartPanel({
       <Card
         className={cn(
           "min-h-0 min-w-0 gap-0 rounded-none border-0 py-0 shadow-none ring-0",
-          rightPanelCollapsed ? "flex-1 border-r-0" : "flex-[1.75] border-r border-border",
+          rightPanelCollapsed ? "flex-1 border-r-0" : "flex-[1.78]",
         )}
       >
-        <CardHeader className="flex h-10 shrink-0 flex-row items-center justify-between gap-0 border-b border-border px-3 py-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <CardTitle className="text-xs leading-none font-semibold tracking-wider text-muted-foreground uppercase">
-              <div className="titlebar-title">
-                <PromptStrategySelect
-                  className="justify-start"
-                  triggerClassName="max-w-[180px] justify-start"
-                />
-              </div>
-            </CardTitle>
-          </div>
-          <div className="flex min-w-0 shrink flex-wrap items-center justify-end gap-1.5">
+        <PanelHeader
+          eyebrow="market grid"
+          title={
+            <div className="titlebar-title">
+              <PromptStrategySelect
+                className="justify-start"
+                triggerClassName="max-w-[180px] justify-start"
+              />
+            </div>
+          }
+          actions={
+            <>
             {/* 去掉 className 里的 `hidden` 可再次显示「测试截图」 */}
             <Button
               type="button"
@@ -225,8 +221,9 @@ export function ChartPanel({
                 )}
               </Button>
             ) : null}
-          </div>
-        </CardHeader>
+            </>
+          }
+        />
         {testErr ? (
           <div className="border-b border-border bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive">
             {testErr}
@@ -258,11 +255,10 @@ export function ChartPanel({
       </Card>
 
       <Dialog open={Boolean(testPreviewUrl)} onOpenChange={(open) => !open && setTestPreviewUrl(null)}>
-        <DialogContent className="max-h-[90vh] max-w-[min(920px,96vw)] gap-3 overflow-hidden p-4">
-          <DialogHeader>
-            <DialogTitle className="text-sm">截图测试结果（多周期拼图）</DialogTitle>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-muted/30 p-2">
+        <AppDialogContent className="max-h-[90vh] w-[min(920px,96vw)] sm:max-w-[920px]">
+          <AppDialogHeader title="截图测试结果" eyebrow="chart capture" closeId="btn-chart-capture-preview-close" />
+          <AppDialogBody className="p-4">
+          <div className="min-h-0 flex-1 overflow-auto border border-border bg-muted/30 p-2">
             {testPreviewUrl ? (
               <img
                 src={testPreviewUrl}
@@ -271,12 +267,13 @@ export function ChartPanel({
               />
             ) : null}
           </div>
+          </AppDialogBody>
           <DialogFooter className="gap-2 sm:justify-end">
             <Button type="button" variant="outline" size="sm" onClick={() => setTestPreviewUrl(null)}>
               关闭
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </AppDialogContent>
       </Dialog>
     </>
   );

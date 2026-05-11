@@ -6,13 +6,10 @@ import { ClipboardList, ExternalLink, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogClose,
-  DialogContent,
   DialogDescription,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { AppDialogContent, AppDialogHeader, StatusPill } from "@/components/app/ui-shell";
 import { ARGUS_LLM_SESSION_DETAIL_OPEN } from "@/lib/argus-llm-session-detail-events";
 import { ARGUS_TRADE_REVIEW_MODAL_OPEN } from "@/lib/argus-trade-review-modal-events";
 import { cn } from "@/lib/utils";
@@ -164,17 +161,13 @@ export function TradeReviewModal() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent
-        showCloseButton={false}
-        forceMount
-        className="flex h-[min(88vh,860px)] w-[min(1180px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1180px]"
-      >
-        <DialogHeader className="shrink-0 space-y-0 border-b border-border px-5 py-4 text-left">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <ClipboardList className="size-4 opacity-80" aria-hidden />
-              <DialogTitle className="text-base font-semibold">交易复盘</DialogTitle>
-            </div>
+      <AppDialogContent className="h-[min(88vh,860px)] w-[min(1180px,calc(100%-2rem))] sm:max-w-[1180px]">
+        <AppDialogHeader
+          title="交易复盘"
+          eyebrow="trade review"
+          icon={<ClipboardList aria-hidden />}
+          closeId="btn-trade-review-close"
+          actions={
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -187,23 +180,18 @@ export function TradeReviewModal() {
                 <RefreshCw className={cn("size-3.5", loading && "animate-spin")} aria-hidden />
                 刷新
               </Button>
-              <DialogClose asChild>
-                <Button type="button" variant="ghost" size="icon-sm" aria-label="关闭">
-                  ×
-                </Button>
-              </DialogClose>
             </div>
-          </div>
-          <DialogDescription className="sr-only">查看已完成交易的 LLM 复盘记录</DialogDescription>
-        </DialogHeader>
+          }
+        />
+        <DialogDescription className="sr-only">查看已完成交易的 LLM 复盘记录</DialogDescription>
 
         <div className="grid min-h-0 flex-1 grid-cols-[360px_minmax(0,1fr)]">
           <aside className="min-h-0 border-r border-border bg-muted/15">
             <ScrollArea className="h-full">
               <div className="space-y-2 p-3">
-                {error ? <div className="rounded-lg border border-destructive/30 bg-destructive/8 p-3 text-xs text-destructive">{error}</div> : null}
+                {error ? <div className="border border-destructive/30 bg-destructive/8 p-3 text-xs text-destructive">{error}</div> : null}
                 {!loading && rows.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted-foreground">
+                  <div className="border border-dashed border-border p-5 text-center text-sm text-muted-foreground">
                     暂无复盘记录。交易完成后会自动生成。
                   </div>
                 ) : null}
@@ -212,7 +200,7 @@ export function TradeReviewModal() {
                     key={row.id}
                     type="button"
                     className={cn(
-                      "w-full rounded-xl border p-3 text-left transition-colors",
+                      "w-full rounded-sm border p-3 text-left transition-colors",
                       selected?.id === row.id
                         ? "border-primary/50 bg-primary/8"
                         : "border-border bg-background/70 hover:bg-muted/40",
@@ -221,7 +209,7 @@ export function TradeReviewModal() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-semibold text-foreground">{row.tvSymbol}</span>
-                      <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+                      <span className="border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
                         {exitTypeLabel(row.exitType)}
                       </span>
                     </div>
@@ -247,7 +235,7 @@ export function TradeReviewModal() {
             <ScrollArea className="h-full">
               {selected ? (
                 <div className="space-y-4 p-5">
-                  <div className="rounded-2xl border border-border bg-card p-4">
+                  <div className="border border-border bg-card p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <div className="text-base font-semibold text-foreground">{selected.tvSymbol}</div>
@@ -256,29 +244,29 @@ export function TradeReviewModal() {
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2 text-xs">
-                        <span className="rounded-full border border-border px-2.5 py-1">{exitTypeLabel(selected.exitType)}</span>
-                        <span className="rounded-full border border-border px-2.5 py-1">{attributionLabel(selected.attribution)}</span>
+                        <StatusPill>{exitTypeLabel(selected.exitType)}</StatusPill>
+                        <StatusPill>{attributionLabel(selected.attribution)}</StatusPill>
                         {selected.exitReasonSource === "inferred" ? (
-                          <span className="rounded-full border border-amber-500/30 bg-amber-500/8 px-2.5 py-1 text-amber-700 dark:text-amber-300">
+                          <StatusPill tone="warning">
                             出场类型为推断
-                          </span>
+                          </StatusPill>
                         ) : null}
                       </div>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-xs md:grid-cols-4">
-                      <div className="rounded-lg bg-muted/35 p-3">
+                      <div className="border border-border/60 bg-muted/25 p-3">
                         <div className="text-muted-foreground">方向</div>
                         <div className="mt-1 font-medium">{selected.side || "—"}</div>
                       </div>
-                      <div className="rounded-lg bg-muted/35 p-3">
+                      <div className="border border-border/60 bg-muted/25 p-3">
                         <div className="text-muted-foreground">入场/出场</div>
                         <div className="mt-1 font-medium">{fmtNum(selected.entryPrice)} / {fmtNum(selected.exitPrice)}</div>
                       </div>
-                      <div className="rounded-lg bg-muted/35 p-3">
+                      <div className="border border-border/60 bg-muted/25 p-3">
                         <div className="text-muted-foreground">PnL</div>
                         <div className="mt-1 font-medium">{fmtNum(selected.pnl)}</div>
                       </div>
-                      <div className="rounded-lg bg-muted/35 p-3">
+                      <div className="border border-border/60 bg-muted/25 p-3">
                         <div className="text-muted-foreground">状态</div>
                         <div className="mt-1 font-medium">{selected.status}</div>
                       </div>
@@ -286,12 +274,12 @@ export function TradeReviewModal() {
                   </div>
 
                   {selected.error ? (
-                    <div className="rounded-xl border border-destructive/30 bg-destructive/8 p-3 text-sm text-destructive">
+                    <div className="border border-destructive/30 bg-destructive/8 p-3 text-sm text-destructive">
                       {selected.error}
                     </div>
                   ) : null}
 
-                  <div className="rounded-2xl border border-border bg-card p-4">
+                  <div className="border border-border bg-card p-4">
                     <h3 className="mb-3 text-sm font-semibold">复盘结论</h3>
                     {selected.reviewText ? (
                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
@@ -302,7 +290,7 @@ export function TradeReviewModal() {
                     )}
                   </div>
 
-                  <div className="rounded-2xl border border-border bg-card p-4">
+                  <div className="border border-border bg-card p-4">
                     <h3 className="mb-3 text-sm font-semibold">原始 Agent 会话</h3>
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5" onClick={() => openSession(selected.entryBarCloseId)}>
@@ -324,7 +312,7 @@ export function TradeReviewModal() {
             </ScrollArea>
           </section>
         </div>
-      </DialogContent>
+      </AppDialogContent>
     </Dialog>
   );
 }

@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { AlertCircle, Check, Pause, PencilLine, Play, RotateCcw, Square } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
   DialogClose,
-  DialogContent,
-  DialogDescription,
   DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { AppDialogContent, AppDialogHeader, StatusPill } from "@/components/app/ui-shell"
 import { cn } from "@/lib/utils"
 import { ARGUS_APP_CONFIG_CHANGED } from "@/lib/argus-config-modal-events"
 import { ARGUS_PROMPT_STRATEGIES_CHANGED } from "@/lib/argus-strategy-modal-events"
@@ -283,12 +279,12 @@ function MetricCard({
   valueClassName?: string
 }) {
   return (
-    <Card className="h-full gap-0 py-0 shadow-none ring-border/60">
+    <Card className="h-full gap-0 border-border/75 bg-card/70 py-0 shadow-none">
       <CardContent className="flex h-full flex-col justify-between gap-4 px-4 py-4">
-        <div className="text-[11px] font-medium tracking-wide text-muted-foreground">{label}</div>
+        <div className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">{label}</div>
         <div className={cn("space-y-1", valueClassName)}>
           {typeof value === "string" ? (
-            <div className="text-[1.6rem] leading-none font-semibold tracking-tight tabular-nums">{value}</div>
+            <div className="text-[1.8rem] leading-none font-semibold tracking-tight tabular-nums">{value}</div>
           ) : (
             value
           )}
@@ -342,8 +338,14 @@ function StrategyInfoCard({
 }) {
   const busy = loading
   return (
-    <Card className="gap-0 py-0 shadow-none ring-border/60">
+    <Card className="gap-0 border-border/75 bg-card/70 py-0 shadow-none">
       <CardContent className="flex h-full flex-col px-6 py-5">
+        <div className="mb-4 flex items-center justify-between border-b border-border/70 pb-3">
+          <div>
+            <div className="text-[10px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">strategy command</div>
+            <div className="mt-1 text-xs text-muted-foreground">策略执行、统计区间与 Agent 自动运行控制</div>
+          </div>
+        </div>
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-nowrap items-center gap-1">
@@ -354,7 +356,7 @@ function StrategyInfoCard({
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="size-10 shrink-0 rounded-xl border border-transparent text-muted-foreground transition-colors hover:border-border/50 hover:bg-muted/40 hover:text-foreground disabled:opacity-40"
+                className="size-10 shrink-0 border border-transparent text-muted-foreground transition-colors hover:border-border/50 hover:bg-muted/40 hover:text-foreground disabled:opacity-40"
                 aria-label="切换策略"
                 title={strategyEditTitle}
                 disabled={strategyEditDisabled || strategyEditBusy}
@@ -364,16 +366,13 @@ function StrategyInfoCard({
               </Button>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="h-7 rounded-full px-3 text-xs font-medium">
+              <StatusPill tone="neutral" className="h-7 px-3 normal-case tracking-normal">
                 {symbolLabel}
-              </Badge>
+              </StatusPill>
               {simulated ? (
-                <Badge
-                  variant="outline"
-                  className="h-7 rounded-full border-amber-500/25 bg-amber-500/10 px-3 text-xs font-medium text-amber-700 dark:text-amber-300"
-                >
+                <StatusPill tone="warning" className="h-7 px-3 normal-case tracking-normal">
                   模拟盘
-                </Badge>
+                </StatusPill>
               ) : null}
             </div>
             <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-snug text-muted-foreground">
@@ -438,7 +437,7 @@ function StrategyInfoCard({
           </div>
         </div>
 
-        <div className="mt-5 flex items-center gap-2 rounded-xl border border-border/60 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+        <div className="mt-5 flex items-center gap-2 border border-border/70 bg-muted/28 px-3 py-2 text-xs text-muted-foreground">
           <AlertCircle className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 leading-snug">{statusText}</span>
         </div>
@@ -468,7 +467,7 @@ function AccountOverviewCard({
       : null
 
   return (
-    <div className="grid grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       <MetricCard
         label="胜率"
         value={
@@ -546,7 +545,7 @@ function EquityCurveChart({
 
   if (!series.length) {
     return (
-      <div className="flex h-full w-full min-h-[220px] flex-1 items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 text-center text-sm text-muted-foreground">
+      <div className="flex h-full min-h-[220px] w-full flex-1 items-center justify-center border border-dashed border-border/65 bg-muted/20 text-center text-sm text-muted-foreground">
         {hasStatsSession ? "当前统计会话暂无净值采样数据" : "启动策略后会自动开始绘制净值曲线"}
       </div>
     )
@@ -617,7 +616,13 @@ function EquityCurveCard({
   statsSegments: Array<{ startedAt: string; endedAt: string | null }>
 }) {
   return (
-    <Card className="min-h-0 gap-0 bg-transparent py-0 shadow-none ring-border/60">
+    <Card className="min-h-0 gap-0 border-border/75 bg-card/55 py-0 shadow-none">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/75 px-5">
+        <div>
+          <div className="text-[10px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">equity curve</div>
+        </div>
+        <div className="text-[11px] text-muted-foreground">自动采样账户净值</div>
+      </div>
       <CardContent className="flex min-h-0 flex-1 flex-col px-5 py-5">
         <EquityCurveChart series={series} hasStatsSession={hasStatsSession} statsSegments={statsSegments} />
       </CardContent>
@@ -948,10 +953,10 @@ export function TradingDashboardCard({
         ? "暂无策略：请先到策略中心创建"
         : "切换当前使用的策略（将同步顶栏与图表）"
 
-  useEffect(() => {
-    if (!strategyPickerOpen) return
+  const openStrategyPicker = useCallback(() => {
     setPickerChoiceId(currentPromptId.trim() ? currentPromptId : null)
-  }, [strategyPickerOpen, currentPromptId])
+    setStrategyPickerOpen(true)
+  }, [currentPromptId])
 
   const pickerConfirmDisabled =
     !pickerChoiceId ||
@@ -964,10 +969,6 @@ export function TradingDashboardCard({
     const ok = await onPromptStrategyChange(pickerChoiceId)
     if (ok) setStrategyPickerOpen(false)
   }, [currentPromptId, onPromptStrategyChange, pickerChoiceId])
-
-  useEffect(() => {
-    if (execBlocksStrategySwitch) setStrategyPickerOpen(false)
-  }, [execBlocksStrategySwitch])
 
   return (
     <>
@@ -988,7 +989,7 @@ export function TradingDashboardCard({
           strategyEditDisabled={!strategyEditAccessible}
           strategyEditBusy={strategySwitchBusy}
           strategyEditTitle={strategyEditTitle}
-          onStrategyEditClick={() => setStrategyPickerOpen(true)}
+          onStrategyEditClick={openStrategyPicker}
           onStartExecution={() => void startExecution()}
           onPauseExecution={() => void pauseExecution()}
           onResumeExecution={() => void resumeExecution()}
@@ -1004,36 +1005,31 @@ export function TradingDashboardCard({
         <EquityCurveCard series={series} hasStatsSession={hasStatsSession} statsSegments={statsSegments} />
       </div>
 
-      <Dialog open={strategyPickerOpen} onOpenChange={setStrategyPickerOpen}>
-        <DialogContent
-          showCloseButton
-          className="gap-0 overflow-hidden p-0 sm:max-w-[min(420px,calc(100%-2rem))] sm:rounded-2xl"
-        >
-          <DialogHeader className="space-y-3 border-b border-border/60 bg-muted/20 px-6 py-5 text-left">
-            <DialogTitle className="text-[1.05rem] font-semibold tracking-tight text-foreground">
-              切换策略
-            </DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-2.5 text-[13px] leading-relaxed text-muted-foreground">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground/90">
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-block size-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.22)] dark:shadow-[0_0_0_3px_hsl(var(--primary)/0.35)]" />
-                    正在使用
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-md border border-dashed border-muted-foreground/35" />
-                    选中待确认
-                  </span>
-                </div>
+      <Dialog open={strategyPickerOpen && !execBlocksStrategySwitch} onOpenChange={setStrategyPickerOpen}>
+        <AppDialogContent className="w-[min(420px,calc(100%-2rem))] sm:max-w-[420px]">
+          <AppDialogHeader
+            title="切换策略"
+            eyebrow="dashboard strategy"
+            closeId="btn-dashboard-strategy-picker-close"
+            actions={
+              <div className="hidden items-center gap-3 text-[11px] text-muted-foreground/90 sm:flex">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block size-2 shrink-0 rounded-full bg-primary" />
+                  正在使用
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm border border-dashed border-muted-foreground/35" />
+                  待确认
+                </span>
               </div>
-            </DialogDescription>
-          </DialogHeader>
+            }
+          />
 
           <div className="px-4 pb-1 pt-4 sm:px-5">
             <ScrollArea className="max-h-[min(288px,42vh)]">
               <div className="flex flex-col gap-2 pr-3 pb-2">
                 {strategyRowsForSelect.length === 0 ? (
-                  <p className="m-0 rounded-xl border border-dashed border-border/80 bg-muted/15 px-4 py-8 text-center text-[13px] text-muted-foreground">
+                  <p className="m-0 border border-dashed border-border/80 bg-muted/15 px-4 py-8 text-center text-[13px] text-muted-foreground">
                     暂无策略，请先到策略中心创建
                   </p>
                 ) : (
@@ -1045,10 +1041,10 @@ export function TradingDashboardCard({
                         key={row.id}
                         type="button"
                         className={cn(
-                          "flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-[background-color,border-color,box-shadow] duration-200",
+                          "flex w-full items-center gap-3 rounded-sm border px-3 py-3 text-left outline-none transition-[background-color,border-color,box-shadow] duration-200",
                           "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                           "disabled:pointer-events-none disabled:opacity-45",
-                          "border-border/70 bg-card/40 shadow-sm hover:border-border hover:bg-card/90 hover:shadow-md",
+                          "border-border/70 bg-card/40 hover:border-border hover:bg-card/90",
                           isCurrent &&
                             "border-primary/25 bg-linear-to-br from-primary/6 via-card/80 to-card/40 dark:from-primary/10 dark:via-card/50",
                           isPicked &&
@@ -1072,7 +1068,7 @@ export function TradingDashboardCard({
                         </span>
                         {isPicked ? (
                           <span
-                            className="flex size-6 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary"
+                            className="flex size-6 shrink-0 items-center justify-center rounded-sm border border-primary/25 bg-primary/10 text-primary"
                             aria-hidden
                           >
                             <Check className="size-3.5 stroke-[2.5]" aria-hidden />
@@ -1104,7 +1100,7 @@ export function TradingDashboardCard({
               {strategySwitchBusy ? "保存中…" : "确认切换"}
             </Button>
           </DialogFooter>
-        </DialogContent>
+        </AppDialogContent>
       </Dialog>
     </>
   )

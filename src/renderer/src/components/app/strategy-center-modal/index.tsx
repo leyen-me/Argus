@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, PencilLine, Plus, Save, Trash2, XIcon } from "lucide-react";
+import { BookOpen, PencilLine, Plus, Save, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogClose,
-  DialogContent,
   DialogDescription,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { ConfigHelpTooltip } from "@/components/app/config-modal/config-help-tooltip";
+import { AppDialogContent, AppDialogHeader } from "@/components/app/ui-shell";
 import {
   ARGUS_PROMPT_STRATEGIES_CHANGED,
   ARGUS_STRATEGY_MODAL_CLOSE,
@@ -186,7 +184,9 @@ export function StrategyCenterModal() {
 
   const executionBlockingSelected =
     Boolean(selectedId) && isStrategyExecutionBlocking(strategyRuntimeById[selectedId!.trim()]);
-  const cannotDeleteSelected = executionBlockingSelected;
+  const statsRunningSelected =
+    Boolean(selectedId) && isDashboardStrategyRunningEntry(dashboardStrategyRanges[selectedId!.trim()]);
+  const cannotDeleteSelected = executionBlockingSelected || statsRunningSelected;
 
   const refreshDashboardSlicesFromServer = useCallback(async () => {
     const api = getArgus();
@@ -409,26 +409,9 @@ export function StrategyCenterModal() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent
-        showCloseButton={false}
-        forceMount
-        className={cn(
-          "flex h-[min(90vh,940px)] w-[min(1240px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[1240px]",
-        )}
-      >
-        <header className="flex shrink-0 flex-col gap-3 border-b border-border px-5 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <BookOpen className="size-4 shrink-0 opacity-80" aria-hidden />
-              <DialogTitle className="text-base font-semibold">策略中心</DialogTitle>
-            </div>
-            <DialogClose asChild>
-              <Button type="button" variant="ghost" size="icon-sm" className="shrink-0" aria-label="关闭">
-                <XIcon className="size-4" />
-              </Button>
-            </DialogClose>
-          </div>
-
+      <AppDialogContent className="h-[min(90vh,940px)] w-[min(1240px,calc(100%-2rem))] sm:max-w-[1240px]">
+        <AppDialogHeader title="策略中心" eyebrow="strategy center" icon={<BookOpen aria-hidden />} closeId="btn-strategy-center-close" />
+        <header className="flex shrink-0 flex-col gap-3 border-b border-border/80 bg-card/45 px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {titleEditing ? (
@@ -489,7 +472,7 @@ export function StrategyCenterModal() {
                         <button
                           type="button"
                           className={cn(
-                            "flex w-full min-w-0 items-center rounded-md px-2.5 py-2 text-left text-[13px] transition-colors",
+                            "flex w-full min-w-0 items-center rounded-sm px-2.5 py-2 text-left text-[13px] transition-colors",
                             selectedId === row.id
                               ? "bg-muted font-medium text-foreground"
                               : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
@@ -516,6 +499,8 @@ export function StrategyCenterModal() {
                   title={
                     executionBlockingSelected
                       ? "请先停止该策略的执行态再删除"
+                      : statsRunningSelected
+                        ? "请先结束该策略的仪表盘统计会话再删除"
                       : undefined
                   }
                 >
@@ -718,7 +703,7 @@ export function StrategyCenterModal() {
             </div>
           </div>
         </div>
-      </DialogContent>
+      </AppDialogContent>
     </Dialog>
   );
 }

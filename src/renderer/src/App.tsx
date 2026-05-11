@@ -96,8 +96,8 @@ function AuthGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<"checking" | "ready" | "locked">("checking");
   const [error, setError] = useState("");
 
-  async function refreshSession() {
-    setState("checking");
+  async function refreshSession(showChecking = true) {
+    if (showChecking) setState("checking");
     setError("");
     try {
       const session = await fetchArgusAuthSession();
@@ -114,7 +114,25 @@ function AuthGate({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    void refreshSession();
+    let cancelled = false;
+    fetchArgusAuthSession()
+      .then((session) => {
+        if (cancelled) return;
+        if (!session.authRequired || session.authenticated) {
+          setState("ready");
+          return;
+        }
+        setStoredArgusAuthToken("");
+        setState("locked");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+        setState("locked");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (state === "ready") return <>{children}</>;

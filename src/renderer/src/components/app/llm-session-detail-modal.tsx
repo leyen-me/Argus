@@ -17,14 +17,11 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogClose,
-  DialogContent,
   DialogDescription,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { AppDialogContent, AppDialogHeader } from "@/components/app/ui-shell";
 import {
   type AgentSessionMessage,
   formatAssistantSessionMainText,
@@ -643,50 +640,30 @@ export function LlmSessionDetailModal() {
         }
       }}
     >
-      <DialogContent
-        showCloseButton={false}
-        forceMount
+      <AppDialogContent
         data-argus-llm-session-detail=""
-        className={cn(
-          "flex h-[min(88vh,780px)] w-[min(820px,calc(100%-2rem))] flex-col gap-0 overflow-hidden rounded-[28px] bg-background p-0 shadow-2xl ring-1 ring-foreground/10 sm:max-w-[820px]",
-        )}
+        className="h-[min(88vh,780px)] w-[min(840px,calc(100%-2rem))] bg-background sm:max-w-[840px]"
       >
-        <DialogHeader className="shrink-0 space-y-0 border-b border-border/70 bg-background/96 px-5 py-4 text-left supports-backdrop-filter:backdrop-blur">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-start gap-2.5">
-              <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border border-border/75 bg-muted/35">
-                <MessageSquareText className="size-4 opacity-75" aria-hidden />
+        <AppDialogHeader
+          title={headline}
+          eyebrow="session detail"
+          icon={<MessageSquareText aria-hidden />}
+          closeId="btn-llm-session-detail-close"
+          actions={
+            !loading && !error && messageCount > 0 ? (
+              <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground sm:flex">
+                <span>{messageCount} 条消息</span>
+                {chartUrl ? <span>含图表附件</span> : null}
+                {reasoningText.trim() ? <span>含推理记录</span> : null}
               </div>
-              <div className="min-w-0 flex-1 space-y-0.5">
-                <DialogTitle className="text-sm font-medium text-muted-foreground">会话明细</DialogTitle>
-                <p className="truncate text-[17px] font-semibold tracking-tight text-foreground">{headline}</p>
-              </div>
-            </div>
-            <DialogClose asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="shrink-0 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="关闭"
-              >
-                <XIcon className="size-4" />
-              </Button>
-            </DialogClose>
-          </div>
+            ) : null
+          }
+        />
           <DialogDescription className="sr-only">
             查看本轮收盘 Agent 多轮对话、工具调用与图表截图
           </DialogDescription>
-          {!loading && !error && messageCount > 0 ? (
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-              <span>{messageCount} 条消息</span>
-              {chartUrl ? <span>含图表附件</span> : null}
-              {reasoningText.trim() ? <span>含推理记录</span> : null}
-            </div>
-          ) : null}
-        </DialogHeader>
 
-        <div className="min-h-0 flex-1 bg-linear-to-b from-background via-background to-muted/25 px-5 py-4">
+        <div className="min-h-0 flex-1 bg-background px-5 py-4">
           {loading ? (
             <LoadingState />
           ) : error ? (
@@ -701,7 +678,7 @@ export function LlmSessionDetailModal() {
             </ScrollArea>
           )}
         </div>
-      </DialogContent>
+      </AppDialogContent>
     </Dialog>
   );
 }

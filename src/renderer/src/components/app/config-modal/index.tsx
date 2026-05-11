@@ -1,14 +1,9 @@
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogClose,
-  DialogContent,
   DialogDescription,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { AppDialogBody, AppDialogContent, AppDialogHeader } from "@/components/app/ui-shell";
 import {
   ARGUS_CONFIG_MODAL_CLOSE,
   ARGUS_CONFIG_MODAL_OPEN,
@@ -38,55 +33,31 @@ export function ConfigModal() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent
-        showCloseButton={false}
-        forceMount
-        className={cn(
-          "flex max-h-[min(90vh,720px)] w-[min(560px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]",
-        )}
-      >
-        <DialogHeader className="shrink-0 space-y-0 border-b border-border px-5 py-4 text-left">
-          <div className="flex items-center justify-between gap-3">
-            <DialogTitle className="text-base font-semibold" id="config-modal-title">
-              配置中心
-            </DialogTitle>
-            <DialogClose asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-                id="btn-config-close"
-                aria-label="关闭"
-              >
-                ×
-              </Button>
-            </DialogClose>
-          </div>
-          <DialogDescription className="sr-only">编辑 LLM、邮件与 OKX 等配置</DialogDescription>
-        </DialogHeader>
+      <AppDialogContent className="max-h-[min(90vh,740px)] w-[min(580px,calc(100%-2rem))] sm:max-w-[580px]">
+        <AppDialogHeader title={<span id="config-modal-title">配置中心</span>} eyebrow="system settings" closeId="btn-config-close" />
+        <DialogDescription className="sr-only">编辑 LLM、邮件与 OKX 等配置</DialogDescription>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+        <AppDialogBody className="py-4">
           <div className="space-y-1">
             <div className="flex flex-col gap-6">
               <section className="space-y-0">
-                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">LLM 接口</h3>
+                <h3 className="border-b border-border/80 pb-2 text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">LLM 接口</h3>
                 <ConfigModalLlmSection />
               </section>
               <section className="space-y-0">
-                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">仓位邮件</h3>
+                <h3 className="border-b border-border/80 pb-2 text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">仓位邮件</h3>
                 <ConfigModalEmailSection />
               </section>
               <section className="space-y-0">
-                <h3 className="border-b border-border/80 pb-2 text-sm font-medium text-foreground">OKX 永续</h3>
+                <h3 className="border-b border-border/80 pb-2 text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">OKX 永续</h3>
                 <ConfigModalOkxSection />
               </section>
             </div>
           </div>
-        </div>
+        </AppDialogBody>
 
         <ConfigModalFooter />
-      </DialogContent>
+      </AppDialogContent>
     </Dialog>
   );
 }

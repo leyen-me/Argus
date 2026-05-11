@@ -37,7 +37,7 @@ body,
   padding: 0 16px;
   padding-left: 80px;
   border-bottom: 1px solid var(--border);
-  background: var(--card);
+  background: color-mix(in oklch, var(--card) 88%, var(--background));
   color: var(--foreground);
   -webkit-app-region: drag;
 }
@@ -71,7 +71,7 @@ body,
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   -webkit-app-region: no-drag;
 }
 
@@ -107,8 +107,8 @@ body,
   gap: 8px;
   width: 100%;
   height: 100%;
-  padding: 8px;
-  background: color-mix(in oklch, var(--background) 92%, var(--card));
+  padding: 6px;
+  background: var(--background);
 }
 
 .chart-grid-card {
@@ -117,16 +117,14 @@ body,
   min-height: 0;
   overflow: hidden;
   border: 1px solid color-mix(in oklch, var(--border) 88%, transparent);
-  border-radius: calc(var(--radius) + 2px);
-  background: color-mix(in oklch, var(--card) 94%, var(--background));
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 3%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--card) 86%, var(--background));
+  box-shadow: none;
 }
 
 .chart-grid-card--primary {
   border-color: color-mix(in oklch, var(--primary) 30%, var(--border));
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--primary) 10%, transparent),
-    0 10px 26px -22px color-mix(in oklch, var(--primary) 28%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 14%, transparent);
 }
 
 .chart-grid-card-head {
@@ -139,8 +137,8 @@ body,
   gap: 6px;
   padding: 3px 8px;
   border: 1px solid color-mix(in oklch, var(--border) 84%, transparent);
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--background) 76%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--background) 82%, transparent);
   backdrop-filter: blur(10px);
   pointer-events: none;
 }
@@ -170,7 +168,7 @@ body,
   align-items: center;
   height: 20px;
   padding: 0 8px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid color-mix(in oklch, var(--primary) 26%, var(--border));
   background: color-mix(in oklch, var(--primary) 10%, transparent);
   font-size: 10px;
@@ -211,16 +209,14 @@ body,
   max-width: 100%;
   --llm-round-accent: transparent;
   border: 1px solid color-mix(in oklch, var(--border) 84%, var(--background));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   background:
     linear-gradient(
       180deg,
-      color-mix(in oklch, var(--card) 94%, var(--background)) 0%,
-      color-mix(in oklch, var(--card) 88%, var(--background)) 100%
+      color-mix(in oklch, var(--card) 92%, var(--background)) 0%,
+      color-mix(in oklch, var(--card) 86%, var(--background)) 100%
     );
-  box-shadow:
-    0 1px 1px rgba(15, 23, 42, 0.03),
-    0 8px 20px rgba(15, 23, 42, 0.035);
+  box-shadow: none;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -242,16 +238,14 @@ body,
   position: absolute;
   inset: 10px auto 10px 0;
   width: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--llm-round-accent);
   opacity: 0.92;
 }
 
 .llm-round-card:hover:not(.llm-round-card--locked) {
   border-color: color-mix(in oklch, var(--foreground) 10%, var(--border));
-  box-shadow:
-    0 1px 1px rgba(15, 23, 42, 0.035),
-    0 12px 26px rgba(15, 23, 42, 0.05);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 3%, transparent);
   transform: translateY(-1px);
 }
 
@@ -322,7 +316,7 @@ body,
   min-width: 46px;
   height: 20px;
   padding: 0 7px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
   background: color-mix(in oklch, var(--muted) 42%, transparent);
   font-size: 10px;
@@ -470,7 +464,7 @@ body,
   align-items: center;
   height: 18px;
   padding: 0 7px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid color-mix(in oklch, var(--border) 84%, transparent);
   background: color-mix(in oklch, var(--muted) 34%, transparent);
   font-size: 10px;
@@ -509,7 +503,7 @@ body,
   content: "";
   width: 3px;
   height: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in oklch, var(--muted-foreground) 72%, transparent);
   flex-shrink: 0;
 }
@@ -574,7 +568,7 @@ body,
   letter-spacing: 0.08em;
   padding: 0 8px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius);
   border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
   background: color-mix(in oklch, var(--muted) 34%, transparent);
   white-space: nowrap;
@@ -622,7 +616,7 @@ body,
   box-sizing: border-box;
   margin: 0 12px 10px;
   padding: 8px 10px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   font-size: 12px;
   line-height: 1.45;
   word-break: break-word;
@@ -683,9 +677,9 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   width: 100%;
   max-width: 100%;
   border: 1px solid color-mix(in oklch, var(--border) 88%, var(--background));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   background: color-mix(in oklch, var(--card) 86%, var(--background));
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -813,12 +807,12 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   margin: 0;
   padding: 0;
   border: 1px solid color-mix(in oklch, var(--border) 84%, var(--background));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   background: color-mix(in oklch, var(--card) 92%, var(--background));
   cursor: zoom-in;
   overflow: hidden;
   line-height: 0;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  box-shadow: none;
 }
 
 .llm-round-thumb:focus-visible {
@@ -871,7 +865,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   max-width: min(96vw, 1200px);
   max-height: 92vh;
   padding: 12px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--background);
 }
@@ -1002,12 +996,12 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   box-sizing: border-box;
   max-width: 92%;
   padding: 12px 14px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   font-size: 13px;
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+  box-shadow: none;
 }
 
 .llm-bubble::before {
@@ -1068,7 +1062,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: color-mix(in oklch, var(--background) 78%, transparent);
+  background: color-mix(in oklch, var(--background) 70%, transparent);
   -webkit-app-region: no-drag;
 }
 
@@ -1079,7 +1073,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
 /* shadcn Dialog：与旧配置弹窗一致的压暗与层级（Electron 内与 TradingView 等叠放） */
 [data-slot="dialog-overlay"] {
   z-index: 1000;
-  background: color-mix(in oklch, var(--background) 78%, transparent);
+  background: color-mix(in oklch, var(--background) 70%, transparent);
 }
 
 [data-slot="dialog-content"] {
@@ -1091,10 +1085,10 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   max-height: min(90vh, 720px);
   overflow: auto;
   padding: 20px 22px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.38);
 }
 
 .modal-header {
@@ -1119,7 +1113,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   line-height: 1;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 
 .modal-close:hover {
@@ -1189,7 +1183,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   box-sizing: border-box;
   height: 32px;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--background);
   color: var(--foreground);
@@ -1203,7 +1197,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
 
 .btn-row-remove {
   height: 32px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--secondary);
   color: var(--destructive);
@@ -1219,7 +1213,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   width: 100%;
   margin-bottom: 16px;
   height: 34px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px dashed var(--border);
   background: transparent;
   color: var(--muted-foreground);
@@ -1291,7 +1285,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
 .modal-hint-llm code {
   font-size: 11px;
   padding: 2px 5px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--secondary);
   color: var(--primary);
 }
@@ -1316,7 +1310,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
 .btn-secondary {
   height: 34px;
   padding: 0 16px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--secondary);
   color: var(--foreground);
@@ -1331,7 +1325,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
 .btn-primary {
   height: 34px;
   padding: 0 16px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--primary);
   background: var(--primary);
   color: var(--primary-foreground);
@@ -1369,12 +1363,10 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
 .fish-mode-card {
   width: min(420px, 100%);
   padding: 32px 28px 28px;
-  border-radius: calc(var(--radius) + 4px);
+  border-radius: var(--radius);
   border: 1px solid color-mix(in oklch, var(--border) 90%, transparent);
   background: color-mix(in oklch, var(--card) 94%, var(--background));
-  box-shadow:
-    0 28px 64px -20px color-mix(in oklch, var(--foreground) 22%, transparent),
-    0 0 0 1px color-mix(in oklch, var(--foreground) 5%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 5%, transparent);
   text-align: center;
 }
 
@@ -1417,7 +1409,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   justify-content: center;
   min-width: 2.1rem;
   padding: 3px 9px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: color-mix(in oklch, var(--muted) 55%, var(--background));
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

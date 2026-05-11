@@ -1,5 +1,3 @@
-import type { QuoteContext, SecurityQuote } from "longbridge";
-
 import { mdTable } from "./llm.js";
 import { tvSymbolToSwapInstId } from "./okx-perp.js";
 
@@ -18,10 +16,7 @@ const DEFAULT_CRYPTO_SYMBOLS = [
   "OKX:TRUMPUSDT",
 ];
 
-const YAHOO_USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
-
-type MarketEnvironmentGroupKey = "crypto" | "usEquity" | "fearIndex" | "gold";
+type MarketEnvironmentGroupKey = "crypto";
 
 type QuoteRow = {
   label: string;
@@ -50,51 +45,6 @@ type OkxTickerRow = {
   sodUtc8?: unknown;
   ts?: unknown;
 };
-
-type YahooQuoteSpec = {
-  symbol: string;
-  longbridgeSymbol?: string;
-  label: string;
-  yahooSource: string;
-  longbridgeSource: string;
-};
-
-const YAHOO_EQUITY_SPECS: YahooQuoteSpec[] = [
-  {
-    symbol: "SPY",
-    longbridgeSymbol: "SPY.US",
-    label: "SPY",
-    yahooSource: "Yahoo Finance",
-    longbridgeSource: "Longbridge",
-  },
-  {
-    symbol: "QQQ",
-    longbridgeSymbol: "QQQ.US",
-    label: "QQQ",
-    yahooSource: "Yahoo Finance",
-    longbridgeSource: "Longbridge",
-  },
-];
-
-const YAHOO_FEAR_SPECS: YahooQuoteSpec[] = [
-  {
-    symbol: "^VIX",
-    longbridgeSymbol: ".VIX.US",
-    label: "VIX 恐慌指数",
-    yahooSource: "Yahoo Finance",
-    longbridgeSource: "Longbridge",
-  },
-];
-
-const YAHOO_GOLD_SPECS: YahooQuoteSpec[] = [
-  {
-    symbol: "GLD",
-    longbridgeSymbol: "GLD.US",
-    label: "黄金 ETF GLD",
-    yahooSource: "Yahoo Finance",
-    longbridgeSource: "Longbridge",
-  },
-];
 
 function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values.map((x) => String(x || "").trim()).filter(Boolean))];
@@ -140,11 +90,6 @@ function calculateChange(last: number | null, base: number | null): { changeAbs:
   if (last == null || base == null || base <= 0) return { changeAbs: null, changePct: null };
   const changeAbs = last - base;
   return { changeAbs, changePct: (changeAbs / base) * 100 };
-}
-
-function decimalToNumber(value: unknown): number | null {
-  if (value == null) return null;
-  return asNumber(String(value));
 }
 
 function formatPrice(value: number | null): string {
@@ -249,153 +194,9 @@ async function fetchCryptoGroup(tvSymbol: string): Promise<MarketEnvironmentGrou
   }
 }
 
-function previousCloseFromYahooResult(result: Record<string, unknown>, close: unknown[]): number | null {
-  const meta = asRecord(result.meta);
-  const direct = asNumber(meta?.chartPreviousClose);
-  if (direct != null) return direct;
-  const closes = close.map(asNumber).filter((x): x is number => x != null && x > 0);
-  if (closes.length >= 2) return closes[closes.length - 2] ?? null;
-  return null;
-}
-
-function hasLongbridgeApiEnv(): boolean {
-  return Boolean(
-    String(process.env.LONGBRIDGE_APP_KEY || "").trim() &&
-      String(process.env.LONGBRIDGE_APP_SECRET || "").trim() &&
-      String(process.env.LONGBRIDGE_ACCESS_TOKEN || "").trim(),
-  );
-}
-
-let longbridgeQuoteContextPromise: Promise<QuoteContext> | null = null;
-let longbridgeModulePromise: Promise<typeof import("longbridge")> | null = null;
-
-async function loadLongbridgeModule(): Promise<typeof import("longbridge")> {
-  if (!longbridgeModulePromise) {
-    longbridgeModulePromise = import("longbridge");
-  }
-  return longbridgeModulePromise;
-}
-
-async function getLongbridgeQuoteContext(): Promise<QuoteContext> {
-  if (!longbridgeQuoteContextPromise) {
-    longbridgeQuoteContextPromise = loadLongbridgeModule().then(({ Config, QuoteContext }) =>
-      QuoteContext.new(Config.fromApikeyEnv()),
-    );
-  }
-  return longbridgeQuoteContextPromise;
-}
-
-function quoteRowFromLongbridge(quote: SecurityQuote, spec: YahooQuoteSpec): QuoteRow {
-  const price = decimalToNumber(quote.lastDone);
-  const prevClose = decimalToNumber(quote.prevClose);
-  const change = calculateChange(price, prevClose);
-  return {
-    label: spec.label,
-    price,
-    changePct: change.changePct,
-    changeAbs: change.changeAbs,
-    source: spec.longbridgeSource,
-    updatedAt: quote.timestamp instanceof Date ? quote.timestamp.toISOString() : null,
-  };
-}
-
-async function fetchLongbridgeQuote(spec: YahooQuoteSpec): Promise<QuoteRow> {
-  if (!spec.longbridgeSymbol) {
-    throw new Error("未配置长桥标的代码");
-  }
-  if (!hasLongbridgeApiEnv()) {
-    throw new Error("未配置长桥 OpenAPI 环境变量");
-  }
-  const ctx = await getLongbridgeQuoteContext();
-  const quotes = await ctx.quote([spec.longbridgeSymbol]);
-  const quote = quotes.find((row) => row.symbol === spec.longbridgeSymbol) ?? quotes[0];
-  if (!quote) throw new Error(`长桥无行情返回：${spec.longbridgeSymbol}`);
-  return quoteRowFromLongbridge(quote, spec);
-}
-
-function lastValidNumber(values: unknown[]): number | null {
-  for (let i = values.length - 1; i >= 0; i--) {
-    const n = asNumber(values[i]);
-    if (n != null) return n;
-  }
-  return null;
-}
-
-function parseYahooQuote(json: unknown, spec: YahooQuoteSpec): QuoteRow {
-  const obj = asRecord(json);
-  const chart = asRecord(obj?.chart);
-  const result = Array.isArray(chart?.result) ? asRecord(chart.result[0]) : null;
-  if (!result) throw new Error("Yahoo 响应无 result");
-  const meta = asRecord(result.meta);
-  const indicators = asRecord(result.indicators);
-  const quote = Array.isArray(indicators?.quote) ? asRecord(indicators.quote[0]) : null;
-  const close = Array.isArray(quote?.close) ? quote.close : [];
-  const price = asNumber(meta?.regularMarketPrice) ?? lastValidNumber(close);
-  const prev = previousCloseFromYahooResult(result, close);
-  const change = calculateChange(price, prev);
-  const regularMarketTime = asNumber(meta?.regularMarketTime);
-  return {
-    label: spec.label,
-    price,
-    changePct: change.changePct,
-    changeAbs: change.changeAbs,
-    source: spec.yahooSource,
-    updatedAt: regularMarketTime != null ? new Date(regularMarketTime * 1000).toISOString() : null,
-  };
-}
-
-async function fetchYahooQuote(spec: YahooQuoteSpec): Promise<QuoteRow> {
-  const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(spec.symbol)}`);
-  url.searchParams.set("range", "5d");
-  url.searchParams.set("interval", "1d");
-  const json = await fetchJson(String(url), {
-    Accept: "application/json",
-    "User-Agent": YAHOO_USER_AGENT,
-  });
-  return parseYahooQuote(json, spec);
-}
-
-async function fetchLongbridgeThenYahooQuote(spec: YahooQuoteSpec): Promise<QuoteRow> {
-  try {
-    return await fetchLongbridgeQuote(spec);
-  } catch (longbridgeError) {
-    try {
-      return await fetchYahooQuote(spec);
-    } catch (yahooError) {
-      return {
-        label: spec.label,
-        price: null,
-        changePct: null,
-        changeAbs: null,
-        source: spec.longbridgeSource,
-        updatedAt: null,
-        error: `Longbridge: ${formatErrorMessage(longbridgeError)}；Yahoo: ${formatErrorMessage(yahooError)}`,
-      };
-    }
-  }
-}
-
-async function fetchYahooGroup(
-  key: MarketEnvironmentGroupKey,
-  title: string,
-  specs: readonly YahooQuoteSpec[],
-): Promise<MarketEnvironmentGroup> {
-  const rows = await Promise.all(
-    specs.map(async (spec): Promise<QuoteRow> => {
-      return fetchLongbridgeThenYahooQuote(spec);
-    }),
-  );
-  return { key, title, rows };
-}
-
 async function fetchMarketEnvironment(tvSymbol: string): Promise<MarketEnvironmentSnapshot> {
-  const [crypto, usEquity, fearIndex, gold] = await Promise.all([
-    fetchCryptoGroup(tvSymbol),
-    fetchYahooGroup("usEquity", "### 美股 ETF", YAHOO_EQUITY_SPECS),
-    fetchYahooGroup("fearIndex", "### 恐慌指数", YAHOO_FEAR_SPECS),
-    fetchYahooGroup("gold", "### 黄金", YAHOO_GOLD_SPECS),
-  ]);
-  return { groups: [crypto, usEquity, fearIndex, gold] };
+  const crypto = await fetchCryptoGroup(tvSymbol);
+  return { groups: [crypto] };
 }
 
 function formatMarketEnvironmentGroup(group: MarketEnvironmentGroup): string {

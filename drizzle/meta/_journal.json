@@ -15,6 +15,13 @@
       "when": 1778464765959,
       "tag": "0001_loud_frank_castle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778499836316,
+      "tag": "0002_flawless_maddog",
+      "breakpoints": true
     }
   ]
 }

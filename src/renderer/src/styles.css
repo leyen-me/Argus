@@ -855,8 +855,9 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
 }
 
 .llm-chart-preview-backdrop {
-  z-index: 2010;
+  z-index: 3000;
   padding: 20px;
+  isolation: isolate;
 }
 
 .llm-chart-preview-dialog {

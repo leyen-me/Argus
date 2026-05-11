@@ -11,6 +11,68 @@ export type AgentSessionMessage = {
   seq?: number
 }
 
+export type AgentSessionMetrics = {
+  promptTokens: number | null
+  completionTokens: number | null
+  totalTokens: number | null
+  startedAt: string | null
+  endedAt: string | null
+  durationMs: number | null
+}
+
+function nonNegativeIntOrNull(value: unknown): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null
+}
+
+function stringOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+export function normalizeAgentSessionMetrics(value: unknown): AgentSessionMetrics | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const row = value as Record<string, unknown>
+  const metrics: AgentSessionMetrics = {
+    promptTokens: nonNegativeIntOrNull(row.promptTokens),
+    completionTokens: nonNegativeIntOrNull(row.completionTokens),
+    totalTokens: nonNegativeIntOrNull(row.totalTokens),
+    startedAt: stringOrNull(row.startedAt),
+    endedAt: stringOrNull(row.endedAt),
+    durationMs: nonNegativeIntOrNull(row.durationMs),
+  }
+  if (
+    metrics.promptTokens == null &&
+    metrics.completionTokens == null &&
+    metrics.totalTokens == null &&
+    metrics.startedAt == null &&
+    metrics.endedAt == null &&
+    metrics.durationMs == null
+  ) {
+    return null
+  }
+  return metrics
+}
+
+export function formatSessionTokenCount(value: number | null | undefined): string {
+  if (value == null) return "--"
+  return new Intl.NumberFormat("en-US").format(value)
+}
+
+export function formatSessionDurationMs(value: number | null | undefined): string {
+  if (value == null) return "--"
+  if (value < 1000) return `${value}ms`
+  const seconds = value / 1000
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`
+  const minutes = Math.floor(seconds / 60)
+  const restSeconds = Math.round(seconds % 60)
+  if (minutes < 60) return `${minutes}m ${String(restSeconds).padStart(2, "0")}s`
+  const hours = Math.floor(minutes / 60)
+  const restMinutes = minutes % 60
+  return `${hours}h ${String(restMinutes).padStart(2, "0")}m`
+}
+
 export function normalizeSessionDisplayText(text: string): string {
   return String(text || "")
     .replace(/\\r\\n/g, "\n")

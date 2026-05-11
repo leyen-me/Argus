@@ -1,5 +1,7 @@
+import { createPortal } from "react-dom";
+
 export function LlmChartPreviewModal() {
-  return (
+  const content = (
     <div
       className="modal-backdrop llm-chart-preview-backdrop"
       id="llm-chart-preview-modal"
@@ -21,4 +23,7 @@ export function LlmChartPreviewModal() {
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return content;
+  return createPortal(content, document.body);
 }

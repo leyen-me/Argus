@@ -23,10 +23,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { AppDialogContent, AppDialogHeader } from "@/components/app/ui-shell";
 import {
+  type AgentSessionMetrics,
   type AgentSessionMessage,
   formatAssistantSessionMainText,
+  formatSessionDurationMs,
   formatSessionCapturedAt,
   formatSessionMessageRowBody,
+  formatSessionTokenCount,
+  normalizeAgentSessionMetrics,
   sanitizeSessionMsgRoleClass,
   shouldCollapseSessionMessage,
 } from "@/lib/agent-session-display";
@@ -533,6 +537,7 @@ export function LlmSessionDetailModal() {
   const [messages, setMessages] = useState<unknown[]>([]);
   const [chartUrl, setChartUrl] = useState("");
   const [reasoningText, setReasoningText] = useState("");
+  const [sessionMetrics, setSessionMetrics] = useState<AgentSessionMetrics | null>(null);
 
   useEffect(() => {
     const onOpenSession = (e: Event) => {
@@ -545,6 +550,7 @@ export function LlmSessionDetailModal() {
       setMessages([]);
       setChartUrl("");
       setReasoningText("");
+      setSessionMetrics(null);
     };
     window.addEventListener(ARGUS_LLM_SESSION_DETAIL_OPEN, onOpenSession);
     return () => window.removeEventListener(ARGUS_LLM_SESSION_DETAIL_OPEN, onOpenSession);
@@ -567,15 +573,17 @@ export function LlmSessionDetailModal() {
         const rawSession = await window.argus.getAgentSessionMessages(barCloseId);
         let msgs: unknown[] = [];
         let assistantReasoning = "";
+        let metrics: AgentSessionMetrics | null = null;
         if (Array.isArray(rawSession)) {
           msgs = rawSession;
         } else if (rawSession && typeof rawSession === "object") {
-          const rs = rawSession as { messages?: unknown; assistantReasoningText?: unknown };
+          const rs = rawSession as { messages?: unknown; assistantReasoningText?: unknown; metrics?: unknown };
           msgs = Array.isArray(rs.messages) ? rs.messages : [];
           assistantReasoning =
             typeof rs.assistantReasoningText === "string" && rs.assistantReasoningText.trim()
               ? rs.assistantReasoningText.trim()
               : "";
+          metrics = normalizeAgentSessionMetrics(rs.metrics);
         }
         let chartData: unknown = null;
         if (typeof window.argus.getAgentBarTurnChart === "function") {
@@ -598,6 +606,7 @@ export function LlmSessionDetailModal() {
         setMessages(msgs);
         setChartUrl(chart);
         setReasoningText(assistantReasoning);
+        setSessionMetrics(metrics);
       } catch (e) {
         if (!cancelled) {
           setLoading(false);
@@ -636,6 +645,7 @@ export function LlmSessionDetailModal() {
           setMessages([]);
           setChartUrl("");
           setReasoningText("");
+          setSessionMetrics(null);
           setError(null);
         }
       }}
@@ -653,8 +663,8 @@ export function LlmSessionDetailModal() {
             !loading && !error && messageCount > 0 ? (
               <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground sm:flex">
                 <span>{messageCount} 条消息</span>
-                {chartUrl ? <span>含图表附件</span> : null}
-                {reasoningText.trim() ? <span>含推理记录</span> : null}
+                <span>Token {formatSessionTokenCount(sessionMetrics?.totalTokens)}</span>
+                <span>耗时 {formatSessionDurationMs(sessionMetrics?.durationMs)}</span>
               </div>
             ) : null
           }

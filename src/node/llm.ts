@@ -90,6 +90,92 @@ const DEFAULT_LLM_MAX_RETRIES = 2;
 const DEFAULT_LLM_RETRY_BASE_DELAY_MS = 1_500;
 const MAX_LLM_RETRY_DELAY_MS = 30_000;
 
+type LlmRunMetrics = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+};
+
+type LlmRunMetricsTracker = {
+  startedAtMs: number;
+  startedAt: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  sawPromptTokens: boolean;
+  sawCompletionTokens: boolean;
+  sawTotalTokens: boolean;
+};
+
+function createLlmRunMetricsTracker(): LlmRunMetricsTracker {
+  const now = Date.now();
+  return {
+    startedAtMs: now,
+    startedAt: new Date(now).toISOString(),
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    sawPromptTokens: false,
+    sawCompletionTokens: false,
+    sawTotalTokens: false,
+  };
+}
+
+function readTokenCount(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+}
+
+function addLlmUsage(metrics: LlmRunMetricsTracker, usage: unknown) {
+  if (!usage || typeof usage !== "object") return;
+  const row = usage as {
+    prompt_tokens?: unknown;
+    completion_tokens?: unknown;
+    total_tokens?: unknown;
+  };
+  const prompt = readTokenCount(row.prompt_tokens);
+  if (prompt != null) {
+    metrics.promptTokens += prompt;
+    metrics.sawPromptTokens = true;
+  }
+  const completion = readTokenCount(row.completion_tokens);
+  if (completion != null) {
+    metrics.completionTokens += completion;
+    metrics.sawCompletionTokens = true;
+  }
+  const total = readTokenCount(row.total_tokens);
+  if (total != null) {
+    metrics.totalTokens += total;
+    metrics.sawTotalTokens = true;
+  }
+}
+
+function snapshotLlmRunMetrics(metrics: LlmRunMetricsTracker): LlmRunMetrics {
+  const endedAtMs = Date.now();
+  const derivedTotal =
+    !metrics.sawTotalTokens && (metrics.sawPromptTokens || metrics.sawCompletionTokens)
+      ? metrics.promptTokens + metrics.completionTokens
+      : null;
+  return {
+    promptTokens: metrics.sawPromptTokens ? metrics.promptTokens : null,
+    completionTokens: metrics.sawCompletionTokens ? metrics.completionTokens : null,
+    totalTokens: metrics.sawTotalTokens ? metrics.totalTokens : derivedTotal,
+    startedAt: metrics.startedAt,
+    endedAt: new Date(endedAtMs).toISOString(),
+    durationMs: Math.max(0, endedAtMs - metrics.startedAtMs),
+  };
+}
+
+function withLlmRunMetrics<T extends Record<string, unknown>>(
+  result: T,
+  metrics: LlmRunMetricsTracker,
+): T & { metrics: LlmRunMetrics } {
+  return { ...result, metrics: snapshotLlmRunMetrics(metrics) };
+}
+
 /** @param {object | null | undefined} cfg */
 function llmRequestTimeoutMs(cfg) {
   let ms = Number(cfg?.llmRequestTimeoutMs);
@@ -1645,14 +1731,21 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
  * }} agentOpts
  */
 async function runTradingAgentTurn(messages, options, agentOpts) {
+  const metrics = createLlmRunMetricsTracker();
   const cfg = options.appConfig;
   if (!isLlmEnabled(cfg)) {
-    return { ok: false, text: "LLM 未启用。", toolTrace: [], messagesOut: messages, reasoningText: "" };
+    return withLlmRunMetrics(
+      { ok: false, text: "LLM 未启用。", toolTrace: [], messagesOut: messages, reasoningText: "" },
+      metrics,
+    );
   }
   const apiKey = resolveOpenAiApiKey(cfg);
   const probe = buildChatCompletionRequestFromMessages(messages, options, false);
   if (probe.error) {
-    return { ok: false, text: probe.error, toolTrace: [], messagesOut: messages, reasoningText: "" };
+    return withLlmRunMetrics(
+      { ok: false, text: probe.error, toolTrace: [], messagesOut: messages, reasoningText: "" },
+      metrics,
+    );
   }
 
   const tools = agentOpts.tools;
@@ -1672,7 +1765,10 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
     for (let step = 1; step <= maxSteps; step++) {
       const built = buildChatCompletionRequestFromMessages(thread, options, false);
       if (built.error) {
-        return { ok: false, text: built.error, toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() };
+        return withLlmRunMetrics(
+          { ok: false, text: built.error, toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() },
+          metrics,
+        );
       }
       const completion = await withLlmRetries(
         cfg,
@@ -1685,10 +1781,20 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
         },
         { onRetry },
       );
+      addLlmUsage(metrics, completion?.usage);
       const choice = completion?.choices?.[0];
       const msg = choice?.message;
       if (!msg) {
-        return { ok: false, text: "LLM 无有效 message。", toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() };
+        return withLlmRunMetrics(
+          {
+            ok: false,
+            text: "LLM 无有效 message。",
+            toolTrace,
+            messagesOut: thread,
+            reasoningText: reasoningAcc.trim(),
+          },
+          metrics,
+        );
       }
       if (wantReasoning) {
         const rs = messageAssistantReasoningToString(msg);
@@ -1709,13 +1815,16 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
           continue;
         }
         onStep?.({ step, assistantPreview: assistantText, reasoningPreview: reasoningAcc.trim() });
-        return {
-          ok: true,
-          text: assistantText,
-          reasoningText: reasoningAcc.trim(),
-          toolTrace,
-          messagesOut: thread,
-        };
+        return withLlmRunMetrics(
+          {
+            ok: true,
+            text: assistantText,
+            reasoningText: reasoningAcc.trim(),
+            toolTrace,
+            messagesOut: thread,
+          },
+          metrics,
+        );
       }
 
       const decisionGuard = validateTradingDecisionToolCalls(msg.content, tcs);
@@ -1739,13 +1848,16 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
             },
           });
         }
-        return {
-          ok: true,
-          text: blockedText,
-          reasoningText: reasoningAcc.trim(),
-          toolTrace,
-          messagesOut: thread,
-        };
+        return withLlmRunMetrics(
+          {
+            ok: true,
+            text: blockedText,
+            reasoningText: reasoningAcc.trim(),
+            toolTrace,
+            messagesOut: thread,
+          },
+          metrics,
+        );
       }
 
       onStep?.({
@@ -1770,16 +1882,22 @@ async function runTradingAgentTurn(messages, options, agentOpts) {
         });
       }
     }
-    return {
-      ok: false,
-      text: `工具调用超过 ${maxSteps} 步上限。`,
-      toolTrace,
-      messagesOut: thread,
-      reasoningText: reasoningAcc.trim(),
-    };
+    return withLlmRunMetrics(
+      {
+        ok: false,
+        text: `工具调用超过 ${maxSteps} 步上限。`,
+        toolTrace,
+        messagesOut: thread,
+        reasoningText: reasoningAcc.trim(),
+      },
+      metrics,
+    );
   } catch (e) {
     const err = mapLlmSdkError(e, cfg);
-    return { ok: false, text: err.text, toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() };
+    return withLlmRunMetrics(
+      { ok: false, text: err.text, toolTrace, messagesOut: thread, reasoningText: reasoningAcc.trim() },
+      metrics,
+    );
   }
 }
 

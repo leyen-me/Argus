@@ -51,6 +51,58 @@ function extractAssistantDecision(content) {
   return null;
 }
 
+function nonNegativeIntOrNull(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
+}
+
+function isoStringOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return Number.isNaN(new Date(trimmed).getTime()) ? null : trimmed;
+}
+
+function metricValue(row: Record<string, unknown>, key: string): unknown {
+  const metrics = row.llmMetrics && typeof row.llmMetrics === "object" ? row.llmMetrics : row.metrics;
+  if (!metrics || typeof metrics !== "object") return null;
+  return (metrics as Record<string, unknown>)[key];
+}
+
+function buildSessionMetrics(row: {
+  llmPromptTokens?: unknown;
+  llmCompletionTokens?: unknown;
+  llmTotalTokens?: unknown;
+  llmStartedAt?: unknown;
+  llmEndedAt?: unknown;
+  llmDurationMs?: unknown;
+}) {
+  const promptTokens = nonNegativeIntOrNull(row.llmPromptTokens);
+  const completionTokens = nonNegativeIntOrNull(row.llmCompletionTokens);
+  const totalTokens = nonNegativeIntOrNull(row.llmTotalTokens);
+  const startedAt = isoStringOrNull(row.llmStartedAt);
+  const endedAt = isoStringOrNull(row.llmEndedAt);
+  const durationMs = nonNegativeIntOrNull(row.llmDurationMs);
+  if (
+    promptTokens == null &&
+    completionTokens == null &&
+    totalTokens == null &&
+    startedAt == null &&
+    endedAt == null &&
+    durationMs == null
+  ) {
+    return null;
+  }
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    startedAt,
+    endedAt,
+    durationMs,
+  };
+}
+
 function messageToRow(m, seq) {
   const msg = m && typeof m === "object" ? m : {};
   const role = String(/** @type {{ role?: string }} */ (msg).role || "");
@@ -101,6 +153,7 @@ async function persistAgentBarTurn(row) {
   const messageRows = messagesRaw.map((m, i) => messageToRow(m, i));
 
   const updatedAt = new Date().toISOString();
+  const rowRecord = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
 
   await db.transaction(async (tx) => {
     await tx.insert(agentSessions).values({
@@ -128,6 +181,12 @@ async function persistAgentBarTurn(row) {
         row.agentError != null && String(row.agentError).trim() !== "" ? String(row.agentError) : null,
       estimatedPromptTokens: null,
       contextWindowTokens: null,
+      llmPromptTokens: nonNegativeIntOrNull(metricValue(rowRecord, "promptTokens")),
+      llmCompletionTokens: nonNegativeIntOrNull(metricValue(rowRecord, "completionTokens")),
+      llmTotalTokens: nonNegativeIntOrNull(metricValue(rowRecord, "totalTokens")),
+      llmStartedAt: isoStringOrNull(metricValue(rowRecord, "startedAt")),
+      llmEndedAt: isoStringOrNull(metricValue(rowRecord, "endedAt")),
+      llmDurationMs: nonNegativeIntOrNull(metricValue(rowRecord, "durationMs")),
       updatedAt,
       systemPromptText: systemPrompt,
       assistantReasoningText:
@@ -293,12 +352,18 @@ async function getAgentBarTurnChart(barCloseId) {
 
 async function getAgentSessionMessages(barCloseId) {
   const id = String(barCloseId || "").trim();
-  if (!id) return { messages: [], assistantReasoningText: null, assistantDecision: null };
+  if (!id) return { messages: [], assistantReasoningText: null, assistantDecision: null, metrics: null };
   const db = getDb();
   const reasoningRows = await db
     .select({
       assistantReasoningText: agentSessions.assistantReasoningText,
       assistantDecision: agentSessions.assistantDecision,
+      llmPromptTokens: agentSessions.llmPromptTokens,
+      llmCompletionTokens: agentSessions.llmCompletionTokens,
+      llmTotalTokens: agentSessions.llmTotalTokens,
+      llmStartedAt: agentSessions.llmStartedAt,
+      llmEndedAt: agentSessions.llmEndedAt,
+      llmDurationMs: agentSessions.llmDurationMs,
     })
     .from(agentSessions)
     .where(eq(agentSessions.barCloseId, id))
@@ -316,6 +381,7 @@ async function getAgentSessionMessages(barCloseId) {
   if (reasoningRow && reasoningRow.assistantDecision != null && String(reasoningRow.assistantDecision).trim()) {
     assistantDecision = String(reasoningRow.assistantDecision).trim();
   }
+  const metrics = reasoningRow ? buildSessionMetrics(reasoningRow) : null;
   const raw = await db
     .select({
       seq: agentSessionMessages.seq,
@@ -358,7 +424,7 @@ async function getAgentSessionMessages(barCloseId) {
         r.assistantDecision != null && String(r.assistantDecision).trim() ? String(r.assistantDecision) : null,
     };
   });
-  return { messages, assistantReasoningText, assistantDecision };
+  return { messages, assistantReasoningText, assistantDecision, metrics };
 }
 
 function safeJsonParse(text) {

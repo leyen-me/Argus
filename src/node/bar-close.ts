@@ -998,6 +998,7 @@ async function emitBarClose(ctx) {
         agentOk: true,
         systemPrompt,
         messagesOut: agentResult.messagesOut,
+        llmMetrics: agentResult.metrics,
         assistantReasoningText:
           cfg.llmReasoningEnabled === true && String(agentResult.reasoningText || "").trim()
             ? String(agentResult.reasoningText).trim()
@@ -1057,6 +1058,7 @@ async function emitBarClose(ctx) {
         agentError: agentResult.text,
         systemPrompt,
         messagesOut: agentResult.messagesOut,
+        llmMetrics: agentResult.metrics,
         assistantReasoningText:
           cfg.llmReasoningEnabled === true && String(agentResult.reasoningText || "").trim()
             ? String(agentResult.reasoningText).trim()

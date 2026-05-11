@@ -49,6 +49,8 @@ type MultiTimeframeChartImage = {
 
 type PrimaryChartImage = { mimeType: string; base64: string; dataUrl: string };
 
+const RECENT_AGENT_MEMORY_LIMIT = 10;
+
 /**
  * 历史仓位注入 LLM 时的下界：与仪表盘「启动策略」写入的会话起点对齐（优先 `strategyRuntimeById.startedAt`，其次仪表盘 `statsSince` / 首段 `startedAt`）。
  * @returns 毫秒时间戳；无法解析则 `null`（此时 OKX 请求不按会话过滤，与旧行为一致）。
@@ -540,7 +542,7 @@ async function emitBarClose(ctx) {
       ]),
     ),
     fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10, sessionSinceMs),
-    listRecentAgentMemories({ tvSymbol: ctx.tvSymbol, interval: ctx.interval, limit: 6 }),
+    listRecentAgentMemories({ tvSymbol: ctx.tvSymbol, interval: ctx.interval, limit: RECENT_AGENT_MEMORY_LIMIT }),
   ]);
   const recentCandles = Object.fromEntries(recentCandlesPack);
   const textForLlm = buildMultiTimeframeUserPrompt(

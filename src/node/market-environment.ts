@@ -1,4 +1,4 @@
-import { Config, QuoteContext, type SecurityQuote } from "longbridge";
+import type { QuoteContext, SecurityQuote } from "longbridge";
 
 import { mdTable } from "./llm.js";
 import { tvSymbolToSwapInstId } from "./okx-perp.js";
@@ -267,10 +267,20 @@ function hasLongbridgeApiEnv(): boolean {
 }
 
 let longbridgeQuoteContextPromise: Promise<QuoteContext> | null = null;
+let longbridgeModulePromise: Promise<typeof import("longbridge")> | null = null;
+
+async function loadLongbridgeModule(): Promise<typeof import("longbridge")> {
+  if (!longbridgeModulePromise) {
+    longbridgeModulePromise = import("longbridge");
+  }
+  return longbridgeModulePromise;
+}
 
 async function getLongbridgeQuoteContext(): Promise<QuoteContext> {
   if (!longbridgeQuoteContextPromise) {
-    longbridgeQuoteContextPromise = Promise.resolve(QuoteContext.new(Config.fromApikeyEnv()));
+    longbridgeQuoteContextPromise = loadLongbridgeModule().then(({ Config, QuoteContext }) =>
+      QuoteContext.new(Config.fromApikeyEnv()),
+    );
   }
   return longbridgeQuoteContextPromise;
 }

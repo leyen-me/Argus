@@ -1428,3 +1428,141 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   background: color-mix(in oklch, var(--primary) 14%, var(--background)) !important;
   color: var(--primary) !important;
 }
+
+@media (max-width: 767px) {
+  html,
+  body,
+  #root {
+    overflow: hidden;
+  }
+
+  .titlebar {
+    min-height: 42px;
+    height: auto;
+    padding: 6px 10px;
+    overflow: hidden;
+  }
+
+  .titlebar-traffic-guard {
+    display: none;
+  }
+
+  .titlebar-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+    gap: 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .titlebar-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .titlebar-config {
+    height: 32px;
+    padding-inline: 10px;
+  }
+
+  .main {
+    overflow: hidden;
+  }
+
+  .argus-chart-panel {
+    display: none !important;
+  }
+
+  .argus-right-panel {
+    flex: 1 1 auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    border-left: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  .argus-llm-panel {
+    width: 100%;
+  }
+
+  .llm-round-card-inner {
+    padding: 12px;
+  }
+
+  .llm-round-open-trade,
+  .llm-round-close-trade,
+  .llm-round-neutral-trade {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .llm-round-event-badge-cell {
+    width: auto;
+    min-width: 0;
+  }
+
+  .llm-round-card-top,
+  .llm-round-card-sub {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .llm-round-card-submeta {
+    flex-wrap: wrap;
+  }
+
+  .llm-round-card-time {
+    white-space: normal;
+  }
+
+  .llm-bubble {
+    max-width: 100%;
+  }
+
+  .argus-app-dialog-content {
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-width: 0 !important;
+    border-radius: 0 !important;
+    transform: none !important;
+  }
+
+  .argus-app-dialog-header {
+    padding: 12px;
+  }
+
+  .argus-app-dialog-header > div {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .argus-app-dialog-body {
+    padding: 12px;
+  }
+
+  .llm-chart-preview-backdrop {
+    padding: 0;
+  }
+
+  .llm-chart-preview-dialog {
+    width: 100vw;
+    max-width: none;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    border-width: 0;
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .llm-chart-preview-img {
+    max-height: 92dvh;
+  }
+}

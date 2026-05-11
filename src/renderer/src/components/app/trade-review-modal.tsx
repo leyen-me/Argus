@@ -185,8 +185,8 @@ export function TradeReviewModal() {
         />
         <DialogDescription className="sr-only">查看已完成交易的 LLM 复盘记录</DialogDescription>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[360px_minmax(0,1fr)]">
-          <aside className="min-h-0 border-r border-border bg-muted/15">
+        <div className="grid min-h-0 flex-1 grid-cols-[360px_minmax(0,1fr)] max-sm:grid-cols-1 max-sm:grid-rows-[minmax(150px,34dvh)_minmax(0,1fr)]">
+          <aside className="min-h-0 border-r border-border bg-muted/15 max-sm:border-r-0 max-sm:border-b">
             <ScrollArea className="h-full">
               <div className="space-y-2 p-3">
                 {error ? <div className="border border-destructive/30 bg-destructive/8 p-3 text-xs text-destructive">{error}</div> : null}
@@ -234,7 +234,7 @@ export function TradeReviewModal() {
           <section className="min-h-0">
             <ScrollArea className="h-full">
               {selected ? (
-                <div className="space-y-4 p-5">
+                <div className="space-y-4 p-5 max-sm:p-3">
                   <div className="border border-border bg-card p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>

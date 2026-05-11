@@ -25,7 +25,7 @@ export function DashboardModal() {
           closeId="btn-dashboard-close"
         />
         <DialogDescription className="sr-only">账户资金、持仓与 Agent 统计</DialogDescription>
-        <AppDialogBody className="overflow-hidden bg-background/45 p-5">
+        <AppDialogBody className="overflow-auto bg-background/45 p-5 max-sm:p-3 sm:overflow-hidden">
           <TradingDashboardCard embedded active={open} />
         </AppDialogBody>
       </AppDialogContent>

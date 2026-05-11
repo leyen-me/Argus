@@ -16,6 +16,7 @@ import { ARGUS_LLM_SESSION_DETAIL_OPEN } from "@/lib/argus-llm-session-detail-ev
 
 const DEFAULT_STRATEGY_CHART_INDICATORS: StrategyChartIndicatorId[] = ["EM20"];
 const TV_LAYOUT_RERENDER_MIN_DELTA_PX = 24;
+const MOBILE_WORKSPACE_QUERY = "(max-width: 767px)";
 
 type TvEmbedChartSpec = {
   interval: string;
@@ -51,11 +52,26 @@ let tvWidgetRenderFrameA = 0;
 let tvWidgetRenderFrameB = 0;
 let tvWidgetRenderSeq = 0;
 let tvLayoutObserver = null;
+let tvViewportModeBound = false;
 let lastTvWidgetRequest = {
   symbol: "OKX:BTCUSDT",
   interval: "5",
   chartIndicators: [...DEFAULT_STRATEGY_CHART_INDICATORS],
 };
+
+function isHeadlessCapturePage() {
+  try {
+    return new URLSearchParams(window.location.search).get("argus_client_role") === "headless_capture";
+  } catch {
+    return false;
+  }
+}
+
+function shouldSuppressTradingViewForViewport() {
+  if (isHeadlessCapturePage()) return false;
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia(MOBILE_WORKSPACE_QUERY).matches;
+}
 
 function normalizeTradingViewSymbolForPerp(symbol) {
   const raw = String(symbol || "").trim();
@@ -108,6 +124,13 @@ function scheduleTradingViewWidget(
     interval: nextInterval,
     chartIndicators: nextChartIndicators,
   };
+
+  if (shouldSuppressTradingViewForViewport()) {
+    cancelPendingTradingViewRender();
+    destroyWidget();
+    return;
+  }
+
   const seq = ++tvWidgetRenderSeq;
   cancelPendingTradingViewRender();
 
@@ -179,6 +202,24 @@ function initTradingViewAutoLayout() {
   });
 
   tvLayoutObserver.observe(grid);
+}
+
+function initTradingViewViewportMode() {
+  if (tvViewportModeBound || typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+  tvViewportModeBound = true;
+  const media = window.matchMedia(MOBILE_WORKSPACE_QUERY);
+  media.addEventListener("change", () => {
+    if (shouldSuppressTradingViewForViewport()) {
+      cancelPendingTradingViewRender();
+      destroyWidget();
+      return;
+    }
+    initTradingViewAutoLayout();
+    scheduleTradingViewWidget(lastTvWidgetRequest.symbol, lastTvWidgetRequest.interval, {
+      debounceMs: 120,
+      chartIndicators: lastTvWidgetRequest.chartIndicators,
+    });
+  });
 }
 
 /**
@@ -2979,6 +3020,7 @@ export function initArgusApp() {
     initPromptStrategiesChangedListener();
     const cfg = await loadAppConfig();
     initTradingViewAutoLayout();
+    initTradingViewViewportMode();
     applySymbolSelect(cfg);
     /* `#symbol-select` 由 React 挂载；若首帧时尚未进 DOM，补跑一次以派发 symbol-select-sync */
     requestAnimationFrame(() => {

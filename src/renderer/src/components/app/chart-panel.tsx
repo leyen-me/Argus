@@ -155,7 +155,7 @@ export function ChartPanel({
     <>
       <Card
         className={cn(
-          "min-h-0 min-w-0 gap-0 rounded-none border-0 py-0 shadow-none ring-0",
+          "argus-chart-panel min-h-0 min-w-0 gap-0 rounded-none border-0 py-0 shadow-none ring-0",
           rightPanelCollapsed ? "flex-1 border-r-0" : "flex-[1.78]",
         )}
       >

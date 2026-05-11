@@ -339,8 +339,8 @@ function StrategyInfoCard({
   const busy = loading
   return (
     <Card className="gap-0 border-border/75 bg-card/70 py-0 shadow-none">
-      <CardContent className="flex h-full flex-col px-6 py-5">
-        <div className="mb-4 flex items-center justify-between border-b border-border/70 pb-3">
+      <CardContent className="flex h-full flex-col px-6 py-5 max-sm:px-4 max-sm:py-4">
+        <div className="mb-4 flex items-center justify-between border-b border-border/70 pb-3 max-sm:items-start">
           <div>
             <div className="text-[10px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">strategy command</div>
             <div className="mt-1 text-xs text-muted-foreground">策略执行、统计区间与 Agent 自动运行控制</div>
@@ -349,7 +349,7 @@ function StrategyInfoCard({
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-nowrap items-center gap-1">
-              <p className="m-0 min-w-0 flex-1 truncate text-[2rem] font-semibold leading-none tracking-tight text-foreground">
+              <p className="m-0 min-w-0 flex-1 truncate text-[2rem] font-semibold leading-none tracking-tight text-foreground max-sm:text-[1.5rem]">
                 {strategyName}
               </p>
               <Button
@@ -386,7 +386,7 @@ function StrategyInfoCard({
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-wrap justify-end gap-2 lg:max-w-md">
+          <div className="flex shrink-0 flex-wrap justify-start gap-2 lg:max-w-md lg:justify-end">
               <Button
                 type="button"
                 size="sm"
@@ -467,7 +467,7 @@ function AccountOverviewCard({
       : null
 
   return (
-    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <MetricCard
         label="胜率"
         value={
@@ -616,7 +616,7 @@ function EquityCurveCard({
   statsSegments: Array<{ startedAt: string; endedAt: string | null }>
 }) {
   return (
-    <Card className="min-h-0 gap-0 border-border/75 bg-card/55 py-0 shadow-none">
+    <Card className="min-h-0 gap-0 border-border/75 bg-card/55 py-0 shadow-none max-sm:min-h-[260px]">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-border/75 px-5">
         <div>
           <div className="text-[10px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">equity curve</div>
@@ -974,7 +974,7 @@ export function TradingDashboardCard({
     <>
       <div
         className={cn(
-          "grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-4",
+          "grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-4 max-sm:h-auto max-sm:grid-rows-none",
           embedded ? "px-0 py-0" : "px-3 py-3",
         )}
       >

@@ -36,7 +36,7 @@ export function LlmPanel() {
   }, [barCloseAgentAuto])
 
   return (
-    <Card className="bg-background flex min-h-0 min-w-0 flex-1 gap-0 rounded-none border-0 py-0 shadow-none ring-0">
+    <Card className="argus-llm-panel bg-background flex min-h-0 min-w-0 flex-1 gap-0 rounded-none border-0 py-0 shadow-none ring-0">
       <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
         <PanelHeader
           eyebrow="agent command"

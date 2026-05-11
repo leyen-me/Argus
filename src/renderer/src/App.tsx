@@ -22,6 +22,7 @@ import {
 import { initArgusApp } from "./argus-renderer";
 
 const RIGHT_PANEL_COLLAPSED_KEY = "argus.ui.rightPanelCollapsed";
+const MOBILE_WORKSPACE_QUERY = "(max-width: 767px)";
 
 function isHeadlessCapturePage(): boolean {
   try {
@@ -42,6 +43,26 @@ function readStoredRightPanelCollapsed(): boolean {
     /* private mode / quota */
   }
   return false;
+}
+
+function readMobileWorkspaceViewport(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia(MOBILE_WORKSPACE_QUERY).matches;
+}
+
+function useMobileWorkspaceViewport(): boolean {
+  const [mobile, setMobile] = useState(readMobileWorkspaceViewport);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia(MOBILE_WORKSPACE_QUERY);
+    const onChange = () => setMobile(media.matches);
+    onChange();
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  return mobile;
 }
 
 function PublicPasswordGate({ onUnlocked }: { onUnlocked: () => void }) {
@@ -160,6 +181,7 @@ function ArgusWorkspace() {
   const [strategyOptionCount, setStrategyOptionCount] = useState<number | null>(null);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(readStoredRightPanelCollapsed);
   const headlessCapturePage = isHeadlessCapturePage();
+  const mobileWorkspace = useMobileWorkspaceViewport();
 
   useEffect(() => {
     void initArgusApp();
@@ -185,6 +207,7 @@ function ArgusWorkspace() {
   }, []);
 
   const showStrategiesEmpty = strategyOptionCount === 0;
+  const effectiveRightPanelCollapsed = !mobileWorkspace && rightPanelCollapsed;
 
   return (
     <>
@@ -201,13 +224,13 @@ function ArgusWorkspace() {
               />
               <div
                 className={cn(
-                  "flex min-h-0 min-w-0 transition-[flex-basis,flex-grow,max-width,opacity] duration-200 ease-out",
-                  rightPanelCollapsed
+                  "argus-right-panel flex min-h-0 min-w-0 transition-[flex-basis,flex-grow,max-width,opacity] duration-200 ease-out",
+                  effectiveRightPanelCollapsed
                     ? "pointer-events-none max-w-0 flex-[0_0_0] overflow-hidden opacity-0"
                     : "flex-[0.72] border-l border-border/75",
                 )}
-                aria-hidden={rightPanelCollapsed}
-                inert={rightPanelCollapsed ? true : undefined}
+                aria-hidden={effectiveRightPanelCollapsed}
+                inert={effectiveRightPanelCollapsed ? true : undefined}
               >
                 <LlmPanel />
               </div>

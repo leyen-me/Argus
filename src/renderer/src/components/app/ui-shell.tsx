@@ -36,7 +36,7 @@ export function AppDialogContent({
       showCloseButton={false}
       forceMount
       className={cn(
-        "flex max-h-[min(90vh,820px)] w-[min(760px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px]",
+        "argus-app-dialog-content flex max-h-[min(90vh,820px)] w-[min(760px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px]",
         className,
       )}
       {...props}
@@ -65,7 +65,7 @@ export function AppDialogHeader({
   actions?: ReactNode
 }) {
   return (
-    <DialogHeader className={cn("shrink-0 space-y-0 border-b border-border/85 bg-card/70 px-5 py-4 text-left", className)}>
+    <DialogHeader className={cn("argus-app-dialog-header shrink-0 space-y-0 border-b border-border/85 bg-card/70 px-5 py-4 text-left", className)}>
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           {eyebrow ? (
@@ -110,7 +110,7 @@ export function AppDialogBody({
   className?: string
   children: ReactNode
 }) {
-  return <div className={cn("min-h-0 flex-1 overflow-auto overscroll-contain px-5 py-5", className)}>{children}</div>
+  return <div className={cn("argus-app-dialog-body min-h-0 flex-1 overflow-auto overscroll-contain px-5 py-5", className)}>{children}</div>
 }
 
 /**
@@ -130,7 +130,7 @@ export function PanelHeader({
   className?: string
 }) {
   return (
-    <div className={cn("flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border/85 bg-card/65 px-3", className)}>
+    <div className={cn("flex h-auto min-h-10 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/85 bg-card/65 px-3 py-2 sm:h-10 sm:flex-nowrap sm:gap-3 sm:py-0", className)}>
       <div className="min-w-0">
         {eyebrow ? <div className="text-[9px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">{eyebrow}</div> : null}
         <div className="flex min-w-0 items-center gap-2">

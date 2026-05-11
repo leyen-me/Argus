@@ -214,14 +214,32 @@ function okxMgnModeZh(m) {
   return String(m);
 }
 
+function compactPromptUtcTime(raw) {
+  if (raw == null || raw === "") return "—";
+  const s = String(raw).trim();
+  if (!s) return "—";
+  const numericMs = typeof raw === "number" || /^\d+$/.test(s) ? Number(s) : NaN;
+  const text = Number.isFinite(numericMs) ? new Date(numericMs).toISOString() : s;
+  const m = text.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}:\d{2})/);
+  if (m) return `${m[2]}-${m[3]} ${m[4]}`;
+  const parsed = Date.parse(text);
+  if (Number.isFinite(parsed)) return compactPromptUtcTime(parsed);
+  return text.length > 16 ? text.slice(0, 16) : text;
+}
+
+function formatPromptTimeReferenceBlock(now = new Date()) {
+  const iso = now.toISOString();
+  const year = iso.slice(0, 4);
+  return ["## 时间基准", "", `当前 UTC：${year}-${compactPromptUtcTime(iso)}；下文表内时间均为 UTC，格式 MM-DD HH:mm。`].join(
+    "\n",
+  );
+}
+
 /**
  * @param {string | number | null | undefined} ms
  */
-function okxPosHistTimeIso(ms) {
-  if (ms == null || ms === "") return "—";
-  const n = Number(ms);
-  if (!Number.isFinite(n)) return String(ms);
-  return new Date(n).toISOString();
+function okxPosHistTimeCompact(ms) {
+  return compactPromptUtcTime(ms);
 }
 
 /**
@@ -251,13 +269,13 @@ function formatOkxPositionHistoryForPrompt(ph) {
     ].join("\n");
   }
   if (!ph.rows || ph.rows.length === 0) {
-    const sinceIso =
+    const sinceCompact =
       ph.sessionSinceMs != null && Number.isFinite(ph.sessionSinceMs)
-        ? new Date(ph.sessionSinceMs).toISOString()
+        ? compactPromptUtcTime(ph.sessionSinceMs)
         : null;
     const emptyHint =
-      sinceIso != null
-        ? `> **说明**：以下为自本轮策略在仪表盘「启动策略」以来（起算 UTC：\`${sinceIso}\`）的平仓记录；当前列表为空表示该时段内该合约无历史仓位（或尚无已结仓位）。`
+      sinceCompact != null
+        ? `> **说明**：以下为自本轮策略在仪表盘「启动策略」以来（起算 UTC：\`${sinceCompact}\`）的平仓记录；当前列表为空表示该时段内该合约无历史仓位（或尚无已结仓位）。`
         : "> **说明**：数据来自 OKX `positions-history`；若为空，可能近约 3 个月该 `instId` 无记录。";
     return [
       "",
@@ -290,8 +308,8 @@ function formatOkxPositionHistoryForPrompt(ph) {
       o.closeAvgPx != null ? String(o.closeAvgPx) : "—",
       okxPnlRatioDisplay(/** @type {string} */ (o.pnlRatio)),
       o.closeTotalPos != null ? String(o.closeTotalPos) : "—",
-      okxPosHistTimeIso(/** @type {string} */ (o.cTime)),
-      okxPosHistTimeIso(/** @type {string} */ (o.uTime)),
+      okxPosHistTimeCompact(/** @type {string} */ (o.cTime)),
+      okxPosHistTimeCompact(/** @type {string} */ (o.uTime)),
     ];
   });
   return [
@@ -355,7 +373,7 @@ function formatRecentAgentMemoryBlock(memories, _exchangeCtx) {
     const holding = clipText(row?.holdingState || "空仓", 20) || "空仓";
     const note =
       clipText(row?.cardSummary || row?.assistantText || row?.agentError || "", 110) || "无补充说明";
-    return `${idx + 1}. ${row?.capturedAt || "—"}｜${holding}｜${action}｜${note}`;
+    return `${idx + 1}. ${compactPromptUtcTime(row?.capturedAt)}｜${holding}｜${action}｜${note}`;
   });
 
   return [
@@ -381,6 +399,7 @@ function positionFieldsTable(fields) {
 }
 
 function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, recentAgentMemories) {
+  const timeReferenceBlock = formatPromptTimeReferenceBlock();
   if (!exchangeCtx || exchangeCtx.enabled !== true) {
     let note;
     if (exchangeCtx?.reason === "okx_swap_disabled") {
@@ -390,12 +409,12 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
     } else {
       note = `（无快照：${exchangeCtx?.reason || "OKX 永续未启用或未配置 API"}。）`;
     }
-    return [marketText, "", "## OKX 永续快照", "", note].join("\n");
+    return [marketText, "", timeReferenceBlock, "", "## OKX 永续快照", "", note].join("\n");
   }
 
   if (exchangeCtx.ok !== true) {
     const err = mdCell(exchangeCtx.message || "交易所快照失败");
-    return [marketText, "", "## OKX 永续快照", "", `**接口错误**：${err}`].join("\n");
+    return [marketText, "", timeReferenceBlock, "", "## OKX 永续快照", "", `**接口错误**：${err}`].join("\n");
   }
 
   const cs = exchangeCtx.contract_sizing;
@@ -473,6 +492,8 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
 
   return [
     marketText,
+    "",
+    timeReferenceBlock,
     "",
     "## OKX 永续快照",
     "",

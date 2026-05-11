@@ -17,7 +17,7 @@
     "dev": "concurrently -n srv,vite -c blue,green \"tsx watch src/server/index.ts\" \"vite\"",
     "db:generate": "drizzle-kit generate",
     "build:client": "vite build",
-    "build:server": "rm -rf dist-server/src dist-server/internal dist-server/pkg && tsc -p tsconfig.server.json",
+    "build:server": "rm -rf dist-server/src dist-server/internal dist-server/pkg dist-server/drizzle && tsc -p tsconfig.server.json && cp -R drizzle dist-server/drizzle",
     "build": "pnpm build:client && pnpm build:server",
     "start": "node dist-server/src/server/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.server.json",

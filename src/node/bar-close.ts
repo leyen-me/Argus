@@ -30,6 +30,7 @@ import { buildTradingAgentToolsForContext } from "./trading-agent-tools.js";
 import { createTradingToolExecutor } from "./trading-agent-executor.js";
 import { persistAgentBarTurn, listRecentAgentMemories } from "./agent-bar-turns-store.js";
 import { maybeEnqueueTradeReviewAfterBarTurn } from "./trade-review-service.js";
+import { getDashboardSnapshot } from "./dashboard-service.js";
 import { ensureHeadlessCaptureReady, headlessCaptureRequestTimeoutMs } from "./headless-browser-service.js";
 import * as promptStrategiesStore from "./prompt-strategies-store.js";
 import {
@@ -235,6 +236,104 @@ function formatPromptTimeReferenceBlock(now = new Date()) {
   );
 }
 
+function finiteNumberOrNull(raw) {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatPromptUsdt(raw) {
+  const n = finiteNumberOrNull(raw);
+  if (n == null) return "—";
+  return stripPromptNumber(n, 2);
+}
+
+function formatPromptSignedUsdt(raw) {
+  const n = finiteNumberOrNull(raw);
+  if (n == null) return "—";
+  const prefix = n > 0 ? "+" : "";
+  return `${prefix}${stripPromptNumber(n, 2)}`;
+}
+
+function formatPromptPercent(raw) {
+  const n = finiteNumberOrNull(raw);
+  if (n == null) return "—";
+  return `${stripPromptNumber(n * 100, 2)}%`;
+}
+
+function stripPromptNumber(n, maxDecimals = 2) {
+  if (!Number.isFinite(n)) return "—";
+  return n.toFixed(maxDecimals).replace(/\.?0+$/, "");
+}
+
+function formatDashboardStatsBlock(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return ["## 策略资金与表现", "", "（暂无策略资金与表现数据。）"].join("\n");
+  }
+  if (snapshot.ok !== true) {
+    return [
+      "## 策略资金与表现",
+      "",
+      `（策略资金与表现数据不可用：${mdCell(snapshot.message || snapshot.reason || "未知原因")}。）`,
+    ].join("\n");
+  }
+  if (snapshot.skipped === true) {
+    return [
+      "## 策略资金与表现",
+      "",
+      `（策略资金与表现数据已跳过：${mdCell(snapshot.reason || "未启用 OKX 永续")}。）`,
+    ].join("\n");
+  }
+
+  const equity = finiteNumberOrNull(snapshot.equityUsdt);
+  const avail = finiteNumberOrNull(snapshot.availEqUsdt);
+  const baseline = finiteNumberOrNull(snapshot.baselineEquityUsdt);
+  const pnl = finiteNumberOrNull(snapshot.pnlVsBaselineUsdt);
+  const pnlRatio = pnl != null && baseline != null && baseline > 0 ? pnl / baseline : null;
+  const freeRatio = avail != null && equity != null && equity > 0 ? avail / equity : null;
+  const closeStats = snapshot.swapClosePositionStats;
+  const winRate =
+    closeStats && typeof closeStats === "object" ? finiteNumberOrNull(closeStats.winRate) : null;
+  const closeFills =
+    closeStats && typeof closeStats === "object" ? finiteNumberOrNull(closeStats.closeFills) : null;
+  const since =
+    typeof snapshot.dashboardAgentToolStatsSince === "string" && snapshot.dashboardAgentToolStatsSince.trim()
+      ? compactPromptUtcTime(snapshot.dashboardAgentToolStatsSince)
+      : "—";
+
+  return [
+    "## 策略资金与表现",
+    "",
+    mdTable(
+      [
+        "统计起点",
+        "胜率（winRate）",
+        "平仓次数（closeFills）",
+        "总盈亏（pnlVsBaselineUsdt）",
+        "收益率",
+        "初始资金（baselineEquityUsdt）",
+        "总权益（equityUsdt）",
+        "未实现盈亏（uplUsdt）",
+        "可用资金（availEqUsdt）",
+        "空闲比例",
+      ],
+      [
+        [
+          since,
+          formatPromptPercent(winRate),
+          closeFills ?? "—",
+          formatPromptSignedUsdt(pnl),
+          formatPromptPercent(pnlRatio),
+          formatPromptUsdt(baseline),
+          formatPromptUsdt(equity),
+          formatPromptSignedUsdt(snapshot.uplUsdt),
+          formatPromptUsdt(avail),
+          formatPromptPercent(freeRatio),
+        ],
+      ],
+    ),
+  ].join("\n");
+}
+
 /**
  * @param {string | number | null | undefined} ms
  */
@@ -398,8 +497,9 @@ function positionFieldsTable(fields) {
   );
 }
 
-function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, recentAgentMemories) {
+function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, recentAgentMemories, dashboardSnapshot) {
   const timeReferenceBlock = formatPromptTimeReferenceBlock();
+  const dashboardStatsBlock = formatDashboardStatsBlock(dashboardSnapshot);
   if (!exchangeCtx || exchangeCtx.enabled !== true) {
     let note;
     if (exchangeCtx?.reason === "okx_swap_disabled") {
@@ -409,12 +509,22 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
     } else {
       note = `（无快照：${exchangeCtx?.reason || "OKX 永续未启用或未配置 API"}。）`;
     }
-    return [marketText, "", timeReferenceBlock, "", "## OKX 永续快照", "", note].join("\n");
+    return [marketText, "", timeReferenceBlock, "", dashboardStatsBlock, "", "## OKX 永续快照", "", note].join("\n");
   }
 
   if (exchangeCtx.ok !== true) {
     const err = mdCell(exchangeCtx.message || "交易所快照失败");
-    return [marketText, "", timeReferenceBlock, "", "## OKX 永续快照", "", `**接口错误**：${err}`].join("\n");
+    return [
+      marketText,
+      "",
+      timeReferenceBlock,
+      "",
+      dashboardStatsBlock,
+      "",
+      "## OKX 永续快照",
+      "",
+      `**接口错误**：${err}`,
+    ].join("\n");
   }
 
   const cs = exchangeCtx.contract_sizing;
@@ -494,6 +604,8 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
     marketText,
     "",
     timeReferenceBlock,
+    "",
+    dashboardStatsBlock,
     "",
     "## OKX 永续快照",
     "",
@@ -603,7 +715,7 @@ async function emitBarClose(ctx) {
 
   const convKey = conversationKey(ctx.tvSymbol, canonTradingViewInterval(ctx.interval));
   const sessionSinceMs = resolveStrategyPositionHistorySinceMs(cfg);
-  const [exchangeCtx, recentCandlesPack, positionsHistory, recentAgentMemories] = await Promise.all([
+  const [exchangeCtx, recentCandlesPack, positionsHistory, recentAgentMemories, dashboardSnapshot] = await Promise.all([
     getOkxExchangeContextForBar(cfg, ctx.tvSymbol, ctx.interval),
     Promise.all(
       multiCaptureSpecs.map(async (spec) => [
@@ -613,6 +725,7 @@ async function emitBarClose(ctx) {
     ),
     fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10, sessionSinceMs),
     listRecentAgentMemories({ tvSymbol: ctx.tvSymbol, interval: ctx.interval, limit: RECENT_AGENT_MEMORY_LIMIT }),
+    getDashboardSnapshot(cfg),
   ]);
   const recentCandles = Object.fromEntries(recentCandlesPack);
   const textForLlm = buildMultiTimeframeUserPrompt(
@@ -624,7 +737,13 @@ async function emitBarClose(ctx) {
     strategyIndicators,
   );
   const { primaryText, marketDataBlock } = splitMarketDataMultiTimeframeBlock(textForLlm);
-  const okxUserText = buildOkxContextUserText(primaryText, exchangeCtx, positionsHistory, recentAgentMemories);
+  const okxUserText = buildOkxContextUserText(
+    primaryText,
+    exchangeCtx,
+    positionsHistory,
+    recentAgentMemories,
+    dashboardSnapshot,
+  );
   const llmUserText = [okxUserText, marketDataBlock].filter(Boolean).join("\n\n");
   const systemPrompt = resolveTradingAgentSystemPrompt(cfg);
   const intervalSkipReason =

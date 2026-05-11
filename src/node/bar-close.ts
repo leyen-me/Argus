@@ -32,6 +32,7 @@ import { persistAgentBarTurn, listRecentAgentMemories } from "./agent-bar-turns-
 import { maybeEnqueueTradeReviewAfterBarTurn } from "./trade-review-service.js";
 import { getDashboardSnapshot } from "./dashboard-service.js";
 import { ensureHeadlessCaptureReady, headlessCaptureRequestTimeoutMs } from "./headless-browser-service.js";
+import { buildMarketEnvironmentPromptBlock } from "./market-environment.js";
 import * as promptStrategiesStore from "./prompt-strategies-store.js";
 import {
   MULTI_TIMEFRAME_CAPTURE_SPECS,
@@ -715,7 +716,14 @@ async function emitBarClose(ctx) {
 
   const convKey = conversationKey(ctx.tvSymbol, canonTradingViewInterval(ctx.interval));
   const sessionSinceMs = resolveStrategyPositionHistorySinceMs(cfg);
-  const [exchangeCtx, recentCandlesPack, positionsHistory, recentAgentMemories, dashboardSnapshot] = await Promise.all([
+  const [
+    exchangeCtx,
+    recentCandlesPack,
+    positionsHistory,
+    recentAgentMemories,
+    dashboardSnapshot,
+    marketEnvironmentBlock,
+  ] = await Promise.all([
     getOkxExchangeContextForBar(cfg, ctx.tvSymbol, ctx.interval),
     Promise.all(
       multiCaptureSpecs.map(async (spec) => [
@@ -726,6 +734,7 @@ async function emitBarClose(ctx) {
     fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10, sessionSinceMs),
     listRecentAgentMemories({ tvSymbol: ctx.tvSymbol, interval: ctx.interval, limit: RECENT_AGENT_MEMORY_LIMIT }),
     getDashboardSnapshot(cfg),
+    buildMarketEnvironmentPromptBlock(ctx.tvSymbol),
   ]);
   const recentCandles = Object.fromEntries(recentCandlesPack);
   const textForLlm = buildMultiTimeframeUserPrompt(
@@ -744,7 +753,7 @@ async function emitBarClose(ctx) {
     recentAgentMemories,
     dashboardSnapshot,
   );
-  const llmUserText = [okxUserText, marketDataBlock].filter(Boolean).join("\n\n");
+  const llmUserText = [okxUserText, marketEnvironmentBlock, marketDataBlock].filter(Boolean).join("\n\n");
   const systemPrompt = resolveTradingAgentSystemPrompt(cfg);
   const intervalSkipReason =
     ctxIvCanon !== decisionIvCanon

@@ -10,6 +10,11 @@ import type {
   MarketStatusPayload,
   OkxSwapStatusPayload,
 } from "@public-api/index";
+import {
+  appendArgusAuthToken,
+  argusAuthHeaders,
+  onArgusAuthTokenChanged,
+} from "./argus-auth";
 
 export type {
   ArgusBridge,
@@ -49,7 +54,7 @@ async function rpc(method: string, args: unknown[] = []) {
   try {
     res = await fetch("/api/rpc", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...argusAuthHeaders() },
       body: JSON.stringify({ method, args }),
     });
   } catch {
@@ -101,7 +106,7 @@ function registerWsClient(ws: WebSocket) {
 
 function connectWsLoop() {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${proto}//${window.location.host}/ws`;
+  const wsUrl = appendArgusAuthToken(`${proto}//${window.location.host}/ws`);
   const ws = new WebSocket(wsUrl);
   socketRef = ws;
   ws.onopen = () => {
@@ -137,6 +142,19 @@ function connectWsLoop() {
 /** 在主入口尽早调用，保证 `window.argus` 对 TradingView / React 可用 */
 export function installArgusBridge() {
   connectWsLoop();
+  onArgusAuthTokenChanged(() => {
+    wsReconnectDelayMs = 250;
+    const ws = socketRef;
+    if (!ws) {
+      connectWsLoop();
+      return;
+    }
+    try {
+      ws.close();
+    } catch {
+      /* ignore */
+    }
+  });
 
   const bridge: ArgusBridge = {
     onMarketBarClose: (cb) =>

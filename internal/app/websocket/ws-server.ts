@@ -10,6 +10,7 @@ import {
 } from "../../../src/node/chart-capture-browser-bridge.js";
 import { subscribe } from "../../../src/node/runtime-bus.js";
 import type { Logger } from "../../infrastructure/logging/logger.js";
+import { isIncomingMessageAuthenticated } from "../security/public-auth.js";
 
 type ArgusWsClient = ClientWebSocket & {
   argusClientId?: string;
@@ -36,7 +37,17 @@ function targetRoleForEnvelope(envelope: unknown): CaptureClientRole | undefined
 export function attachArgusWebSocketServer(server: http.Server, logger: Logger): ArgusWebSocketServer {
   const wsClients: ArgusWsClient[] = [];
   const wsLogger = logger.child({ module: "websocket" });
-  const wss = new WebSocketServer({ server, path: "/ws" });
+  const wss = new WebSocketServer({
+    server,
+    path: "/ws",
+    verifyClient: (info, done) => {
+      if (isIncomingMessageAuthenticated(info.req)) {
+        done(true);
+        return;
+      }
+      done(false, 401, "Unauthorized");
+    },
+  });
 
   function broadcastWs(envelope: unknown) {
     const raw = JSON.stringify(envelope);

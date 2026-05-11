@@ -179,6 +179,8 @@ export function installArgusBridge() {
     getAgentBarTurnChart: (barCloseId) => rpc("agent-bar-turns:get-chart", [barCloseId]),
     getAgentSessionMessages: (barCloseId) =>
       rpc("agent-bar-turns:get-session-messages", [barCloseId]),
+    listTradeReviewsPage: (args) => rpc("trade-reviews:list-page", [args]),
+    getTradeReview: (id) => rpc("trade-reviews:get", [id]),
     listPromptStrategiesMeta: () => rpc("prompt-strategies:list", []),
     getPromptStrategy: (id) => rpc("prompt-strategies:get", [id]),
     savePromptStrategy: (payload) => rpc("prompt-strategies:save", [payload]),

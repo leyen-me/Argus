@@ -16,6 +16,10 @@ import * as promptStrategiesStore from "../../../src/node/prompt-strategies-stor
 import {
   requestChartCaptureFromBrowser,
 } from "../../../src/node/chart-capture-browser-bridge.js";
+import {
+  getTradeReview,
+  listTradeReviewsPage,
+} from "../../../src/node/trade-reviews-store.js";
 import { ensureHeadlessCaptureReady } from "../../../src/node/headless-browser-service.js";
 import { runBackgroundEquitySample } from "../../application/services/background-equity-sampler.js";
 import { routeMarket } from "../../application/services/market-routing-service.js";
@@ -79,6 +83,13 @@ export function createRpcHandlers(logger?: Logger): ArgusRpcHandlerMap {
     "agent-bar-turns:get-chart": async (barCloseId) => getAgentBarTurnChart(barCloseId),
     "agent-bar-turns:get-session-messages": async (barCloseId) =>
       getAgentSessionMessages(barCloseId),
+    "trade-reviews:list-page": async (args) =>
+      listTradeReviewsPage(
+        args && typeof args === "object" && !Array.isArray(args)
+          ? (args as Record<string, unknown>)
+          : {},
+      ),
+    "trade-reviews:get": async (id) => getTradeReview(String(id || "")),
     "prompt-strategies:list": async () => promptStrategiesStore.listStrategiesMeta(),
     "prompt-strategies:get": async (id) => promptStrategiesStore.getStrategy(id),
     "prompt-strategies:save": async (payload) => {

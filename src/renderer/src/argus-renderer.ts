@@ -1738,6 +1738,7 @@ const ARGUS_CONFIG_MODAL_OPEN = "argus:config-modal-open";
 const ARGUS_CONFIG_MODAL_CLOSE = "argus:config-modal-close";
 const ARGUS_STRATEGY_MODAL_OPEN = "argus:strategy-modal-open";
 const ARGUS_DASHBOARD_MODAL_OPEN = "argus:dashboard-modal-open";
+const ARGUS_TRADE_REVIEW_MODAL_OPEN = "argus:trade-review-modal-open";
 const ARGUS_PROMPT_STRATEGIES_CHANGED = "argus:prompt-strategies-changed";
 
 /** @param cfg `normalizeConfig` 返回的配置；用于配置 Dialog 表单与顶栏下拉同步。 */
@@ -2030,6 +2031,14 @@ function initDashboardModal() {
   if (!btn) return;
   btn.addEventListener("click", () => {
     window.dispatchEvent(new CustomEvent(ARGUS_DASHBOARD_MODAL_OPEN));
+  });
+}
+
+function initTradeReviewModal() {
+  const btn = document.getElementById("btn-open-trade-reviews");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    window.dispatchEvent(new CustomEvent(ARGUS_TRADE_REVIEW_MODAL_OPEN));
   });
 }
 
@@ -2997,6 +3006,7 @@ export function initArgusApp() {
     initLocalChartTestListener();
     initConfigCenter();
     initDashboardModal();
+    initTradeReviewModal();
     initStrategyCenter();
     initDevToolsButton();
     initFishMode();

@@ -14,6 +14,8 @@ export const ARGUS_RPC_METHODS = [
   "agent-bar-turns:list-page",
   "agent-bar-turns:get-chart",
   "agent-bar-turns:get-session-messages",
+  "trade-reviews:list-page",
+  "trade-reviews:get",
   "prompt-strategies:list",
   "prompt-strategies:get",
   "prompt-strategies:save",

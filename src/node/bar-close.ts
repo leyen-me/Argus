@@ -29,6 +29,7 @@ import {
 import { buildTradingAgentToolsForContext } from "./trading-agent-tools.js";
 import { createTradingToolExecutor } from "./trading-agent-executor.js";
 import { persistAgentBarTurn, listRecentAgentMemories } from "./agent-bar-turns-store.js";
+import { maybeEnqueueTradeReviewAfterBarTurn } from "./trade-review-service.js";
 import { ensureHeadlessCaptureReady, headlessCaptureRequestTimeoutMs } from "./headless-browser-service.js";
 import * as promptStrategiesStore from "./prompt-strategies-store.js";
 import {
@@ -774,6 +775,7 @@ async function emitBarClose(ctx) {
       llm.cardSummary = sumResult.text;
     }
     payloadBase.exchangeContext = exchangeAfter;
+    let persisted = false;
     try {
       await persistAgentBarTurn({
         barCloseId,
@@ -799,9 +801,26 @@ async function emitBarClose(ctx) {
             ? String(agentResult.reasoningText).trim()
             : null,
       });
+      persisted = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       publish("market-status", { text: `Agent 记录落库失败：${msg}` });
+    }
+    if (persisted) {
+      void maybeEnqueueTradeReviewAfterBarTurn({
+        cfg,
+        tvSymbol: ctx.tvSymbol,
+        interval: ctx.interval,
+        barCloseId,
+        capturedAt: payloadBase.capturedAt,
+        toolTrace: llm.toolTrace,
+        exchangeContext: exchangeCtx,
+        exchangeAfter,
+        strategyId: typeof cfg.promptStrategy === "string" ? cfg.promptStrategy : null,
+      }).catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        publish("market-status", { text: `交易复盘触发失败：${msg}` });
+      });
     }
     publish("llm-stream-end", {
       barCloseId,

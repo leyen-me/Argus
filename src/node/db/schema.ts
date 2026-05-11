@@ -98,6 +98,40 @@ export const agentSessionMessages = mysqlTable(
   }),
 );
 
+export const tradeReviews = mysqlTable(
+  "trade_reviews",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    tvSymbol: varchar("tv_symbol", { length: 64 }).notNull(),
+    interval: varchar("interval", { length: 16 }).notNull(),
+    strategyId: varchar("strategy_id", { length: 64 }),
+    entryBarCloseId: varchar("entry_bar_close_id", { length: 64 }).notNull(),
+    exitBarCloseId: varchar("exit_bar_close_id", { length: 64 }).notNull(),
+    entryAt: varchar("entry_at", { length: 64 }).notNull(),
+    exitAt: varchar("exit_at", { length: 64 }).notNull(),
+    side: varchar("side", { length: 16 }),
+    entryPrice: double("entry_price"),
+    exitPrice: double("exit_price"),
+    pnl: double("pnl"),
+    exitType: varchar("exit_type", { length: 48 }).notNull().default("unknown"),
+    exitReasonSource: varchar("exit_reason_source", { length: 48 }).notNull().default("inferred"),
+    contextSummaryJson: longtext("context_summary_json").notNull(),
+    reviewText: longtext("review_text"),
+    attribution: varchar("attribution", { length: 64 }),
+    lessonsJson: longtext("lessons_json"),
+    sourceSessionIdsJson: longtext("source_session_ids_json").notNull(),
+    status: varchar("status", { length: 32 }).notNull().default("pending"),
+    error: longtext("error"),
+    createdAt: varchar("created_at", { length: 32 }).notNull(),
+    updatedAt: varchar("updated_at", { length: 32 }).notNull(),
+  },
+  (t) => ({
+    listIdx: index("idx_trade_reviews_list").on(t.tvSymbol, t.interval, t.exitAt, t.id),
+    entryExitIdx: index("idx_trade_reviews_entry_exit").on(t.entryBarCloseId, t.exitBarCloseId),
+    statusIdx: index("idx_trade_reviews_status").on(t.status, t.updatedAt),
+  }),
+);
+
 export const dashboardEquitySamples = mysqlTable(
   "dashboard_equity_samples",
   {

@@ -1,4 +1,4 @@
-import { BookOpen, LayoutDashboard, Settings } from "lucide-react"
+import { BookOpen, ClipboardList, LayoutDashboard, Settings } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
@@ -28,6 +28,17 @@ export function TitleBar() {
         >
           <LayoutDashboard className="size-3.5 opacity-80" aria-hidden />
           仪表盘
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="titlebar-config h-7 gap-1.5 px-2.5 text-xs font-semibold shadow-none"
+          id="btn-open-trade-reviews"
+          title="交易复盘：查看已完成交易的归因与改进建议"
+        >
+          <ClipboardList className="size-3.5 opacity-80" aria-hidden />
+          复盘
         </Button>
         <Button
           type="button"

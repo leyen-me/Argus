@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { ConfigModal } from "@/components/app/config-modal";
 import { DashboardModal } from "@/components/app/dashboard-modal";
 import { StrategyCenterModal } from "@/components/app/strategy-center-modal";
+import { TradeReviewModal } from "@/components/app/trade-review-modal";
 import { LlmChartPreviewModal } from "@/components/app/llm-chart-preview-modal";
 import { LlmSessionDetailModal } from "@/components/app/llm-session-detail-modal";
 import { LlmPanel } from "@/components/app/llm-panel";
@@ -98,6 +99,7 @@ export default function App() {
 
       <ConfigModal />
       <DashboardModal />
+      <TradeReviewModal />
       <StrategyCenterModal />
       <LlmSessionDetailModal />
       <LlmChartPreviewModal />

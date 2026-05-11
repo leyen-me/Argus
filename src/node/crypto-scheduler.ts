@@ -5,6 +5,7 @@
  */
 import WebSocket from "ws";
 import { emitBarClose } from "./bar-close.js";
+import { __resetAgentJobQueueForTests, enqueueAgentJob } from "./agent-job-queue.js";
 import { publish } from "./runtime-bus.js";
 
 const DEFAULT_RUNTIME = Object.freeze({
@@ -51,19 +52,10 @@ let lastSocketActivityAt = 0;
 const seenBarIds = new Set();
 const SEEN_CAP = 2000;
 
-/**
- * 串行化「收盘 → 截图 → LLM」：WS 可能连续投递多条已确认 K（OKX 同一包内多行、或上一条尚未跑完又推下一条），
- * 若并发 `emitBarClose`，前端侧 `latestBarCloseId` 会被覆盖，导致大量流式 delta/end 被丢弃（表现为「多半收不到输出」）。
- */
-let barCloseChain = Promise.resolve();
 let latestQueuedBarTs = 0;
 
 function enqueueBarCloseTask(fn) {
-  const next = barCloseChain.then(fn);
-  barCloseChain = next.catch((err) => {
-    console.error("[crypto-scheduler] bar-close task failed:", err);
-  });
-  return next;
+  return enqueueAgentJob(fn, { kind: "bar_close" });
 }
 
 function send(channel, payload) {
@@ -368,7 +360,7 @@ function __setRuntimeForTests(overrides = {}) {
   stop();
   runtime = { ...DEFAULT_RUNTIME, ...overrides };
   seenBarIds.clear();
-  barCloseChain = Promise.resolve();
+  __resetAgentJobQueueForTests();
   latestQueuedBarTs = 0;
   intentionalClose = false;
 }
@@ -377,7 +369,7 @@ function __resetRuntimeForTests() {
   stop();
   runtime = { ...DEFAULT_RUNTIME };
   seenBarIds.clear();
-  barCloseChain = Promise.resolve();
+  __resetAgentJobQueueForTests();
   latestQueuedBarTs = 0;
   intentionalClose = false;
 }

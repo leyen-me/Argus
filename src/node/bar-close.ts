@@ -234,19 +234,9 @@ function formatOkxPositionHistoryForPrompt(ph) {
       okxPosHistTimeIso(/** @type {string} */ (o.uTime)),
     ];
   });
-  const sinceIso =
-    ph.sessionSinceMs != null && Number.isFinite(ph.sessionSinceMs)
-      ? new Date(ph.sessionSinceMs).toISOString()
-      : null;
-  const tableHint =
-    sinceIso != null
-      ? `> **说明**：以下为自本轮策略在仪表盘「启动策略」以来（起算 UTC：\`${sinceIso}\`）的最近平仓记录（最多 10 条），来自 OKX positions-history，供你参考盈亏。`
-      : "> **说明**：最近最多 10 条历史平仓记录（OKX positions-history），供你参考盈亏；未绑定策略会话起点时可能包含更早的操作。";
   return [
     "",
     "### 最近仓位历史",
-    "",
-    tableHint,
     "",
     mdTable(OKX_POSITION_HISTORY_LLM_HEADERS, tableRows),
   ].join("\n");
@@ -274,8 +264,6 @@ function formatRecentAgentMemoryBlock(memories, exchangeCtx) {
     return [
       "### 最近操作",
       "",
-      "> **说明**：这里会提醒你最近几轮自己做过什么，避免把刚刚止盈/止损/离场过的结构当成从未交易过的新世界。",
-      "",
       "（当前无最近操作）",
     ].join("\n");
   }
@@ -288,31 +276,8 @@ function formatRecentAgentMemoryBlock(memories, exchangeCtx) {
     return `${idx + 1}. ${row?.capturedAt || "—"}｜${holding}｜${action}｜${note}`;
   });
 
-  const latest = rows[0];
-  const latestAfter =
-    latest && latest.exchangeAfter && typeof latest.exchangeAfter === "object" ? latest.exchangeAfter : null;
-  const latestPos =
-    latestAfter && latestAfter.position && typeof latestAfter.position === "object" ? latestAfter.position : null;
-  const latestHadPosition = latestPos && latestPos.hasPosition === true;
-  const currentPos =
-    exchangeCtx && exchangeCtx.position && typeof exchangeCtx.position === "object" ? exchangeCtx.position : null;
-  const currentHasPosition = currentPos && currentPos.hasPosition === true;
-
-  let transitionNote = "";
-  if (latestHadPosition && !currentHasPosition) {
-    transitionNote =
-      "最新记忆显示：上一轮结束时你仍有仓位，但本轮开始已空仓。这说明仓位是在两轮之间离场了（可能止盈、止损或手动平仓）。不要把它当成“从未开过仓”的新机会；若要再进，必须确认有新的结构与新的 5m 触发。";
-  } else if (!latestHadPosition && currentHasPosition) {
-    transitionNote =
-      "最新记忆显示：上一轮结束时空仓，但本轮开始已有仓位。说明这段时间出现了新成交或外部手动操作；优先先解释现有仓位，而不是忽略它。";
-  }
-
   return [
     "### 最近动作",
-    "",
-    "> **说明**：以下是同品种同周期最近几轮自己的动作和结果。用于管理交易频率与纪律。",
-    transitionNote ? "" : null,
-    transitionNote || null,
     "",
     ...lines,
   ]
@@ -453,7 +418,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
     "",
     pendingBlock,
     "",
-    "### 算法挂单（条件单等）",
+    "### 算法挂单/条件单",
     "",
     algoBlock,
     formatOkxPositionHistoryForPrompt(

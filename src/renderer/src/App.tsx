@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import { ChartPanel } from "@/components/app/chart-panel";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { ConfigModal } from "@/components/app/config-modal";
 import { DashboardModal } from "@/components/app/dashboard-modal";
 import { StrategyCenterModal } from "@/components/app/strategy-center-modal";
@@ -11,6 +14,11 @@ import { LlmPanel } from "@/components/app/llm-panel";
 import { StrategiesEmptyState } from "@/components/app/strategies-empty-state";
 import { TitleBar } from "@/components/app/title-bar";
 import { ARGUS_PROMPT_STRATEGY_SYNC } from "@/components/prompt-strategy-select";
+import {
+  fetchArgusAuthSession,
+  loginArgusPublicPassword,
+  setStoredArgusAuthToken,
+} from "./argus-auth";
 import { initArgusApp } from "./argus-renderer";
 
 const RIGHT_PANEL_COLLAPSED_KEY = "argus.ui.rightPanelCollapsed";
@@ -36,7 +44,100 @@ function readStoredRightPanelCollapsed(): boolean {
   return false;
 }
 
-export default function App() {
+function PublicPasswordGate({ onUnlocked }: { onUnlocked: () => void }) {
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      await loginArgusPublicPassword(password);
+      onUnlocked();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 text-foreground">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle>访问验证</CardTitle>
+          <CardDescription>当前访问来自公网，请输入服务器环境变量配置的访问密码。</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-3" onSubmit={onSubmit}>
+            <Input
+              autoFocus
+              autoComplete="current-password"
+              disabled={submitting}
+              placeholder="访问密码"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            {error ? <div className="text-xs text-destructive">{error}</div> : null}
+            <Button className="w-full" disabled={submitting || !password.trim()} type="submit">
+              {submitting ? "验证中..." : "进入 Argus"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AuthGate({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<"checking" | "ready" | "locked">("checking");
+  const [error, setError] = useState("");
+
+  async function refreshSession() {
+    setState("checking");
+    setError("");
+    try {
+      const session = await fetchArgusAuthSession();
+      if (!session.authRequired || session.authenticated) {
+        setState("ready");
+        return;
+      }
+      setStoredArgusAuthToken("");
+      setState("locked");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setState("locked");
+    }
+  }
+
+  useEffect(() => {
+    void refreshSession();
+  }, []);
+
+  if (state === "ready") return <>{children}</>;
+  if (state === "locked") {
+    return (
+      <>
+        <PublicPasswordGate onUnlocked={() => void refreshSession()} />
+        {error ? (
+          <div className="fixed bottom-3 left-1/2 -translate-x-1/2 rounded border border-destructive/40 bg-background px-3 py-2 text-xs text-destructive shadow">
+            {error}
+          </div>
+        ) : null}
+      </>
+    );
+  }
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+      正在检查访问权限...
+    </div>
+  );
+}
+
+function ArgusWorkspace() {
   /** `null`：尚未收到配置同步；`0`：已同步且无策略；`>0`：已有策略 */
   const [strategyOptionCount, setStrategyOptionCount] = useState<number | null>(null);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(readStoredRightPanelCollapsed);
@@ -104,5 +205,13 @@ export default function App() {
       <LlmSessionDetailModal />
       <LlmChartPreviewModal />
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthGate>
+      <ArgusWorkspace />
+    </AuthGate>
   );
 }

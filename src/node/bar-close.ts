@@ -129,6 +129,57 @@ const MD_ALGO_ORDER_HEADERS = [
   "ordPx",
 ];
 
+const OKX_FIELD_LABELS: Record<string, string> = Object.freeze({
+  accFillSz: "累计成交张数",
+  absContracts: "持仓绝对张数",
+  algoId: "算法单 ID",
+  availPos: "可平张数",
+  avgPx: "开仓均价",
+  cTime: "创建时间",
+  ccy: "保证金币种",
+  clOrdId: "客户自定义订单 ID",
+  ct_val: "合约面值",
+  estimated_contracts: "预估张数",
+  hasPosition: "有持仓",
+  instId: "合约",
+  last: "最新成交价",
+  last_px: "最新价格",
+  lever: "杠杆",
+  leverage: "杠杆",
+  liqPx: "预估强平价",
+  lot_sz: "下单步长",
+  margin: "保证金",
+  margin_fraction: "保证金占用比例",
+  meets_min_sz: "满足最小张数",
+  mgnMode: "保证金模式",
+  min_sz: "最小下单张数",
+  notionalUsd: "名义价值",
+  ordId: "订单 ID",
+  ordPx: "委托价格",
+  ordType: "订单类型",
+  pos: "持仓张数",
+  posNum: "持仓张数",
+  posSide: "持仓方向",
+  px: "委托价格",
+  reduceOnly: "只减仓",
+  side: "买卖方向",
+  slOrdPx: "止损委托价",
+  slTriggerPx: "止损触发价",
+  slTriggerPxType: "止损触发价类型",
+  state: "订单状态",
+  sz: "委托张数",
+  tdMode: "交易模式",
+  tick_sz: "报价步长",
+  tpOrdPx: "止盈委托价",
+  tpTriggerPx: "止盈触发价",
+  tpTriggerPxType: "止盈触发价类型",
+  triggerPx: "触发价",
+  triggerPxType: "触发价类型",
+  upl: "未实现收益",
+  uplRatio: "未实现收益率",
+  usdt_avail_eq: "USDT 可用权益",
+});
+
 const OKX_POSITION_HISTORY_LLM_HEADERS = [
   "标的",
   "方向",
@@ -250,6 +301,15 @@ function pickRow(o, keys) {
   return keys.map((k) => o[k]);
 }
 
+function okxFieldLabel(key) {
+  const label = OKX_FIELD_LABELS[key];
+  return label ? `${label}（${key}）` : key;
+}
+
+function okxHeaderLabels(keys) {
+  return keys.map(okxFieldLabel);
+}
+
 function clipText(text, maxLen = 120) {
   const s = String(text || "")
     .replace(/\s+/g, " ")
@@ -258,7 +318,7 @@ function clipText(text, maxLen = 120) {
   return s.length > maxLen ? `${s.slice(0, Math.max(0, maxLen - 3))}...` : s;
 }
 
-function formatRecentAgentMemoryBlock(memories, exchangeCtx) {
+function formatRecentAgentMemoryBlock(memories, _exchangeCtx) {
   const rows = Array.isArray(memories) ? memories : [];
   if (rows.length === 0) {
     return [
@@ -294,7 +354,7 @@ function positionFieldsTable(fields) {
   if (!entries.length) return "（暂无仓位明细）";
   return mdTable(
     ["字段", "值"],
-    entries.map(([k, v]) => [k, v]),
+    entries.map(([k, v]) => [okxFieldLabel(k), v]),
   );
 }
 
@@ -317,8 +377,9 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
   }
 
   const cs = exchangeCtx.contract_sizing;
+  const accountHeaders = ["usdt_avail_eq", "ct_val", "lot_sz", "min_sz", "tick_sz", "last_px"];
   const accountBlock = mdTable(
-    ["USDT 可用权益", "ct_val", "lot_sz", "min_sz", "tick_sz", "last_px"],
+    okxHeaderLabels(accountHeaders),
     [
       [
         exchangeCtx.usdt_avail_eq,
@@ -346,8 +407,9 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
       : "（本轮无开仓张数参考行。）";
 
   const pos = exchangeCtx.position;
+  const posSummaryHeaders = ["hasPosition", "posSide", "posNum", "absContracts"];
   const posSummary = mdTable(
-    ["有持仓", "posSide", "posNum", "absContracts"],
+    okxHeaderLabels(posSummaryHeaders),
     [
       [
         zhBool(pos?.hasPosition === true),
@@ -363,7 +425,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
   const pendingBlock =
     pending.length > 0
       ? mdTable(
-          MD_PENDING_ORDER_HEADERS,
+          okxHeaderLabels(MD_PENDING_ORDER_HEADERS),
           pending.map((o) => pickRow(o, MD_PENDING_ORDER_HEADERS)),
         )
       : "（暂无普通挂单）";
@@ -372,7 +434,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
   const algoBlock =
     algos.length > 0
       ? mdTable(
-          MD_ALGO_ORDER_HEADERS,
+          okxHeaderLabels(MD_ALGO_ORDER_HEADERS),
           algos.map((o) => pickRow(o, MD_ALGO_ORDER_HEADERS)),
         )
       : "（暂无算法挂单）";
@@ -382,7 +444,7 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
   const contractBlock = mdTable(
     ["项目", "值"],
     [
-      ["instId", exchangeCtx.instId],
+      [okxFieldLabel("instId"), exchangeCtx.instId],
       // ["模拟盘", sim ? "是" : "否"],
     ],
   );

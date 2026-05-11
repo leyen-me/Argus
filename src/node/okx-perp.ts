@@ -1482,7 +1482,7 @@ async function getOkxExchangeContextForBar(cfg, tvSymbol, _interval = "") {
       meets_min_sz: boolean;
     }> | null = null;
     let sizing_note =
-      "开仓张数由本机按 OKX 规则计算：保证金≈usdt_avail_eq×margin_fraction，名义≈保证金×leverage，张数=floor_step(名义/(ct_val×last_px), lot_sz)，且须≥min_sz；下表为按当前 last_px 的参考值，实际以下单时为准。";
+      "开仓张数由本机按 OKX 规则计算：保证金≈USDT 可用权益（usdt_avail_eq）×保证金占用比例（margin_fraction），名义≈保证金×杠杆（leverage），张数=floor_step(名义/(合约面值（ct_val）×最新价格（last_px）), 下单步长（lot_sz）)，且须≥最小下单张数（min_sz）；下表为按当前最新价格（last_px）的参考值，实际以下单时为准。";
 
     try {
       const [avail, inst, lastPx] = await Promise.all([

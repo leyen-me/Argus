@@ -50,6 +50,7 @@ type MultiTimeframeChartImage = {
 type PrimaryChartImage = { mimeType: string; base64: string; dataUrl: string };
 
 const RECENT_AGENT_MEMORY_LIMIT = 10;
+const MARKET_DATA_MULTI_TIMEFRAME_HEADING = "## 市场数据多周期上下文";
 
 /**
  * 历史仓位注入 LLM 时的下界：与仪表盘「启动策略」写入的会话起点对齐（优先 `strategyRuntimeById.startedAt`，其次仪表盘 `statsSince` / 首段 `startedAt`）。
@@ -291,6 +292,19 @@ function formatOkxPositionHistoryForPrompt(ph) {
     "",
     mdTable(OKX_POSITION_HISTORY_LLM_HEADERS, tableRows),
   ].join("\n");
+}
+
+function splitMarketDataMultiTimeframeBlock(userText) {
+  const text = String(userText ?? "");
+  const marker = `\n\n${MARKET_DATA_MULTI_TIMEFRAME_HEADING}`;
+  const idx = text.indexOf(marker);
+  if (idx === -1) {
+    return { primaryText: text, marketDataBlock: "" };
+  }
+  return {
+    primaryText: text.slice(0, idx).trimEnd(),
+    marketDataBlock: text.slice(idx + 2).trim(),
+  };
 }
 
 /**
@@ -580,7 +594,9 @@ async function emitBarClose(ctx) {
     marketTfs,
     strategyIndicators,
   );
-  const llmUserText = buildOkxContextUserText(textForLlm, exchangeCtx, positionsHistory, recentAgentMemories);
+  const { primaryText, marketDataBlock } = splitMarketDataMultiTimeframeBlock(textForLlm);
+  const okxUserText = buildOkxContextUserText(primaryText, exchangeCtx, positionsHistory, recentAgentMemories);
+  const llmUserText = [okxUserText, marketDataBlock].filter(Boolean).join("\n\n");
   const systemPrompt = resolveTradingAgentSystemPrompt(cfg);
   const intervalSkipReason =
     ctxIvCanon !== decisionIvCanon

@@ -72,7 +72,7 @@ export function LlmPanel() {
           }
         />
         <div
-          className="shrink-0 px-3 pt-3"
+          className="shrink-0 px-3 pt-3 max-sm:max-h-[38dvh] max-sm:overflow-y-auto max-sm:overscroll-contain"
           id="okx-position-bar"
           hidden
           role="status"
@@ -80,10 +80,10 @@ export function LlmPanel() {
           title="OKX 永续持仓、普通挂单与算法单（止盈止损等，收盘推送或刷新）；须启用永续并配置 API。"
         >
           <div
-            className="border border-border/80 bg-card/80 px-4 py-4 text-xs text-foreground"
+            className="border border-border/80 bg-card/80 px-4 py-4 text-xs text-foreground max-sm:px-3 max-sm:py-3"
             id="okx-position-shell"
           >
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start justify-between gap-3 max-sm:flex-col">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="inline-flex items-center border border-primary/35 bg-primary/10 px-2.5 py-1 text-[10px] font-semibold tracking-[0.16em] text-primary uppercase">
@@ -105,7 +105,7 @@ export function LlmPanel() {
                   </span>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 max-sm:w-full max-sm:justify-between">
                 <div className="flex size-10 shrink-0 items-center justify-center border border-border/70 bg-muted/35">
                   <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
                 </div>
@@ -121,9 +121,9 @@ export function LlmPanel() {
                 </Button>
               </div>
             </div>
-            <div className="mt-4 grid gap-3 lg:grid-cols-[1.35fr_1fr]">
+            <div className="mt-4 grid gap-3 max-sm:gap-2 lg:grid-cols-[1.35fr_1fr]">
               <div className="flex flex-col justify-between border border-border/70 bg-muted/18 px-4 py-4">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
                   <div className="min-w-0">
                     <span
                       className="inline-flex items-center border border-border/70 bg-background/70 px-3 py-1 text-[13px] font-semibold text-foreground"
@@ -132,18 +132,18 @@ export function LlmPanel() {
                       —
                     </span>
                     <div className="mt-3 text-[11px] tracking-[0.14em] text-muted-foreground uppercase">未实现盈亏</div>
-                    <div className="mt-1 text-4xl leading-none font-semibold tracking-tight text-foreground" id="okx-position-upl">
+                    <div className="mt-1 text-3xl leading-none font-semibold tracking-tight text-foreground sm:text-4xl" id="okx-position-upl">
                       —
                     </div>
                   </div>
-                  <div className="border border-border/70 bg-background/60 px-3 py-2 text-right">
+                  <div className="border border-border/70 bg-background/60 px-3 py-2 text-right max-sm:text-left">
                     <div className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">状态</div>
                     <div className="mt-1 text-[13px] font-medium text-foreground" id="okx-position-status-copy">
                       —
                     </div>
                   </div>
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   <div className="border border-border/70 bg-background/60 px-3 py-2">
                     <div className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">仓位</div>
                     <div className="mt-1 text-[14px] font-semibold text-foreground" id="okx-position-size">
@@ -165,7 +165,7 @@ export function LlmPanel() {
                 </div>
               </div>
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <div className="border border-emerald-500/25 bg-emerald-500/8 px-3 py-3">
                     <div className="text-[10px] tracking-[0.14em] text-emerald-600/80 uppercase dark:text-emerald-400/80">Take Profit</div>
                     <div className="mt-2 text-[18px] font-semibold text-emerald-700 dark:text-emerald-300" id="okx-position-tp">

@@ -11,7 +11,6 @@ import type { StrategyChartIndicatorId, StrategyDecisionIntervalTv } from "@shar
 import { tradingViewStudiesFromChartIndicators } from "@shared/tradingview-chart-studies";
 import { formatPromptStrategyDisplayLabel } from "@shared/prompt-strategy-display-label";
 import { splitLegacyAssistantAndToolText } from "@/lib/agent-session-display";
-import { ARGUS_LLM_CHART_PREVIEW_OPEN } from "@/lib/argus-llm-chart-preview-events";
 import { ARGUS_LLM_SESSION_DETAIL_OPEN } from "@/lib/argus-llm-session-detail-events";
 
 const DEFAULT_STRATEGY_CHART_INDICATORS: StrategyChartIndicatorId[] = ["EM20"];
@@ -2251,45 +2250,6 @@ function setLlmStatus(text: string | null | undefined): void {
   el.title = full;
 }
 
-function openLlmChartPreview(dataUrl) {
-  const modal = document.getElementById("llm-chart-preview-modal");
-  const img = document.getElementById("llm-chart-preview-img");
-  if (!modal || !img || !dataUrl) return;
-  img.src = dataUrl;
-  img.alt = "本轮 K 线收盘时的图表截图";
-  modal.hidden = false;
-}
-
-function closeLlmChartPreview() {
-  const modal = document.getElementById("llm-chart-preview-modal");
-  const img = document.getElementById("llm-chart-preview-img");
-  if (modal) modal.hidden = true;
-  if (img) {
-    img.removeAttribute("src");
-    img.alt = "";
-  }
-}
-
-function initLlmChartPreview() {
-  const modal = document.getElementById("llm-chart-preview-modal");
-  const btn = document.getElementById("btn-llm-chart-preview-close");
-  if (!modal) return;
-  const close = () => closeLlmChartPreview();
-  btn?.addEventListener("click", close);
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) close();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    if (modal.hidden) return;
-    close();
-  });
-  window.addEventListener(ARGUS_LLM_CHART_PREVIEW_OPEN, (e: Event) => {
-    const d = (e as CustomEvent<{ dataUrl?: string }>).detail;
-    if (d?.dataUrl) openLlmChartPreview(d.dataUrl);
-  });
-}
-
 function currentUiTvSymbol() {
   const sel = document.getElementById("symbol-select");
   if (!sel || typeof sel.value !== "string") return "";
@@ -3052,7 +3012,6 @@ export function initArgusApp() {
     initStrategyCenter();
     initDevToolsButton();
     initFishMode();
-    initLlmChartPreview();
     await reloadLlmHistoryFromStore();
 
     bindMarketBarClose();

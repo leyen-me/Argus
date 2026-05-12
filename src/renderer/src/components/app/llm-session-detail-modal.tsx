@@ -38,7 +38,6 @@ import {
   ARGUS_LLM_SESSION_DETAIL_OPEN,
   type ArgusLlmSessionDetailOpenDetail,
 } from "@/lib/argus-llm-session-detail-events";
-import { ARGUS_LLM_CHART_PREVIEW_OPEN } from "@/lib/argus-llm-chart-preview-events";
 import { buildLlmSessionDetailRows, type SessionDetailRow } from "@/lib/llm-session-detail-rows";
 import { cn } from "@/lib/utils";
 
@@ -430,7 +429,7 @@ function SessionDetailRowView({
   if (row.kind === "chart") {
     return (
       <div className="flex justify-start" role="listitem">
-        <div className="w-full max-w-[78%] space-y-2 rounded-3xl border border-border/75 bg-background/75 px-4 py-3 shadow-sm transition-colors hover:bg-background">
+        <div className="w-full space-y-2 rounded-3xl border border-border/75 bg-background/75 px-4 py-3 shadow-sm transition-colors hover:bg-background sm:max-w-[78%]">
           <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
             <ImageIcon className="size-3.5" aria-hidden />
             <span>图表附件</span>
@@ -438,9 +437,9 @@ function SessionDetailRowView({
           </div>
           <button
             type="button"
-            className="group relative w-full max-w-[320px] overflow-hidden rounded-2xl border border-border/70 bg-background/70 text-left ring-1 ring-transparent transition hover:ring-primary/25"
-            title="放大查看本轮截图"
-            aria-label="放大预览图表截图"
+            className="group relative w-full max-w-[320px] overflow-hidden rounded-2xl border border-border/70 bg-background/70 text-left ring-1 ring-transparent transition hover:ring-primary/25 max-sm:max-w-none"
+            title="在新标签页预览本轮截图"
+            aria-label="在新标签页预览图表截图"
             onClick={() => onOpenChart(row.dataUrl)}
           >
             <img
@@ -452,7 +451,7 @@ function SessionDetailRowView({
             <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/0 opacity-0 transition group-hover:bg-background/35 group-hover:opacity-100">
               <span className="flex items-center gap-1 rounded-full bg-background/90 px-2.5 py-1 text-[10px] font-semibold shadow-sm ring-1 ring-border/70">
                 <ImageIcon className="size-3 opacity-80" aria-hidden />
-                预览
+                浏览器预览
               </span>
             </span>
           </button>
@@ -630,9 +629,14 @@ export function LlmSessionDetailModal() {
   const messageCount = messages.length;
 
   const onOpenChart = useCallback((dataUrl: string) => {
-    window.dispatchEvent(
-      new CustomEvent(ARGUS_LLM_CHART_PREVIEW_OPEN, { detail: { dataUrl } }),
-    );
+    if (!dataUrl) return;
+    const nextWindow = window.open(dataUrl, "_blank", "noopener,noreferrer");
+    if (nextWindow) return;
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.click();
   }, []);
 
   return (

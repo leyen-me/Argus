@@ -1534,7 +1534,7 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   }
 
   .argus-app-dialog-header {
-    padding: 12px;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px 12px;
   }
 
   .argus-app-dialog-header > div {
@@ -1543,26 +1543,11 @@ body:has([data-argus-llm-session-detail]) [data-slot="dialog-content"][data-argu
   }
 
   .argus-app-dialog-body {
-    padding: 12px;
+    padding: 12px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
   }
 
-  .llm-chart-preview-backdrop {
-    padding: 0;
-  }
-
-  .llm-chart-preview-dialog {
-    width: 100vw;
-    max-width: none;
-    max-height: 100dvh;
-    min-height: 100dvh;
-    border-width: 0;
-    border-radius: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .llm-chart-preview-img {
-    max-height: 92dvh;
+  #okx-position-bar {
+    max-height: 38dvh;
+    overscroll-behavior: contain;
   }
 }

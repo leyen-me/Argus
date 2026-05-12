@@ -65,8 +65,8 @@ export function AppDialogHeader({
   actions?: ReactNode
 }) {
   return (
-    <DialogHeader className={cn("argus-app-dialog-header shrink-0 space-y-0 border-b border-border/85 bg-card/70 px-5 py-4 text-left", className)}>
-      <div className="flex items-center justify-between gap-4">
+    <DialogHeader className={cn("argus-app-dialog-header sticky top-0 z-10 shrink-0 space-y-0 border-b border-border/85 bg-card/95 px-5 py-4 text-left supports-backdrop-filter:backdrop-blur-sm", className)}>
+      <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {eyebrow ? (
             <div className="mb-1 text-[10px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">
@@ -80,7 +80,7 @@ export function AppDialogHeader({
             </DialogTitle>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-start gap-2">
           {actions}
           <DialogClose asChild>
             <Button
@@ -110,7 +110,7 @@ export function AppDialogBody({
   className?: string
   children: ReactNode
 }) {
-  return <div className={cn("argus-app-dialog-body min-h-0 flex-1 overflow-auto overscroll-contain px-5 py-5", className)}>{children}</div>
+  return <div className={cn("argus-app-dialog-body min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5", className)}>{children}</div>
 }
 
 /**

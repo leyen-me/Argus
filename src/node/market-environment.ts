@@ -226,7 +226,7 @@ function formatMarketEnvironmentForPrompt(snapshot: MarketEnvironmentSnapshot | 
   if (!snapshot || !Array.isArray(snapshot.groups) || snapshot.groups.length === 0) {
     return ["## 市场环境", "", "（市场环境无数据。）"].join("\n");
   }
-  return ["## 市场环境", "", ...snapshot.groups.map(formatMarketEnvironmentGroup)].join("\n\n");
+  return ["## 市场环境", ...snapshot.groups.map(formatMarketEnvironmentGroup)].join("\n\n");
 }
 
 async function buildMarketEnvironmentPromptBlock(tvSymbol: string): Promise<string> {

@@ -35,6 +35,8 @@ describe("market environment prompt", () => {
     expect(text).not.toContain("### 美股 ETF");
     expect(text).not.toContain("### 恐慌指数");
     expect(text).not.toContain("### 黄金");
+    expect(text).toContain("## 市场环境\n\n### 加密货币（OKX SWAP）");
+    expect(text).not.toContain("## 市场环境\n\n\n### 加密货币（OKX SWAP）");
     expect(text).toContain("| 标的 | 最新价 | 今日涨跌 | 数据源 | 更新时间 |");
     expect(text).toContain("| BTC/USDT | 102,000 | +2.00%（+2,000） | OKX SWAP | 05-11 04:47 |");
   });

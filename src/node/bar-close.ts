@@ -229,12 +229,18 @@ function compactPromptUtcTime(raw) {
   return text.length > 16 ? text.slice(0, 16) : text;
 }
 
+function utcWeekdayZh(now) {
+  return ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][now.getUTCDay()] || "—";
+}
+
 function formatPromptTimeReferenceBlock(now = new Date()) {
   const iso = now.toISOString();
   const year = iso.slice(0, 4);
-  return ["## 时间基准", "", `当前 UTC：${year}-${compactPromptUtcTime(iso)}；下文表内时间均为 UTC，格式 MM-DD HH:mm。`].join(
-    "\n",
-  );
+  return [
+    "## 时间基准",
+    "",
+    `当前 UTC：${year}-${compactPromptUtcTime(iso)}（${utcWeekdayZh(now)}）；下文表内时间均为 UTC，格式 MM-DD HH:mm。`,
+  ].join("\n");
 }
 
 function finiteNumberOrNull(raw) {

@@ -460,10 +460,23 @@ function summarizeToolTrace(toolTrace) {
   return names.length ? names.join(" -> ") : "无工具动作";
 }
 
+function toolTraceHasSuccessfulAction(toolTrace, actionName) {
+  if (!Array.isArray(toolTrace)) return false;
+  return toolTrace.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    if (item.name !== actionName) return false;
+    const result = item.result && typeof item.result === "object" ? item.result : null;
+    return result?.ok === true;
+  });
+}
+
 async function listRecentAgentMemories(args: Record<string, unknown> = {}) {
   const tvSymbol = String(args.tvSymbol || "").trim();
   const interval = String(args.interval || "").trim();
   const limit = Math.min(20, Math.max(1, Math.floor(Number(args.limit) || 6)));
+  const includeActivePositionOpens = args.includeActivePositionOpens === true;
+  const maxScan = Math.min(300, Math.max(limit, Math.floor(Number(args.maxScan) || 200)));
+  const queryLimit = includeActivePositionOpens ? maxScan : limit;
   if (!tvSymbol || !interval) return [];
 
   const db = getDb();
@@ -481,11 +494,12 @@ async function listRecentAgentMemories(args: Record<string, unknown> = {}) {
     .from(agentSessions)
     .where(and(eq(agentSessions.tvSymbol, tvSymbol), eq(agentSessions.interval, interval)))
     .orderBy(desc(agentSessions.capturedAt), desc(agentSessions.barCloseId))
-    .limit(limit);
+    .limit(queryLimit);
 
-  return rows.map((row) => {
+  const mapped = rows.map((row) => {
     const toolTrace = safeJsonParse(row.toolTraceJson);
     const exchangeAfter = safeJsonParse(row.exchangeAfterJson);
+    const normalizedToolTrace = Array.isArray(toolTrace) ? toolTrace : [];
     return {
       barCloseId: String(row.barCloseId || ""),
       capturedAt: String(row.capturedAt || ""),
@@ -493,12 +507,35 @@ async function listRecentAgentMemories(args: Record<string, unknown> = {}) {
       agentError: row.agentError != null ? String(row.agentError) : null,
       assistantText: row.assistantText != null ? String(row.assistantText) : null,
       cardSummary: row.cardSummary != null ? String(row.cardSummary) : null,
-      toolTrace: Array.isArray(toolTrace) ? toolTrace : [],
+      toolTrace: normalizedToolTrace,
       exchangeAfter,
       holdingState: holdingStateFromExchangeAfter(exchangeAfter),
-      toolSummary: summarizeToolTrace(toolTrace),
+      toolSummary: summarizeToolTrace(normalizedToolTrace),
+      isPositionOpenAction: toolTraceHasSuccessfulAction(normalizedToolTrace, "open_position"),
+      isPositionCloseAction: toolTraceHasSuccessfulAction(normalizedToolTrace, "close_position"),
+      positionMemoryTag: "",
     };
   });
+
+  if (!includeActivePositionOpens) return mapped.slice(0, limit);
+
+  const currentPositionRows: typeof mapped = [];
+  for (const row of mapped) {
+    if (row.isPositionCloseAction) break;
+    currentPositionRows.push(row);
+  }
+
+  const currentOpenRows = currentPositionRows.filter((row) => row.isPositionOpenAction);
+  if (currentOpenRows.length === 0) return mapped.slice(0, limit);
+
+  const initialOpenId = currentOpenRows[currentOpenRows.length - 1]?.barCloseId || "";
+  const requiredIds = new Set(mapped.slice(0, limit).map((row) => row.barCloseId));
+  for (const row of currentOpenRows) {
+    row.positionMemoryTag = row.barCloseId === initialOpenId ? "本段开仓" : "本段加仓";
+    requiredIds.add(row.barCloseId);
+  }
+
+  return mapped.filter((row) => requiredIds.has(row.barCloseId));
 }
 
 export {

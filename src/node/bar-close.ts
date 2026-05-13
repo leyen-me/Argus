@@ -468,18 +468,25 @@ function formatRecentAgentMemoryBlock(memories, _exchangeCtx) {
     ].join("\n");
   }
 
-  const lines = rows.map((row, idx) => {
+  const tableRows = rows.map((row, idx) => {
     const action = clipText(row?.toolSummary || "无工具动作", 80) || "无工具动作";
     const holding = clipText(row?.holdingState || "空仓", 20) || "空仓";
     const note =
       clipText(row?.cardSummary || row?.assistantText || row?.agentError || "", 110) || "无补充说明";
-    return `${idx + 1}. ${compactPromptUtcTime(row?.capturedAt)}｜${holding}｜${action}｜${note}`;
+    const tag = clipText(row?.positionMemoryTag || "", 20);
+    return [
+      tag ? `★ ${tag}` : `最近 ${idx + 1}`,
+      compactPromptUtcTime(row?.capturedAt),
+      holding,
+      action,
+      note,
+    ];
   });
 
   return [
     "### 最近动作",
     "",
-    ...lines,
+    mdTable(["标记", "时间", "持仓", "工具动作", "摘要"], tableRows),
   ]
     .filter((v) => v != null)
     .join("\n");
@@ -720,7 +727,6 @@ async function emitBarClose(ctx) {
     exchangeCtx,
     recentCandlesPack,
     positionsHistory,
-    recentAgentMemories,
     dashboardSnapshot,
     marketEnvironmentBlock,
   ] = await Promise.all([
@@ -732,10 +738,17 @@ async function emitBarClose(ctx) {
       ]),
     ),
     fetchRecentSwapPositionsHistoryForBar(cfg, ctx.tvSymbol, 10, sessionSinceMs),
-    listRecentAgentMemories({ tvSymbol: ctx.tvSymbol, interval: ctx.interval, limit: RECENT_AGENT_MEMORY_LIMIT }),
     getDashboardSnapshot(cfg),
     buildMarketEnvironmentPromptBlock(ctx.tvSymbol),
   ]);
+  const currentHasPosition =
+    exchangeCtx?.ok === true && exchangeCtx?.enabled === true && exchangeCtx?.position?.hasPosition === true;
+  const recentAgentMemories = await listRecentAgentMemories({
+    tvSymbol: ctx.tvSymbol,
+    interval: ctx.interval,
+    limit: RECENT_AGENT_MEMORY_LIMIT,
+    includeActivePositionOpens: currentHasPosition,
+  });
   const recentCandles = Object.fromEntries(recentCandlesPack);
   const textForLlm = buildMultiTimeframeUserPrompt(
     ctx.tvSymbol,

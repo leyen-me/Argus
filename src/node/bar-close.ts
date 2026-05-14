@@ -490,7 +490,7 @@ function formatRecentAgentMemoryBlock(memories, _exchangeCtx) {
   });
 
   return [
-    "### 最近动作",
+    "### 这是你最近的操作记录与思考",
     "",
     mdTable(["标记", "时间", "持仓", "工具动作", "摘要"], tableRows),
   ]
@@ -498,20 +498,43 @@ function formatRecentAgentMemoryBlock(memories, _exchangeCtx) {
     .join("\n");
 }
 
+/** 记忆列表按时间从新到旧；取最近一笔成功 open_position 的摘要一行。 */
+function formatLatestOpenPositionReason(memories) {
+  const rows = Array.isArray(memories) ? memories : [];
+  for (const row of rows) {
+    if (row?.isPositionOpenAction !== true) continue;
+    const note =
+      clipText(row?.cardSummary || row?.assistantText || row?.agentError || "", 280) || "无补充说明";
+    const t = compactPromptUtcTime(row?.capturedAt);
+    return t ? `${t}：${note}` : note;
+  }
+  return "";
+}
+
 /**
  * @param {object | null | undefined} fields
+ * @param {boolean} [hasActualPosition] 仅在有 OKX 实际持仓时为 true，此时才追加「开仓理由」行
  */
-function positionFieldsTable(fields) {
+function positionFieldsTable(fields, openReason = "", hasActualPosition = false) {
   if (!fields || typeof fields !== "object") return "（暂无仓位明细）";
   const entries = Object.entries(fields).sort(([a], [b]) => a.localeCompare(b));
   if (!entries.length) return "（暂无仓位明细）";
-  return mdTable(
-    ["字段", "值"],
-    entries.map(([k, v]) => [okxFieldLabel(k), v]),
-  );
+  const tableRows = entries.map(([k, v]) => [okxFieldLabel(k), v]);
+  if (hasActualPosition === true) {
+    const reasonCell = String(openReason || "").trim() || "—";
+    tableRows.push(["开仓理由", reasonCell]);
+  }
+  return mdTable(["字段", "值"], tableRows);
 }
 
-function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, recentAgentMemories, dashboardSnapshot) {
+function buildOkxContextUserText(
+  marketText,
+  exchangeCtx,
+  positionsHistory,
+  recentAgentMemories,
+  dashboardSnapshot,
+  activePositionOpenMemories,
+) {
   const timeReferenceBlock = formatPromptTimeReferenceBlock();
   const dashboardStatsBlock = formatDashboardStatsBlock(dashboardSnapshot);
   if (!exchangeCtx || exchangeCtx.enabled !== true) {
@@ -584,7 +607,13 @@ function buildOkxContextUserText(marketText, exchangeCtx, positionsHistory, rece
       ],
     ],
   );
-  const posFieldsSection = ["#### 仓位明细", "", positionFieldsTable(pos?.fields)].join("\n");
+  const hasActualPosition = pos?.hasPosition === true;
+  const openReason = hasActualPosition ? formatLatestOpenPositionReason(activePositionOpenMemories) : "";
+  const posFieldsSection = [
+    "#### 仓位明细",
+    "",
+    positionFieldsTable(pos?.fields, openReason, hasActualPosition),
+  ].join("\n");
 
   const pending = Array.isArray(exchangeCtx.pending_orders) ? exchangeCtx.pending_orders : [];
   const pendingBlock =
@@ -749,12 +778,21 @@ async function emitBarClose(ctx) {
   ]);
   const currentHasPosition =
     exchangeCtx?.ok === true && exchangeCtx?.enabled === true && exchangeCtx?.position?.hasPosition === true;
-  const recentAgentMemories = await listRecentAgentMemories({
-    tvSymbol: ctx.tvSymbol,
-    interval: ctx.interval,
-    limit: RECENT_AGENT_MEMORY_LIMIT,
-    includeActivePositionOpens: currentHasPosition,
-  });
+  const [recentAgentMemories, activePositionOpenMemories] = await Promise.all([
+    listRecentAgentMemories({
+      tvSymbol: ctx.tvSymbol,
+      interval: ctx.interval,
+      limit: RECENT_AGENT_MEMORY_LIMIT,
+    }),
+    currentHasPosition
+      ? listRecentAgentMemories({
+          tvSymbol: ctx.tvSymbol,
+          interval: ctx.interval,
+          limit: RECENT_AGENT_MEMORY_LIMIT,
+          includeActivePositionOpens: true,
+        })
+      : Promise.resolve([]),
+  ]);
   const recentCandles = Object.fromEntries(recentCandlesPack);
   const textForLlm = buildMultiTimeframeUserPrompt(
     ctx.tvSymbol,
@@ -771,6 +809,7 @@ async function emitBarClose(ctx) {
     positionsHistory,
     recentAgentMemories,
     dashboardSnapshot,
+    activePositionOpenMemories,
   );
   const llmUserText = [okxUserText, marketEnvironmentBlock, marketDataBlock].filter(Boolean).join("\n\n");
   const systemPrompt = resolveTradingAgentSystemPrompt(cfg);

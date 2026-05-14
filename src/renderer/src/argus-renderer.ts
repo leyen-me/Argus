@@ -2138,7 +2138,7 @@ function createTradingViewWidgetNow(symbol, _interval) {
       autosize: true,
       symbol: tvSymbol,
       interval: spec.interval,
-      timezone: "Asia/Shanghai",
+      timezone: "Etc/UTC",
       theme: "dark",
       style: "1",
       locale: "zh_CN",

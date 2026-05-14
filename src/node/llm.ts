@@ -1694,7 +1694,7 @@ function buildMultiTimeframeUserPrompt(symbol, periodKey, candle, recentCandlesB
     )
     .filter(Boolean);
   const klineHead = [
-    "## 本次触发的决策 K 线",
+    "## OKX 刚刚收盘，这是本次收盘 K 线数据",
     "",
     promptTriggerKlineColumnGlossary(orderedIds),
     "",
